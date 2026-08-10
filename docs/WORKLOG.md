@@ -637,6 +637,26 @@ Next:
 
 - Add protocol telemetry persistence.
 
+## 2026-08-10 - Checkpoint 36: Protocol Telemetry
+
+Implemented:
+
+- Added append-only `protocol_attempts` telemetry storage.
+- Added migration `002_protocol_telemetry.sql`.
+- Worker records success and failure attempts with release, recipe, capability, session, error class, tweet count, cursor presence, and duration.
+- Added `GET /api/telemetry` and included telemetry summary in `/api/metrics`.
+- Documented telemetry endpoint and storage behavior.
+- Added tests for telemetry aggregation and worker success/failure recording.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add queue backpressure limits.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

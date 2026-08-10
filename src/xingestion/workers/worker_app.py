@@ -8,6 +8,7 @@ from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
+from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -45,6 +46,7 @@ def main(argv=None):
         raw_evidence_sink=FileRawEvidenceSink(config.raw_evidence_dir),
         canonical_store=CanonicalStore(config.sqlite_path),
         session_store=session_store,
+        telemetry_store=ProtocolTelemetryStore(config.sqlite_path),
     )
 
     once = "--once" in argv

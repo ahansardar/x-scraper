@@ -122,7 +122,10 @@ Operational metrics are exposed at:
 ```text
 GET /api/metrics
 GET /api/migrations
+GET /api/telemetry
 ```
+
+Protocol telemetry is stored append-only in `protocol_attempts` and summarizes successes, failures, and protocol error classes by acquisition attempt.
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
 

@@ -23,6 +23,7 @@ from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import reprocess_task_evidence
+from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -62,6 +63,7 @@ class LiveAppState:
         self.transport = UrllibJsonTransport()
         self.auth = web_session_auth_from_env()
         self.session_store = SessionStore(self.config.sqlite_path)
+        self.telemetry_store = ProtocolTelemetryStore(self.config.sqlite_path)
         self.session_store.upsert_session(
             session_id=self.config.default_session_id,
             account_label=self.config.default_account_label,
@@ -82,6 +84,7 @@ class LiveAppState:
             canonical_store=self.canonical_store,
             release_store=self.release_store,
             session_store=self.session_store,
+            telemetry_store=self.telemetry_store,
         )
 
 
@@ -109,6 +112,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json(_metrics_dict())
         if parsed.path == "/api/migrations":
             return self._json({"migrations": _migration_status_dict(STATE.migration_runner.status())})
+        if parsed.path == "/api/telemetry":
+            return self._json({"telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary())})
         if parsed.path == "/api/releases/current":
             return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
         if parsed.path == "/api/storage":
@@ -512,6 +517,7 @@ def _metrics_dict():
         "canonical": canonical_counts,
         "storage": _storage_dict(),
         "migrations": _migration_status_dict(STATE.migration_runner.status()),
+        "telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary()),
         "sessions": {
             "total": len(STATE.session_store.list_sessions()),
             "healthy": sum(
@@ -529,6 +535,15 @@ def _migration_status_dict(status):
         "available_versions": list(status.available_versions),
         "applied_versions": list(status.applied_versions),
         "pending_versions": list(status.pending_versions),
+    }
+
+
+def _telemetry_summary_dict(summary):
+    return {
+        "total_attempts": summary.total_attempts,
+        "successes": summary.successes,
+        "failures": summary.failures,
+        "errors_by_class": summary.errors_by_class,
     }
 
 

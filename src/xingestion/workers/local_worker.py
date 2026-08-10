@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
+from xingestion.telemetry import ProtocolTelemetryStore
 from xrev.evidence import RawEvidenceRef, RawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import (
@@ -45,6 +47,7 @@ class LocalWorker:
         canonical_store: CanonicalStore | None = None,
         release_store: ReleaseStore | None = None,
         session_store: SessionStore | None = None,
+        telemetry_store: ProtocolTelemetryStore | None = None,
         owner: str | None = None,
         lease_seconds: int = 300,
     ) -> None:
@@ -56,6 +59,7 @@ class LocalWorker:
         self.canonical_store = canonical_store
         self.release_store = release_store
         self.session_store = session_store
+        self.telemetry_store = telemetry_store
         self.planner = CapabilityPlanner(self.manifest)
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
@@ -139,6 +143,7 @@ class LocalWorker:
             datetime.now(UTC) + timedelta(seconds=self.lease_seconds)
         ).isoformat()
         lease_renewals = 0
+        started = monotonic()
 
         try:
             task = self.ledger.acquire_execution_lease(
@@ -154,6 +159,13 @@ class LocalWorker:
         except (ProtocolError, ValueError) as exc:
             if session is not None and isinstance(exc, ProtocolError):
                 self._update_session_health_from_error(session.session_id, exc)
+            self._record_telemetry(
+                task=task,
+                session_id=session.session_id if session else None,
+                state="FAILURE",
+                error_class=getattr(exc, "error_class", exc.__class__.__name__),
+                duration_ms=_duration_ms(started),
+            )
             task = self._handle_failure(task, exc)
             return WorkerResult(
                 processed=True,
@@ -176,6 +188,14 @@ class LocalWorker:
                 recipe_revision_id=task.plan_json["recipe_revision_id"],
             )
         continuation_task_id = self._queue_continuation_if_needed(task, page)
+        self._record_telemetry(
+            task=task,
+            session_id=session.session_id if session else None,
+            state="SUCCESS",
+            tweet_count=len(page.tweets),
+            next_cursor_present=bool(page.next_cursor),
+            duration_ms=_duration_ms(started),
+        )
 
         task = self.ledger.transition_task(
             task.task_id,
@@ -209,6 +229,32 @@ class LocalWorker:
             raw_evidence_ref=page.raw_evidence_ref,
             lease_renewals=lease_renewals,
             session_id=session.session_id if session else None,
+        )
+
+    def _record_telemetry(
+        self,
+        *,
+        task,
+        session_id: str | None,
+        state: str,
+        error_class: str | None = None,
+        tweet_count: int = 0,
+        next_cursor_present: bool = False,
+        duration_ms: int = 0,
+    ) -> None:
+        if self.telemetry_store is None:
+            return
+        self.telemetry_store.record_attempt(
+            task_id=task.task_id,
+            capability_id=task.capability_id.value,
+            release_id=self.manifest.release_id,
+            recipe_revision_id=str(task.plan_json["recipe_revision_id"]),
+            state=state,
+            session_id=session_id,
+            error_class=error_class,
+            tweet_count=tweet_count,
+            next_cursor_present=next_cursor_present,
+            duration_ms=duration_ms,
         )
 
     def _queue_continuation_if_needed(self, task, page):
@@ -335,6 +381,10 @@ class LocalWorker:
 
 def _backoff_seconds(attempt_count: int) -> int:
     return min(60, 2 ** max(0, attempt_count - 1))
+
+
+def _duration_ms(started: float) -> int:
+    return max(0, int((monotonic() - started) * 1000))
 
 
 def _session_health_for_protocol_error(exc: ProtocolError) -> SessionHealth | None:

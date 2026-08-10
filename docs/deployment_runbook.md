@@ -51,6 +51,7 @@ GET /api/health
 GET /api/storage
 GET /api/metrics
 GET /api/migrations
+GET /api/telemetry
 GET /api/sessions
 GET /api/releases/current
 ```

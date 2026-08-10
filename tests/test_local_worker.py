@@ -15,6 +15,7 @@ from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
+from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
@@ -219,6 +220,79 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertIsNone(session_after.lease_token)
             self.assertEqual(task_after.result_json["session"]["session_id"], "session-1")
             self.assertEqual(task_after.result_json["session"]["network_context"], "direct")
+
+    def test_worker_records_success_telemetry(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            task = ledger.create_task(
+                idempotency_key="telemetry-success-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                telemetry_store=telemetry,
+            )
+
+            worker.process_one()
+            summary = telemetry.summary()
+
+            self.assertEqual(summary.total_attempts, 1)
+            self.assertEqual(summary.successes, 1)
+            self.assertEqual(summary.failures, 0)
+
+    def test_worker_records_failure_telemetry(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            ledger.create_task(
+                idempotency_key="telemetry-failure-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=AuthRejectedTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                telemetry_store=telemetry,
+            )
+
+            worker.process_one()
+            summary = telemetry.summary()
+
+            self.assertEqual(summary.total_attempts, 1)
+            self.assertEqual(summary.successes, 0)
+            self.assertEqual(summary.failures, 1)
+            self.assertEqual(summary.errors_by_class["AUTH_OR_SESSION_REJECTED"], 1)
 
     def test_worker_schedules_retry_when_no_healthy_session_available(self):
         manifest = load_manifest()
