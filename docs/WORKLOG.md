@@ -112,3 +112,23 @@ Verified:
 Next:
 
 - Add a transactional outbox table beside the task ledger so task creation and publish intent can commit atomically.
+
+## 2026-08-10 - Checkpoint 7: Runnable Local Demo + Frontend
+
+Implemented:
+
+- Added `run_demo.py` and `src/xingestion/web/demo_server.py` using only Python standard library HTTP serving.
+- Added a demo `SEARCH_TWEETS` acquisition endpoint that plans the capability request, creates a durable task, runs one-attempt demo transport, stores raw evidence, parses output, and marks the task `DONE`.
+- Added a static frontend console for capability input, execution flow, latest parsed output, and task ledger state.
+- Added ignored local `data/` storage for SQLite task state and raw evidence.
+- Added a test for the demo transport payload shape.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests`
+- Local server smoke test with `python .\run_demo.py --port 8000`
+
+Next:
+
+- Add transactional outbox support beside task creation so publish intent is durable before introducing worker dispatch.

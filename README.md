@@ -17,3 +17,13 @@ The current checkpoint defines immutable protocol revision models, a `SEARCH_TWE
 ```powershell
 python -m unittest discover -s tests
 ```
+
+## Run Local Demo
+
+No Docker is required.
+
+```powershell
+python .\run_demo.py --port 8000
+```
+
+Open `http://127.0.0.1:8000` and run a demo `SEARCH_TWEETS` acquisition. The demo uses a local transport fixture, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
