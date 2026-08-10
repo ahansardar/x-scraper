@@ -397,3 +397,23 @@ Verified:
 Next:
 
 - Add protocol release health and quarantine controls.
+
+## 2026-08-10 - Checkpoint 23: Protocol Release Health
+
+Implemented:
+
+- Added durable protocol release health records.
+- Added active/quarantined release execution gating in the worker.
+- Added `GET /api/releases/current`, quarantine, and activate endpoints.
+- Included release health in `/api/metrics`.
+- Documented release quarantine behavior.
+- Added tests for release health storage and quarantined worker blocking.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add a generic northbound capability task API.

@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
+from xingestion.releases import ReleaseStore
 from xrev.evidence import RawEvidenceRef, RawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import (
@@ -38,6 +39,7 @@ class LocalWorker:
         transport: OneAttemptTransport,
         raw_evidence_sink: RawEvidenceSink,
         canonical_store: CanonicalStore | None = None,
+        release_store: ReleaseStore | None = None,
         owner: str | None = None,
         lease_seconds: int = 300,
     ) -> None:
@@ -47,6 +49,7 @@ class LocalWorker:
         self.transport = transport
         self.raw_evidence_sink = raw_evidence_sink
         self.canonical_store = canonical_store
+        self.release_store = release_store
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
 
@@ -79,6 +82,25 @@ class LocalWorker:
                 task_id=task.task_id,
                 state=task.state,
                 message="Task was already processed or not ready",
+            )
+
+        if self.release_store and not self.release_store.execution_allowed(self.manifest.release_id):
+            task = self.ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.ENQUEUED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={
+                    "error_class": "PROTOCOL_RELEASE_BLOCKED",
+                    "message": f"Protocol release {self.manifest.release_id} is not executable",
+                    "release_id": self.manifest.release_id,
+                },
+            )
+            return WorkerResult(
+                processed=True,
+                task_id=task.task_id,
+                state=task.state,
+                error_class="PROTOCOL_RELEASE_BLOCKED",
+                message=f"Protocol release {self.manifest.release_id} is not executable",
             )
 
         lease_expires_at = (

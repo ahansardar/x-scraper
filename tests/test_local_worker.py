@@ -13,6 +13,7 @@ from xingestion.capabilities import (
 )
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
+from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
@@ -278,6 +279,47 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertTrue(result.processed)
             self.assertEqual(result.task_id, cancelled.task_id)
             self.assertEqual(result.state, TaskState.CANCELLED)
+
+    def test_worker_dead_letters_when_release_is_quarantined(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            release_store = ReleaseStore(db_path)
+            release_store.set_health(
+                manifest.release_id,
+                health=ReleaseHealth.QUARANTINED,
+                reason="test quarantine",
+            )
+            task = ledger.create_task(
+                idempotency_key="quarantine-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                release_store=release_store,
+            )
+
+            result = worker.process_one()
+            reloaded = ledger.get_task(task.task_id)
+
+            self.assertEqual(result.state, TaskState.DEAD_LETTER)
+            self.assertEqual(result.error_class, "PROTOCOL_RELEASE_BLOCKED")
+            self.assertEqual(reloaded.error_json["error_class"], "PROTOCOL_RELEASE_BLOCKED")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import time
 
 from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
+from xingestion.releases import ReleaseStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -25,6 +26,7 @@ def main(argv=None):
     config.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
 
     worker = LocalWorker(
+        release_store=ReleaseStore(config.sqlite_path),
         ledger=SQLiteTaskLedger(config.sqlite_path),
         manifest=ProtocolReleaseManifest.from_file(MANIFEST_PATH),
         auth=web_session_auth_from_env(),

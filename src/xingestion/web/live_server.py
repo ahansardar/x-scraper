@@ -19,6 +19,7 @@ from xingestion.capabilities import (
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
 from xingestion.sessions import SessionHealth, SessionStore
+from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -43,6 +44,8 @@ class LiveAppState:
         self.planner = CapabilityPlanner(self.manifest)
         self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
         self.canonical_store = CanonicalStore(self.config.sqlite_path)
+        self.release_store = ReleaseStore(self.config.sqlite_path)
+        self.release_store.ensure_release(self.manifest.release_id)
         self.session_store = SessionStore(self.config.sqlite_path)
         self.session_store.upsert_session(
             session_id=self.config.default_session_id,
@@ -65,6 +68,7 @@ class LiveAppState:
             transport=self.transport,
             raw_evidence_sink=self.evidence_sink,
             canonical_store=self.canonical_store,
+            release_store=self.release_store,
         )
 
 
@@ -90,6 +94,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             )
         if parsed.path == "/api/metrics":
             return self._json(_metrics_dict())
+        if parsed.path == "/api/releases/current":
+            return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
         if parsed.path == "/api/storage":
             return self._json(_storage_dict())
         if parsed.path == "/api/sessions":
@@ -137,6 +143,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/retention/run":
             return self._run_retention()
+        if parsed.path == "/api/releases/current/quarantine":
+            return self._set_release_health(ReleaseHealth.QUARANTINED, "operator_quarantine")
+        if parsed.path == "/api/releases/current/activate":
+            return self._set_release_health(ReleaseHealth.ACTIVE, "operator_activate")
 
         if parsed.path != "/api/search-tweets":
             self.send_error(404)
@@ -218,6 +228,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             dry_run=False,
         )
         return self._json({"retention": _retention_dict(result)}, status=200)
+
+    def _set_release_health(self, health, reason):
+        release = STATE.release_store.set_health(
+            STATE.manifest.release_id,
+            health=health,
+            reason=reason,
+        )
+        return self._json({"release": _release_dict(release)}, status=200)
 
     def _read_json(self):
         length = int(self.headers.get("content-length", "0"))
@@ -368,6 +386,7 @@ def _metrics_dict():
     canonical_counts = STATE.canonical_store.counts()
     return {
         "release_id": STATE.manifest.release_id,
+        "release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id)),
         "auth_ready": not STATE.auth.missing_fields(),
         "tasks": {
             "state_counts": task_counts,
@@ -394,6 +413,16 @@ def _metrics_dict():
                 if session.health == SessionHealth.HEALTHY
             ),
         },
+    }
+
+
+def _release_dict(release):
+    return {
+        "release_id": release.release_id,
+        "health": release.health.value,
+        "reason": release.reason,
+        "updated_at": release.updated_at,
+        "execution_allowed": release.health not in {ReleaseHealth.QUARANTINED, ReleaseHealth.RETIRED},
     }
 
 

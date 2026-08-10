@@ -89,6 +89,16 @@ GET /api/metrics
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
 
+Protocol release health is operator-controlled:
+
+```text
+GET /api/releases/current
+POST /api/releases/current/quarantine
+POST /api/releases/current/activate
+```
+
+A quarantined release is not executed by the worker; queued work is moved to `DEAD_LETTER` with a `PROTOCOL_RELEASE_BLOCKED` error.
+
 Session metadata is stored without raw secrets in `session_artifacts`. The default local session points to the `.env` variables by reference. Inspect it at:
 
 ```text
