@@ -4,7 +4,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import sys
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from xingestion.capabilities import (
     CapabilityPlanner,
@@ -15,10 +15,12 @@ from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import (
-    ProtocolHttpResponse,
+    ProtocolError,
     SearchTweetsRequest,
-    WebSessionAuth,
+    UrllibJsonTransport,
     acquire_search_tweets_page,
+    load_env_file,
+    web_session_auth_from_env,
 )
 
 
@@ -28,103 +30,16 @@ DATA_ROOT = ROOT / "data"
 MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
 
 
-class DemoSearchTransport:
-    def send(self, request):
-        variables = request.json_body["variables"]
-        query = variables["rawQuery"]
-        product = variables["product"]
-        cursor = variables.get("cursor")
-        seed = cursor or "page-1"
-        payload = {
-            "data": {
-                "search_by_raw_query": {
-                    "search_timeline": {
-                        "timeline": {
-                            "instructions": [
-                                {
-                                    "entries": [
-                                        _tweet_entry(
-                                            "910001",
-                                            "protocol_lab",
-                                            "Protocol Lab",
-                                            f"{query} [{product}] reached the pinned SearchTimeline recipe.",
-                                            likes=48,
-                                        ),
-                                        _tweet_entry(
-                                            "910002",
-                                            "ingestion_ops",
-                                            "Ingestion Ops",
-                                            "Raw evidence was stored before parser normalization in this demo run.",
-                                            likes=31,
-                                        ),
-                                        _tweet_entry(
-                                            "910003",
-                                            "release_watch",
-                                            "Release Watch",
-                                            "Capability requests stay stable while GraphQL internals remain inside X-rev.",
-                                            likes=22,
-                                        ),
-                                        {
-                                            "content": {
-                                                "cursorType": "Bottom",
-                                                "value": f"{seed}-next",
-                                            }
-                                        },
-                                    ]
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        }
-        return ProtocolHttpResponse(200, payload, {"x-demo-transport": "true"})
-
-
-def _tweet_entry(tweet_id, username, name, text, *, likes):
-    return {
-        "content": {
-            "itemContent": {
-                "tweet_results": {
-                    "result": {
-                        "__typename": "Tweet",
-                        "rest_id": tweet_id,
-                        "core": {
-                            "user_results": {
-                                "result": {
-                                    "core": {
-                                        "screen_name": username,
-                                        "name": name,
-                                    }
-                                }
-                            }
-                        },
-                        "legacy": {
-                            "id_str": tweet_id,
-                            "full_text": text,
-                            "created_at": "Mon Aug 10 12:00:00 +0000 2026",
-                            "favorite_count": likes,
-                            "retweet_count": 7,
-                            "reply_count": 3,
-                            "quote_count": 2,
-                            "bookmark_count": 5,
-                        },
-                        "views": {"count": str(likes * 41)},
-                    }
-                }
-            }
-        }
-    }
-
-
 class DemoState:
     def __init__(self) -> None:
+        load_env_file(ROOT / ".env")
         DATA_ROOT.mkdir(parents=True, exist_ok=True)
         self.manifest = ProtocolReleaseManifest.from_file(MANIFEST_PATH)
         self.planner = CapabilityPlanner(self.manifest)
         self.ledger = SQLiteTaskLedger(DATA_ROOT / "tasks.sqlite3")
         self.evidence_sink = FileRawEvidenceSink(DATA_ROOT / "raw_evidence")
-        self.transport = DemoSearchTransport()
+        self.transport = UrllibJsonTransport()
+        self.auth = web_session_auth_from_env()
 
 
 STATE = DemoState()
@@ -141,7 +56,8 @@ class DemoHandler(SimpleHTTPRequestHandler):
                 {
                     "ok": True,
                     "release_id": STATE.manifest.release_id,
-                    "mode": "demo",
+                    "mode": "live",
+                    "auth_ready": not STATE.auth.missing_fields(),
                 }
             )
         if parsed.path == "/api/tasks":
@@ -193,17 +109,32 @@ class DemoHandler(SimpleHTTPRequestHandler):
                 from_state=TaskState.ENQUEUED,
                 to_state=TaskState.RUNNING,
             )
-            page = acquire_search_tweets_page(
-                recipe=plan.binding.recipe,
-                auth=WebSessionAuth("demo-auth", "demo-csrf", "demo-bearer"),
-                request=SearchTweetsRequest(
-                    query=query,
-                    product=product,
-                    count=page_size,
-                ),
-                transport=STATE.transport,
-                raw_evidence_sink=STATE.evidence_sink,
-            )
+            try:
+                page = acquire_search_tweets_page(
+                    recipe=plan.binding.recipe,
+                    auth=STATE.auth,
+                    request=SearchTweetsRequest(
+                        query=query,
+                        product=product,
+                        count=page_size,
+                    ),
+                    transport=STATE.transport,
+                    raw_evidence_sink=STATE.evidence_sink,
+                )
+            except (ProtocolError, ValueError) as exc:
+                task = STATE.ledger.transition_task(
+                    task.task_id,
+                    from_state=TaskState.RUNNING,
+                    to_state=TaskState.DEAD_LETTER,
+                )
+                return self._json(
+                    {
+                        "task": _task_dict(task),
+                        "error": getattr(exc, "error_class", exc.__class__.__name__),
+                        "message": str(exc),
+                    },
+                    status=502,
+                )
             task = STATE.ledger.transition_task(
                 task.task_id,
                 from_state=TaskState.RUNNING,

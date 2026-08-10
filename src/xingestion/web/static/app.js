@@ -15,8 +15,10 @@ async function getJson(url, options) {
 
 async function loadHealth() {
   const data = await getJson("/api/health");
-  health.textContent = `${data.mode} - ${data.release_id}`;
-  health.classList.add("ok");
+  health.textContent = data.auth_ready
+    ? `${data.mode} - ${data.release_id}`
+    : "auth missing";
+  health.classList.toggle("ok", data.auth_ready);
 }
 
 async function loadTasks() {
@@ -60,15 +62,19 @@ form.addEventListener("submit", async (event) => {
     page_size: Number(formData.get("page_size")),
     idempotency_key: `ui:${Date.now()}`
   };
-  summary.textContent = "Planning capability request...";
+  summary.textContent = "Planning capability request and calling X...";
   tweets.innerHTML = "";
-  const data = await getJson("/api/search-tweets", {
-    method: "POST",
-    headers: {"content-type": "application/json"},
-    body: JSON.stringify(payload)
-  });
-  renderOutput(data);
-  await loadTasks();
+  try {
+    const data = await getJson("/api/search-tweets", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+    renderOutput(data);
+    await loadTasks();
+  } catch (error) {
+    summary.textContent = error.message;
+  }
 });
 
 loadHealth().catch((error) => {

@@ -18,7 +18,7 @@ The current checkpoint defines immutable protocol revision models, a `SEARCH_TWE
 python -m unittest discover -s tests
 ```
 
-## Run Local Demo
+## Run Local Live App
 
 No Docker is required.
 
@@ -26,4 +26,4 @@ No Docker is required.
 python .\run_demo.py --port 8000
 ```
 
-Open `http://127.0.0.1:8000` and run a demo `SEARCH_TWEETS` acquisition. The demo uses a local transport fixture, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
+Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.

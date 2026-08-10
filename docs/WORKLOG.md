@@ -128,6 +128,27 @@ Verified:
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests`
 - Local server smoke test with `python .\run_demo.py --port 8000`
+- Live `SEARCH_TWEETS` API call returned a `DONE` task, real parsed records, and raw evidence.
+
+Next:
+
+- Add transactional outbox support beside task creation so publish intent is durable before introducing worker dispatch.
+
+## 2026-08-10 - Checkpoint 8: Remove Mock Data and Use Live X Transport
+
+Implemented:
+
+- Removed the local mock SearchTweets transport from the web console path.
+- Added `.env` loading and real authorized X web-session auth resolution.
+- Added `UrllibJsonTransport` for one-attempt live JSON HTTP calls without adding dependencies.
+- Updated the web console health and acquisition flow to report live auth/protocol status.
+- Kept raw evidence persistence and durable task state in the live path.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_demo.py`
+- Live local server health reports auth readiness from `.env`.
 
 Next:
 

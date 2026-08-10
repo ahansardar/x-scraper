@@ -16,6 +16,8 @@ from .transport import (
     ProtocolHttpResponse,
     RetryDisposition,
 )
+from .env import load_env_file, web_session_auth_from_env
+from .urllib_transport import UrllibJsonTransport
 
 __all__ = [
     "OneAttemptTransport",
@@ -29,5 +31,8 @@ __all__ = [
     "WebSessionAuth",
     "acquire_search_tweets_page",
     "build_search_timeline_request",
+    "load_env_file",
     "parse_search_tweets_page",
+    "UrllibJsonTransport",
+    "web_session_auth_from_env",
 ]
