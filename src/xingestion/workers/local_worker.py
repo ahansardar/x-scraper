@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xrev.evidence import RawEvidenceRef, RawEvidenceSink
@@ -12,6 +13,7 @@ from xrev.runtime import (
     acquire_search_tweets_page,
 )
 from xrev.runtime.transport import OneAttemptTransport
+from xrev.runtime.transport import RetryDisposition
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,7 @@ class LocalWorker:
         self.raw_evidence_sink = raw_evidence_sink
 
     def process_one(self) -> WorkerResult:
+        self.ledger.enqueue_due_retries()
         event = self.ledger.claim_next_outbox_event()
         if event is None:
             return WorkerResult(processed=False)
@@ -73,20 +76,13 @@ class LocalWorker:
             task.task_id,
             from_state=TaskState.ENQUEUED,
             to_state=TaskState.RUNNING,
+            increment_attempt=True,
         )
 
         try:
             page = self._execute_task(task)
         except (ProtocolError, ValueError) as exc:
-            task = self.ledger.transition_task(
-                task.task_id,
-                from_state=TaskState.RUNNING,
-                to_state=TaskState.DEAD_LETTER,
-                error_json={
-                    "error_class": getattr(exc, "error_class", exc.__class__.__name__),
-                    "message": str(exc),
-                },
-            )
+            task = self._handle_failure(task, exc)
             return WorkerResult(
                 processed=True,
                 task_id=task.task_id,
@@ -139,3 +135,42 @@ class LocalWorker:
             if binding.recipe.revision_id == recipe_revision_id:
                 return binding.recipe
         raise ValueError(f"No recipe for {recipe_revision_id}")
+
+    def _handle_failure(self, task, exc):
+        error_json = {
+            "error_class": getattr(exc, "error_class", exc.__class__.__name__),
+            "message": str(exc),
+            "attempt_count": task.attempt_count,
+        }
+        retry_disposition = getattr(exc, "retry_disposition", RetryDisposition.NEVER)
+        if (
+            retry_disposition != RetryDisposition.NEVER
+            and task.attempt_count < task.max_attempts
+        ):
+            retry_after = getattr(exc, "retry_after_seconds", None)
+            delay_seconds = retry_after if retry_after is not None else _backoff_seconds(task.attempt_count)
+            return self.ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.RUNNING,
+                to_state=TaskState.RETRY_SCHEDULED,
+                error_json={
+                    **error_json,
+                    "retry_disposition": str(retry_disposition),
+                    "retry_after_seconds": delay_seconds,
+                },
+                next_attempt_at=(datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat(),
+            )
+
+        return self.ledger.transition_task(
+            task.task_id,
+            from_state=TaskState.RUNNING,
+            to_state=TaskState.DEAD_LETTER,
+            error_json={
+                **error_json,
+                "retry_disposition": str(retry_disposition),
+            },
+        )
+
+
+def _backoff_seconds(attempt_count: int) -> int:
+    return min(60, 2 ** max(0, attempt_count - 1))

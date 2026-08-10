@@ -239,6 +239,23 @@ Verified:
 
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests run_app.py run_worker.py`
+
+## 2026-08-10 - Checkpoint 15: Durable Retry Scheduling
+
+Implemented:
+
+- Added `attempt_count`, `max_attempts`, and `next_attempt_at` to tasks.
+- Worker now increments attempts only when a protocol attempt starts.
+- Retryable protocol errors move tasks to `RETRY_SCHEDULED` instead of `DEAD_LETTER`.
+- Due retry tasks are re-enqueued with a fresh outbox event.
+- Non-retryable or exhausted tasks still move to `DEAD_LETTER`.
+- Task API now exposes attempt and next retry metadata.
+- Added tests for retry scheduling and due retry re-enqueueing.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
 - Live local server health reports auth readiness from `.env`.
 
 Next:

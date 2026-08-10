@@ -102,6 +102,34 @@ class TaskLedgerTests(unittest.TestCase):
             self.assertIsNotNone(claimed.published_at)
             self.assertIsNone(ledger.claim_next_outbox_event())
 
+    def test_due_retries_are_reenqueued_with_outbox_events(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="due-retry-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            claimed = ledger.claim_next_outbox_event()
+            self.assertIsNotNone(claimed)
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.RETRY_SCHEDULED,
+                next_attempt_at="2000-01-01T00:00:00+00:00",
+            )
+
+            count = ledger.enqueue_due_retries(now="2000-01-01T00:00:01+00:00")
+            reloaded = ledger.get_task(task.task_id)
+            event = ledger.claim_next_outbox_event()
+
+            self.assertEqual(count, 1)
+            self.assertEqual(reloaded.state, TaskState.ENQUEUED)
+            self.assertEqual(event.task_id, task.task_id)
+
     def test_state_transition_requires_expected_current_state(self):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:

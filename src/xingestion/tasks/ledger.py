@@ -33,6 +33,9 @@ class CapabilityTask:
     plan_json: Mapping[str, object]
     result_json: Mapping[str, object] | None
     error_json: Mapping[str, object] | None
+    attempt_count: int
+    max_attempts: int
+    next_attempt_at: str | None
     created_at: str
     updated_at: str
 
@@ -110,10 +113,13 @@ class SQLiteTaskLedger:
                         plan_json,
                         result_json,
                         error_json,
+                        attempt_count,
+                        max_attempts,
+                        next_attempt_at,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 3, NULL, ?, ?)
                     """,
                     (
                         task_id,
@@ -192,6 +198,66 @@ class SQLiteTaskLedger:
             raise RuntimeError("claimed outbox event could not be reloaded")
         return event
 
+    def create_outbox_event(
+        self,
+        *,
+        task_id: str,
+        event_type: str = "CAPABILITY_TASK_RETRY_DUE",
+        payload_json: Mapping[str, object] | None = None,
+    ) -> OutboxEvent:
+        now = _now()
+        event_id = f"outbox-{uuid4().hex}"
+        payload_json = payload_json or {"task_id": task_id}
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT INTO outbox_events (
+                    event_id,
+                    task_id,
+                    event_type,
+                    payload_json,
+                    created_at,
+                    published_at
+                )
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                (event_id, task_id, event_type, _json(payload_json), now),
+            )
+            conn.commit()
+
+        event = self.get_outbox_event(event_id)
+        if event is None:
+            raise RuntimeError("created outbox event could not be reloaded")
+        return event
+
+    def due_retry_tasks(self, *, now: str | None = None) -> tuple[CapabilityTask, ...]:
+        now = now or _now()
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM capability_tasks
+                WHERE state = ?
+                  AND next_attempt_at IS NOT NULL
+                  AND next_attempt_at <= ?
+                ORDER BY next_attempt_at ASC
+                """,
+                (TaskState.RETRY_SCHEDULED.value, now),
+            ).fetchall()
+        return tuple(_task_from_row(row) for row in rows)
+
+    def enqueue_due_retries(self, *, now: str | None = None) -> int:
+        count = 0
+        for task in self.due_retry_tasks(now=now):
+            self.transition_task(
+                task.task_id,
+                from_state=TaskState.RETRY_SCHEDULED,
+                to_state=TaskState.ENQUEUED,
+            )
+            self.create_outbox_event(task_id=task.task_id)
+            count += 1
+        return count
+
     def get_outbox_event(self, event_id: str) -> OutboxEvent | None:
         with closing(self._connect()) as conn:
             row = conn.execute(
@@ -237,6 +303,8 @@ class SQLiteTaskLedger:
         to_state: TaskState,
         result_json: Mapping[str, object] | None = None,
         error_json: Mapping[str, object] | None = None,
+        next_attempt_at: str | None = None,
+        increment_attempt: bool = False,
     ) -> CapabilityTask:
         now = _now()
         with closing(self._connect()) as conn:
@@ -246,6 +314,8 @@ class SQLiteTaskLedger:
                 SET state = ?,
                     result_json = COALESCE(?, result_json),
                     error_json = COALESCE(?, error_json),
+                    next_attempt_at = ?,
+                    attempt_count = attempt_count + ?,
                     updated_at = ?
                 WHERE task_id = ? AND state = ?
                 """,
@@ -253,6 +323,8 @@ class SQLiteTaskLedger:
                     to_state.value,
                     _json(result_json) if result_json is not None else None,
                     _json(error_json) if error_json is not None else None,
+                    next_attempt_at,
+                    1 if increment_attempt else 0,
                     now,
                     task_id,
                     from_state.value,
@@ -288,6 +360,9 @@ class SQLiteTaskLedger:
             )
             _ensure_column(conn, "capability_tasks", "result_json", "TEXT")
             _ensure_column(conn, "capability_tasks", "error_json", "TEXT")
+            _ensure_column(conn, "capability_tasks", "attempt_count", "INTEGER NOT NULL DEFAULT 0")
+            _ensure_column(conn, "capability_tasks", "max_attempts", "INTEGER NOT NULL DEFAULT 3")
+            _ensure_column(conn, "capability_tasks", "next_attempt_at", "TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS outbox_events (
@@ -326,6 +401,9 @@ def _task_from_row(row: sqlite3.Row) -> CapabilityTask:
         plan_json=json.loads(row["plan_json"]),
         result_json=json.loads(row["result_json"]) if row["result_json"] else None,
         error_json=json.loads(row["error_json"]) if row["error_json"] else None,
+        attempt_count=int(row["attempt_count"]),
+        max_attempts=int(row["max_attempts"]),
+        next_attempt_at=row["next_attempt_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

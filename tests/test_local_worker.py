@@ -58,6 +58,17 @@ class FakeTransport:
         )
 
 
+class FlakyTransport:
+    def __init__(self):
+        self.calls = 0
+
+    def send(self, request):
+        self.calls += 1
+        if self.calls == 1:
+            return ProtocolHttpResponse(500, {"errors": ["temporary"]})
+        return FakeTransport().send(request)
+
+
 def load_manifest():
     return ProtocolReleaseManifest.from_file(
         ROOT / "protocol_releases" / "search_tweets.candidate.json"
@@ -103,6 +114,56 @@ class LocalWorkerTests(unittest.TestCase):
                 result.raw_evidence_ref.evidence_id,
             )
             self.assertIsNone(worker.process_one().task_id)
+
+    def test_worker_schedules_retry_for_retryable_protocol_error(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="retry-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            transport = FlakyTransport()
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=transport,
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+            )
+
+            first = worker.process_one()
+            scheduled = ledger.get_task(task.task_id)
+
+            self.assertEqual(first.state, TaskState.RETRY_SCHEDULED)
+            self.assertEqual(scheduled.state, TaskState.RETRY_SCHEDULED)
+            self.assertEqual(scheduled.attempt_count, 1)
+            self.assertIsNotNone(scheduled.next_attempt_at)
+            self.assertEqual(transport.calls, 1)
+
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.RETRY_SCHEDULED,
+                to_state=TaskState.ENQUEUED,
+            )
+            ledger.create_outbox_event(task_id=task.task_id)
+            second = worker.process_one()
+            done = ledger.get_task(task.task_id)
+
+            self.assertEqual(second.state, TaskState.DONE)
+            self.assertEqual(done.state, TaskState.DONE)
+            self.assertEqual(done.attempt_count, 2)
+            self.assertEqual(transport.calls, 2)
 
 
 if __name__ == "__main__":

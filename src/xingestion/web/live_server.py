@@ -212,6 +212,9 @@ def _task_dict(task):
         "state": task.state.value,
         "has_result": task.result_json is not None,
         "has_error": task.error_json is not None,
+        "attempt_count": task.attempt_count,
+        "max_attempts": task.max_attempts,
+        "next_attempt_at": task.next_attempt_at,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
