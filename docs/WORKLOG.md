@@ -73,3 +73,22 @@ Verified:
 Next:
 
 - Add a production-facing capability request/planner shell that maps `SEARCH_TWEETS` capability requests to the pinned candidate recipe without exposing GraphQL internals.
+
+## 2026-08-10 - Checkpoint 5: Capability Planner Shell
+
+Implemented:
+
+- Added `src/xingestion/capabilities` as the first production control-plane package.
+- Added stable `CapabilityRequest`, `SearchTweetsInput`, and `AcquisitionPlan` objects.
+- Added `CapabilityPlanner` that maps a stable `SEARCH_TWEETS` request to the pinned protocol binding and recipe.
+- Kept GraphQL internals out of public request/plan dictionaries while preserving the internal binding for execution.
+- Added tests for planning, request validation, manifest eligibility, and GraphQL detail hiding.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests`
+
+Next:
+
+- Add a minimal durable task ledger interface and SQLite-backed implementation for capability tasks before introducing Redis or worker leases.

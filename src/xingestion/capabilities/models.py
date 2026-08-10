@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from xrev.protocol import (
+    CapabilityId,
+    ProtocolCapabilityBinding,
+    ProtocolReleaseManifest,
+    RevisionStatus,
+)
+
+
+@dataclass(frozen=True)
+class SearchTweetsInput:
+    query: str
+    product: str = "Top"
+    cursor: str | None = None
+    page_size: int = 20
+
+    def validate(self) -> None:
+        if not self.query.strip():
+            raise CapabilityPlannerError("SEARCH_TWEETS query cannot be empty")
+        if self.page_size < 1 or self.page_size > 50:
+            raise CapabilityPlannerError("SEARCH_TWEETS page_size must be between 1 and 50")
+
+
+@dataclass(frozen=True)
+class CapabilityRequest:
+    capability_id: CapabilityId
+    contract_version: int
+    payload: SearchTweetsInput
+    required_fidelity: str = "STANDARD"
+    traffic_priority: str = "NORMAL"
+
+    def validate(self) -> None:
+        if self.contract_version < 1:
+            raise CapabilityPlannerError("contract_version must be at least 1")
+        self.payload.validate()
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "capability_id": self.capability_id.value,
+            "contract_version": self.contract_version,
+            "payload": {
+                "query": self.payload.query,
+                "product": self.payload.product,
+                "cursor": self.payload.cursor,
+                "page_size": self.payload.page_size,
+            },
+            "required_fidelity": self.required_fidelity,
+            "traffic_priority": self.traffic_priority,
+        }
+
+
+@dataclass(frozen=True)
+class AcquisitionPlan:
+    capability_id: CapabilityId
+    contract_version: int
+    release_id: str
+    recipe_revision_id: str
+    required_auth_class: str
+    cursor: str | None
+    page_size: int
+    traffic_priority: str
+    binding: ProtocolCapabilityBinding
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "capability_id": self.capability_id.value,
+            "contract_version": self.contract_version,
+            "release_id": self.release_id,
+            "recipe_revision_id": self.recipe_revision_id,
+            "required_auth_class": self.required_auth_class,
+            "cursor": self.cursor,
+            "page_size": self.page_size,
+            "traffic_priority": self.traffic_priority,
+        }
+
+
+class CapabilityPlannerError(ValueError):
+    pass
+
+
+class CapabilityPlanner:
+    def __init__(
+        self,
+        manifest: ProtocolReleaseManifest,
+        *,
+        allowed_statuses: set[RevisionStatus] | None = None,
+    ) -> None:
+        self.manifest = manifest
+        self.allowed_statuses = allowed_statuses or {
+            RevisionStatus.CANDIDATE,
+            RevisionStatus.APPROVED,
+        }
+
+    def plan(self, request: CapabilityRequest) -> AcquisitionPlan:
+        request.validate()
+        if self.manifest.status not in self.allowed_statuses:
+            raise CapabilityPlannerError(
+                f"Manifest {self.manifest.release_id} is not eligible for planning"
+            )
+
+        binding = self._find_binding(request.capability_id, request.contract_version)
+        recipe = binding.recipe
+        return AcquisitionPlan(
+            capability_id=request.capability_id,
+            contract_version=request.contract_version,
+            release_id=self.manifest.release_id,
+            recipe_revision_id=recipe.revision_id,
+            required_auth_class=recipe.auth_profile.auth_class,
+            cursor=request.payload.cursor,
+            page_size=request.payload.page_size,
+            traffic_priority=request.traffic_priority,
+            binding=binding,
+        )
+
+    def _find_binding(
+        self,
+        capability_id: CapabilityId,
+        contract_version: int,
+    ) -> ProtocolCapabilityBinding:
+        for binding in self.manifest.bindings:
+            if (
+                binding.capability_id == capability_id
+                and binding.contract_version == contract_version
+            ):
+                return binding
+
+        raise CapabilityPlannerError(
+            f"No binding for {capability_id.value} contract v{contract_version}"
+        )
