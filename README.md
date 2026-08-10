@@ -64,7 +64,8 @@ Content-Type: application/json
   "payload": {
     "query": "india lang:en",
     "product": "Top",
-    "page_size": 20
+    "page_size": 20,
+    "max_pages": 1
   },
   "idempotency_key": "client-request-001"
 }

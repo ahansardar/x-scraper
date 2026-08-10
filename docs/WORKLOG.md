@@ -536,6 +536,26 @@ Next:
 
 - Add multi-page pagination orchestration with bounded cursor tasks.
 
+## 2026-08-10 - Checkpoint 31: Bounded Pagination Tasks
+
+Implemented:
+
+- Extended `SEARCH_TWEETS` capability payloads with `max_pages`, `page_number`, and pagination lineage fields.
+- Worker now creates a new durable continuation task when X-rev returns a next cursor and the bounded page limit is not reached.
+- Continuation tasks preserve root task ID, parent task ID, opaque cursor, page number, and max page limit.
+- Completed task results now include pagination metadata and continuation task ID.
+- Generic capability API accepts `max_pages`.
+- Added tests for capability validation, northbound payload persistence, continuation queueing, and bounded stop behavior.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Harden migration status and startup validation.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

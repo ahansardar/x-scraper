@@ -42,6 +42,8 @@ class CapabilityPlannerTests(unittest.TestCase):
         self.assertEqual(plan.required_auth_class, "AUTHORIZED_WEB_SESSION")
         self.assertEqual(plan.cursor, "opaque")
         self.assertEqual(plan.page_size, 25)
+        self.assertEqual(plan.max_pages, 1)
+        self.assertEqual(plan.page_number, 1)
         self.assertEqual(public_plan["traffic_priority"], "HIGH")
         self.assertNotIn("operation_id", public_plan)
         self.assertNotIn("url_template", public_plan)
@@ -65,6 +67,24 @@ class CapabilityPlannerTests(unittest.TestCase):
                     capability_id=CapabilityId.SEARCH_TWEETS,
                     contract_version=1,
                     payload=SearchTweetsInput(query="india", page_size=99),
+                )
+            )
+
+        with self.assertRaisesRegex(CapabilityPlannerError, "max_pages"):
+            planner.plan(
+                CapabilityRequest(
+                    capability_id=CapabilityId.SEARCH_TWEETS,
+                    contract_version=1,
+                    payload=SearchTweetsInput(query="india", max_pages=0),
+                )
+            )
+
+        with self.assertRaisesRegex(CapabilityPlannerError, "page_number"):
+            planner.plan(
+                CapabilityRequest(
+                    capability_id=CapabilityId.SEARCH_TWEETS,
+                    contract_version=1,
+                    payload=SearchTweetsInput(query="india", max_pages=2, page_number=3),
                 )
             )
 

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseStore
+from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xrev.evidence import RawEvidenceRef, RawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import (
@@ -51,6 +52,7 @@ class LocalWorker:
         self.raw_evidence_sink = raw_evidence_sink
         self.canonical_store = canonical_store
         self.release_store = release_store
+        self.planner = CapabilityPlanner(self.manifest)
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
 
@@ -138,6 +140,7 @@ class LocalWorker:
                 release_id=self.manifest.release_id,
                 recipe_revision_id=task.plan_json["recipe_revision_id"],
             )
+        continuation_task_id = self._queue_continuation_if_needed(task, page)
 
         task = self.ledger.transition_task(
             task.task_id,
@@ -151,7 +154,13 @@ class LocalWorker:
                     "evidence_id": page.raw_evidence_ref.evidence_id,
                     "content_sha256": page.raw_evidence_ref.content_sha256,
                     "storage_uri": page.raw_evidence_ref.storage_uri,
-                }
+                },
+                "pagination": {
+                    "next_cursor": page.next_cursor,
+                    "page_number": int(task.request_json["payload"].get("page_number", 1)),
+                    "max_pages": int(task.request_json["payload"].get("max_pages", 1)),
+                    "continuation_task_id": continuation_task_id,
+                },
             },
         )
         return WorkerResult(
@@ -161,6 +170,39 @@ class LocalWorker:
             raw_evidence_ref=page.raw_evidence_ref,
             lease_renewals=lease_renewals,
         )
+
+    def _queue_continuation_if_needed(self, task, page):
+        payload = task.request_json["payload"]
+        page_number = int(payload.get("page_number", 1))
+        max_pages = int(payload.get("max_pages", 1))
+        if not page.next_cursor or page_number >= max_pages:
+            return None
+
+        root_task_id = payload.get("pagination_root_task_id") or task.task_id
+        next_payload = SearchTweetsInput(
+            query=str(payload["query"]),
+            product=str(payload.get("product", "Top")),
+            cursor=page.next_cursor,
+            page_size=int(payload.get("page_size", 20)),
+            max_pages=max_pages,
+            page_number=page_number + 1,
+            pagination_root_task_id=str(root_task_id),
+            pagination_parent_task_id=task.task_id,
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=task.contract_version,
+            payload=next_payload,
+        )
+        plan = self.planner.plan(request)
+        continuation = self.ledger.create_task(
+            idempotency_key=f"pagination:{root_task_id}:{page_number + 1}",
+            capability_id=request.capability_id,
+            contract_version=request.contract_version,
+            request_json=request.public_dict(),
+            plan_json=plan.public_dict(),
+        )
+        return continuation.task_id
 
     def _renew_lease(self, task):
         lease_expires_at = (

@@ -173,9 +173,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         query = str(body.get("query", "")).strip()
         product = str(body.get("product", "Top"))
         page_size = int(body.get("page_size", 20))
+        max_pages = int(body.get("max_pages", 1))
         idempotency_key = str(
             body.get("idempotency_key")
-            or f"live:{query}:{product}:{page_size}"
+            or f"live:{query}:{product}:{page_size}:{max_pages}"
         )
         capability_request = CapabilityRequest(
             capability_id=CapabilityId.SEARCH_TWEETS,
@@ -184,6 +185,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 query=query,
                 product=product,
                 page_size=page_size,
+                max_pages=max_pages,
             ),
         )
         return self._queue_capability_request(capability_request, idempotency_key)
@@ -206,6 +208,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                     product=str(payload.get("product", "Top")),
                     cursor=payload.get("cursor"),
                     page_size=int(payload.get("page_size", 20)),
+                    max_pages=int(payload.get("max_pages", 1)),
+                    page_number=int(payload.get("page_number", 1)),
+                    pagination_root_task_id=payload.get("pagination_root_task_id"),
+                    pagination_parent_task_id=payload.get("pagination_parent_task_id"),
                 ),
             )
             idempotency_key = str(

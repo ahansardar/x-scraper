@@ -51,6 +51,7 @@ class NorthboundApiTests(unittest.TestCase):
                         "query": "india lang:en",
                         "product": "Top",
                         "page_size": 20,
+                        "max_pages": 2,
                     },
                     "idempotency_key": "northbound-1",
                 }
@@ -59,6 +60,8 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 202)
             self.assertEqual(payload["task"]["capability_id"], "SEARCH_TWEETS")
             self.assertEqual(payload["status_url"], f"/api/tasks/{payload['task']['task_id']}")
+            task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
+            self.assertEqual(task.request_json["payload"]["max_pages"], 2)
 
     def test_generic_capability_rejects_unknown_capability(self):
         handler = FakeHandler()

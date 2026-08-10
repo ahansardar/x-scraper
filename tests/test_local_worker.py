@@ -60,6 +60,15 @@ class FakeTransport:
         )
 
 
+class CursorTransport(FakeTransport):
+    def send(self, request):
+        response = super().send(request)
+        body = dict(response.json_body)
+        body["cursorType"] = "Bottom"
+        body["value"] = "cursor-next"
+        return ProtocolHttpResponse(response.status_code, body)
+
+
 class FlakyTransport:
     def __init__(self):
         self.calls = 0
@@ -153,6 +162,92 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(store.counts()["engagement_observations"], 1)
             self.assertEqual(store.get_tweet("1").username, "alice")
             self.assertEqual(ledger.get_task(task.task_id).state, TaskState.DONE)
+
+    def test_worker_queues_bounded_cursor_continuation(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20, max_pages=2),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            task = ledger.create_task(
+                idempotency_key="pagination-root",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=CursorTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+            )
+
+            result = worker.process_one()
+            root = ledger.get_task(task.task_id)
+            continuation_id = root.result_json["pagination"]["continuation_task_id"]
+            continuation = ledger.get_task(continuation_id)
+
+            self.assertEqual(result.state, TaskState.DONE)
+            self.assertEqual(root.result_json["pagination"]["next_cursor"], "cursor-next")
+            self.assertEqual(continuation.state, TaskState.CREATED)
+            self.assertEqual(continuation.request_json["payload"]["cursor"], "cursor-next")
+            self.assertEqual(continuation.request_json["payload"]["page_number"], 2)
+            self.assertEqual(
+                continuation.request_json["payload"]["pagination_root_task_id"],
+                task.task_id,
+            )
+            self.assertEqual(
+                continuation.request_json["payload"]["pagination_parent_task_id"],
+                task.task_id,
+            )
+
+    def test_worker_does_not_continue_after_max_pages(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(
+                query="india",
+                cursor="cursor-current",
+                page_size=20,
+                max_pages=2,
+                page_number=2,
+                pagination_root_task_id="task-root",
+                pagination_parent_task_id="task-parent",
+            ),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="pagination-final",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=CursorTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+            )
+
+            worker.process_one()
+            final = ledger.get_task(task.task_id)
+
+            self.assertIsNone(final.result_json["pagination"]["continuation_task_id"])
+            self.assertEqual(final.result_json["pagination"]["page_number"], 2)
 
     def test_worker_schedules_retry_for_retryable_protocol_error(self):
         manifest = load_manifest()

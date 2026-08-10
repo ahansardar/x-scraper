@@ -17,12 +17,20 @@ class SearchTweetsInput:
     product: str = "Top"
     cursor: str | None = None
     page_size: int = 20
+    max_pages: int = 1
+    page_number: int = 1
+    pagination_root_task_id: str | None = None
+    pagination_parent_task_id: str | None = None
 
     def validate(self) -> None:
         if not self.query.strip():
             raise CapabilityPlannerError("SEARCH_TWEETS query cannot be empty")
         if self.page_size < 1 or self.page_size > 50:
             raise CapabilityPlannerError("SEARCH_TWEETS page_size must be between 1 and 50")
+        if self.max_pages < 1 or self.max_pages > 25:
+            raise CapabilityPlannerError("SEARCH_TWEETS max_pages must be between 1 and 25")
+        if self.page_number < 1 or self.page_number > self.max_pages:
+            raise CapabilityPlannerError("SEARCH_TWEETS page_number must be between 1 and max_pages")
 
 
 @dataclass(frozen=True)
@@ -47,6 +55,10 @@ class CapabilityRequest:
                 "product": self.payload.product,
                 "cursor": self.payload.cursor,
                 "page_size": self.payload.page_size,
+                "max_pages": self.payload.max_pages,
+                "page_number": self.payload.page_number,
+                "pagination_root_task_id": self.payload.pagination_root_task_id,
+                "pagination_parent_task_id": self.payload.pagination_parent_task_id,
             },
             "required_fidelity": self.required_fidelity,
             "traffic_priority": self.traffic_priority,
@@ -62,6 +74,8 @@ class AcquisitionPlan:
     required_auth_class: str
     cursor: str | None
     page_size: int
+    max_pages: int
+    page_number: int
     traffic_priority: str
     binding: ProtocolCapabilityBinding
 
@@ -74,6 +88,8 @@ class AcquisitionPlan:
             "required_auth_class": self.required_auth_class,
             "cursor": self.cursor,
             "page_size": self.page_size,
+            "max_pages": self.max_pages,
+            "page_number": self.page_number,
             "traffic_priority": self.traffic_priority,
         }
 
@@ -112,6 +128,8 @@ class CapabilityPlanner:
             required_auth_class=recipe.auth_profile.auth_class,
             cursor=request.payload.cursor,
             page_size=request.payload.page_size,
+            max_pages=request.payload.max_pages,
+            page_number=request.payload.page_number,
             traffic_priority=request.traffic_priority,
             binding=binding,
         )
