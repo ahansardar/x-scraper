@@ -3,6 +3,8 @@ const form = document.querySelector("#searchForm");
 const summary = document.querySelector("#summary");
 const tweets = document.querySelector("#tweets");
 const tasks = document.querySelector("#tasks");
+const retention = document.querySelector("#retention");
+const runRetention = document.querySelector("#runRetention");
 
 async function getJson(url, options) {
   const response = await fetch(url, options);
@@ -31,6 +33,14 @@ async function loadTasks() {
       <td>${taskActions(task)}</td>
     </tr>
   `).join("");
+}
+
+async function loadRetention() {
+  const data = await getJson("/api/retention");
+  retention.innerHTML = `
+    Keeping terminal tasks for <strong>${data.retention_days}</strong> days.
+    Cleanup currently matches <strong>${data.dry_run.matched_tasks}</strong> tasks.
+  `;
 }
 
 function taskActions(task) {
@@ -137,6 +147,22 @@ tasks.addEventListener("click", async (event) => {
   }
 });
 
+runRetention.addEventListener("click", async () => {
+  runRetention.disabled = true;
+  try {
+    const data = await getJson("/api/retention/run", {method: "POST"});
+    retention.innerHTML = `
+      Deleted <strong>${data.retention.deleted_tasks}</strong> terminal tasks
+      older than <code>${data.retention.cutoff}</code>.
+    `;
+    await loadTasks();
+  } catch (error) {
+    retention.textContent = error.message;
+  } finally {
+    runRetention.disabled = false;
+  }
+});
+
 async function waitForResult(resultUrl) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(resultUrl);
@@ -169,3 +195,4 @@ loadHealth().catch((error) => {
   health.textContent = error.message;
 });
 loadTasks();
+loadRetention();

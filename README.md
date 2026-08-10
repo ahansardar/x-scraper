@@ -50,6 +50,7 @@ X_BEARER=
 XINGESTION_DATA_DIR=F:\x-scraper-data
 XINGESTION_HOST=127.0.0.1
 XINGESTION_PORT=8000
+XINGESTION_RETENTION_DAYS=30
 ```
 
 Storage locations:
@@ -66,3 +67,12 @@ GET /api/health
 ```
 
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
+
+Retention cleanup is available from the Operations panel and:
+
+```text
+GET /api/retention
+POST /api/retention/run
+```
+
+Cleanup removes old `DONE` and `CANCELLED` task ledger rows after `XINGESTION_RETENTION_DAYS`. `DEAD_LETTER` rows are preserved for investigation and replay.

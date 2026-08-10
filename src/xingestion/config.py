@@ -13,6 +13,7 @@ class AppConfig:
     raw_evidence_dir: Path
     host: str
     port: int
+    retention_days: int
 
 
 def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
@@ -21,6 +22,7 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
     host = _value_from_args(argv, "--host") or os.getenv("XINGESTION_HOST", "127.0.0.1")
     port_value = _value_from_args(argv, "--port") or os.getenv("XINGESTION_PORT", "8000")
     port = int(port_value)
+    retention_days = int(os.getenv("XINGESTION_RETENTION_DAYS", "30"))
 
     return AppConfig(
         root=root,
@@ -29,6 +31,7 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
         raw_evidence_dir=data_dir / "raw_evidence",
         host=host,
         port=port,
+        retention_days=retention_days,
     )
 
 

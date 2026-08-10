@@ -19,23 +19,31 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.raw_evidence_dir, (ROOT / "data" / "raw_evidence").resolve())
         self.assertEqual(config.host, "127.0.0.1")
         self.assertEqual(config.port, 8000)
+        self.assertEqual(config.retention_days, 30)
 
     def test_env_and_args_override_deployment_settings(self):
         old_values = {
             key: os.environ.get(key)
-            for key in ("XINGESTION_DATA_DIR", "XINGESTION_HOST", "XINGESTION_PORT")
+            for key in (
+                "XINGESTION_DATA_DIR",
+                "XINGESTION_HOST",
+                "XINGESTION_PORT",
+                "XINGESTION_RETENTION_DAYS",
+            )
         }
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 os.environ["XINGESTION_DATA_DIR"] = temp_dir
                 os.environ["XINGESTION_HOST"] = "0.0.0.0"
                 os.environ["XINGESTION_PORT"] = "9000"
+                os.environ["XINGESTION_RETENTION_DAYS"] = "14"
 
                 config = load_app_config(ROOT, ["--port", "9001"])
 
                 self.assertEqual(config.data_dir, Path(temp_dir).resolve())
                 self.assertEqual(config.host, "0.0.0.0")
                 self.assertEqual(config.port, 9001)
+                self.assertEqual(config.retention_days, 14)
         finally:
             for key, value in old_values.items():
                 if value is None:

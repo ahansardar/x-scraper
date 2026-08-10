@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from contextlib import closing
 import json
@@ -54,6 +54,14 @@ class OutboxEvent:
     payload_json: Mapping[str, object]
     created_at: str
     published_at: str | None
+
+
+@dataclass(frozen=True)
+class RetentionResult:
+    cutoff: str
+    matched_tasks: int
+    deleted_tasks: int
+    dry_run: bool
 
 
 class TaskLedger(Protocol):
@@ -302,6 +310,60 @@ class SQLiteTaskLedger:
         if cancelled is None:
             raise RuntimeError("cancelled task could not be reloaded")
         return cancelled
+
+    def apply_retention(
+        self,
+        *,
+        days: int,
+        dry_run: bool = True,
+    ) -> RetentionResult:
+        if days < 1:
+            raise ValueError("retention days must be at least 1")
+
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        terminal_states = (TaskState.DONE.value, TaskState.CANCELLED.value)
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM capability_tasks
+                WHERE state IN (?, ?)
+                  AND updated_at < ?
+                """,
+                (*terminal_states, cutoff),
+            ).fetchone()
+            matched = int(row["count"])
+            deleted = 0
+            if not dry_run and matched:
+                conn.execute(
+                    """
+                    DELETE FROM outbox_events
+                    WHERE task_id IN (
+                        SELECT task_id
+                        FROM capability_tasks
+                        WHERE state IN (?, ?)
+                          AND updated_at < ?
+                    )
+                    """,
+                    (*terminal_states, cutoff),
+                )
+                cursor = conn.execute(
+                    """
+                    DELETE FROM capability_tasks
+                    WHERE state IN (?, ?)
+                      AND updated_at < ?
+                    """,
+                    (*terminal_states, cutoff),
+                )
+                deleted = cursor.rowcount
+                conn.commit()
+
+        return RetentionResult(
+            cutoff=cutoff,
+            matched_tasks=matched,
+            deleted_tasks=deleted,
+            dry_run=dry_run,
+        )
 
     def claim_next_outbox_event(self) -> OutboxEvent | None:
         now = _now()

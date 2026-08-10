@@ -3,6 +3,7 @@
 from .ledger import (
     CapabilityTask,
     OutboxEvent,
+    RetentionResult,
     SQLiteTaskLedger,
     TaskLedger,
     TaskState,
@@ -11,6 +12,7 @@ from .ledger import (
 __all__ = [
     "CapabilityTask",
     "OutboxEvent",
+    "RetentionResult",
     "SQLiteTaskLedger",
     "TaskLedger",
     "TaskState",

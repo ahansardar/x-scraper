@@ -74,6 +74,18 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             )
         if parsed.path == "/api/storage":
             return self._json(_storage_dict())
+        if parsed.path == "/api/retention":
+            return self._json(
+                {
+                    "retention_days": STATE.config.retention_days,
+                    "dry_run": _retention_dict(
+                        STATE.ledger.apply_retention(
+                            days=STATE.config.retention_days,
+                            dry_run=True,
+                        )
+                    ),
+                }
+            )
         if parsed.path == "/api/tasks":
             return self._json({"tasks": self._list_tasks()})
         if parsed.path.startswith("/api/tasks/"):
@@ -92,6 +104,9 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 return self._replay_task(parts[2])
             if len(parts) == 4 and parts[3] == "cancel":
                 return self._cancel_task(parts[2])
+
+        if parsed.path == "/api/retention/run":
+            return self._run_retention()
 
         if parsed.path != "/api/search-tweets":
             self.send_error(404)
@@ -166,6 +181,13 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             },
             status=200,
         )
+
+    def _run_retention(self):
+        result = STATE.ledger.apply_retention(
+            days=STATE.config.retention_days,
+            dry_run=False,
+        )
+        return self._json({"retention": _retention_dict(result)}, status=200)
 
     def _read_json(self):
         length = int(self.headers.get("content-length", "0"))
@@ -307,6 +329,16 @@ def _storage_dict():
         "data_dir": str(STATE.config.data_dir),
         "sqlite_path": str(STATE.config.sqlite_path),
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
+        "retention_days": STATE.config.retention_days,
+    }
+
+
+def _retention_dict(result):
+    return {
+        "cutoff": result.cutoff,
+        "matched_tasks": result.matched_tasks,
+        "deleted_tasks": result.deleted_tasks,
+        "dry_run": result.dry_run,
     }
 
 

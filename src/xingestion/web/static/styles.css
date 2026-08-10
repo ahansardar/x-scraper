@@ -89,6 +89,7 @@ h2 {
 }
 
 .flow-panel,
+.ops-panel,
 .output-panel {
   grid-column: 2;
 }
@@ -117,6 +118,11 @@ h2 {
 
 .mark.neutral {
   background: #596579;
+}
+
+.ops-panel {
+  display: grid;
+  gap: 12px;
 }
 
 label {

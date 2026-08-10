@@ -317,3 +317,23 @@ Verified:
 Next:
 
 - Add retention cleanup controls for terminal deployment data.
+
+## 2026-08-10 - Checkpoint 19: Retention Cleanup
+
+Implemented:
+
+- Added `XINGESTION_RETENTION_DAYS` deployment configuration.
+- Added dry-run and apply retention cleanup for old `DONE` and `CANCELLED` tasks.
+- Preserved `DEAD_LETTER` tasks for investigation and replay.
+- Added `GET /api/retention` and `POST /api/retention/run`.
+- Added an Operations frontend panel for retention status and cleanup.
+- Documented retention behavior in README.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add canonical tweet and engagement observation persistence.
