@@ -515,3 +515,23 @@ Verified:
 Next:
 
 - Add a local live smoke command for deployment verification.
+
+## 2026-08-10 - Checkpoint 29: Deployment Smoke Command
+
+Implemented:
+
+- Added `run_smoke.py` for no-Docker deployment health verification.
+- Smoke checks `/api/health`, `/api/storage`, `/api/metrics`, `/api/sessions`, and `/api/releases/current`.
+- Optional `--submit` path posts a real `SEARCH_TWEETS` capability task and polls its result.
+- Smoke output reports storage paths, auth readiness, release health, sessions, active tasks, and canonical counts.
+- Updated README, deployment runbook, and CI compile checks.
+- Added smoke client tests for health-only and real capability submission payload shape.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add multi-page pagination orchestration with bounded cursor tasks.

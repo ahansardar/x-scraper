@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py
 
       - name: Static smoke check frontend assets
         shell: pwsh

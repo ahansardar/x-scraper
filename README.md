@@ -16,7 +16,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -39,6 +39,18 @@ python .\run_worker.py
 ```
 
 Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The web app queues a task and the worker processes it from the transactional outbox. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
+
+Smoke-check a running deployment:
+
+```powershell
+python .\run_smoke.py --base-url http://127.0.0.1:8000
+```
+
+Submit one real task and wait for the worker:
+
+```powershell
+python .\run_smoke.py --base-url http://127.0.0.1:8000 --submit "india lang:en" --wait 90
+```
 
 Parent systems can submit through the stable capability API:
 
