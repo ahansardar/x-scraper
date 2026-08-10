@@ -365,6 +365,48 @@ class SQLiteTaskLedger:
             dry_run=dry_run,
         )
 
+    def task_state_counts(self) -> dict[str, int]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT state, COUNT(*) AS count
+                FROM capability_tasks
+                GROUP BY state
+                """
+            ).fetchall()
+        counts = {state.value: 0 for state in TaskState}
+        counts.update({row["state"]: int(row["count"]) for row in rows})
+        return counts
+
+    def outbox_stats(self) -> dict[str, int | str | None]:
+        now = _now()
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at
+                FROM outbox_events
+                WHERE published_at IS NULL
+                """
+            ).fetchone()
+
+        oldest = row["oldest_created_at"]
+        lag_seconds = None
+        if oldest:
+            lag_seconds = max(
+                0,
+                int(
+                    (
+                        datetime.fromisoformat(now)
+                        - datetime.fromisoformat(oldest)
+                    ).total_seconds()
+                ),
+            )
+        return {
+            "unpublished_events": int(row["count"]),
+            "oldest_unpublished_at": oldest,
+            "oldest_unpublished_lag_seconds": lag_seconds,
+        }
+
     def claim_next_outbox_event(self) -> OutboxEvent | None:
         now = _now()
         with closing(self._connect()) as conn:

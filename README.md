@@ -77,6 +77,14 @@ Inspect the latest canonical counts and observations at:
 GET /api/canonical/tweets
 ```
 
+Operational metrics are exposed at:
+
+```text
+GET /api/metrics
+```
+
+The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
+
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 
 Retention cleanup is available from the Operations panel and:

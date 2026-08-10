@@ -373,6 +373,30 @@ class TaskLedgerTests(unittest.TestCase):
             self.assertIsNone(ledger.get_task(cancelled.task_id))
             self.assertIsNotNone(ledger.get_task(dead.task_id))
 
+    def test_task_state_counts_and_outbox_stats(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger.create_task(
+                idempotency_key="metrics-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+
+            counts = ledger.task_state_counts()
+            outbox = ledger.outbox_stats()
+
+            self.assertEqual(counts["CREATED"], 1)
+            self.assertEqual(counts["DONE"], 0)
+            self.assertEqual(outbox["unpublished_events"], 1)
+            self.assertIsNotNone(outbox["oldest_unpublished_at"])
+            self.assertGreaterEqual(outbox["oldest_unpublished_lag_seconds"], 0)
+
+            ledger.claim_next_outbox_event()
+            self.assertEqual(ledger.outbox_stats()["unpublished_events"], 0)
+
     def test_state_transition_requires_expected_current_state(self):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:

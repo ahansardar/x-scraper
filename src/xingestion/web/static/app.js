@@ -5,6 +5,7 @@ const tweets = document.querySelector("#tweets");
 const tasks = document.querySelector("#tasks");
 const retention = document.querySelector("#retention");
 const runRetention = document.querySelector("#runRetention");
+const metrics = document.querySelector("#metrics");
 
 async function getJson(url, options) {
   const response = await fetch(url, options);
@@ -40,6 +41,18 @@ async function loadRetention() {
   retention.innerHTML = `
     Keeping terminal tasks for <strong>${data.retention_days}</strong> days.
     Cleanup currently matches <strong>${data.dry_run.matched_tasks}</strong> tasks.
+  `;
+}
+
+async function loadMetrics() {
+  const data = await getJson("/api/metrics");
+  metrics.innerHTML = `
+    <div><strong>${data.tasks.active}</strong><span>active tasks</span></div>
+    <div><strong>${data.tasks.terminal}</strong><span>terminal tasks</span></div>
+    <div><strong>${data.outbox.unpublished_events}</strong><span>outbox pending</span></div>
+    <div><strong>${data.canonical.canonical_tweets}</strong><span>canonical tweets</span></div>
+    <div><strong>${data.canonical.engagement_observations}</strong><span>engagement observations</span></div>
+    <div><strong>${data.auth_ready ? "ready" : "missing"}</strong><span>auth state</span></div>
   `;
 }
 
@@ -102,6 +115,7 @@ form.addEventListener("submit", async (event) => {
       task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
     `;
     await loadTasks();
+    await loadMetrics();
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
@@ -126,6 +140,7 @@ tasks.addEventListener("click", async (event) => {
       summary.textContent = error.message;
     }
     await loadTasks();
+    await loadMetrics();
     return;
   }
 
@@ -140,10 +155,12 @@ tasks.addEventListener("click", async (event) => {
       replay task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
     `;
     await loadTasks();
+    await loadMetrics();
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
     await loadTasks();
+    await loadMetrics();
   }
 });
 
@@ -156,6 +173,7 @@ runRetention.addEventListener("click", async () => {
       older than <code>${data.retention.cutoff}</code>.
     `;
     await loadTasks();
+    await loadMetrics();
   } catch (error) {
     retention.textContent = error.message;
   } finally {
@@ -170,11 +188,13 @@ async function waitForResult(resultUrl) {
     if (response.status === 200) {
       renderOutput(data);
       await loadTasks();
+      await loadMetrics();
       return;
     }
     if (response.status >= 500) {
       summary.textContent = data.error?.message || data.message || "Task failed";
       await loadTasks();
+      await loadMetrics();
       return;
     }
     summary.innerHTML = `
@@ -183,6 +203,7 @@ async function waitForResult(resultUrl) {
     `;
     await delay(1500);
     await loadTasks();
+    await loadMetrics();
   }
   summary.textContent = "Timed out waiting for worker result.";
 }
@@ -196,3 +217,4 @@ loadHealth().catch((error) => {
 });
 loadTasks();
 loadRetention();
+loadMetrics();

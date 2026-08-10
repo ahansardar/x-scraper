@@ -357,3 +357,23 @@ Verified:
 Next:
 
 - Add operational metrics for tasks, outbox, canonical records, and worker health.
+
+## 2026-08-10 - Checkpoint 21: Operational Metrics
+
+Implemented:
+
+- Added task state counts across all lifecycle states.
+- Added outbox pending depth and oldest unpublished event lag.
+- Added `GET /api/metrics` with task, outbox, canonical, auth, release, and storage metrics.
+- Added a frontend Metrics panel for active tasks, terminal tasks, outbox backlog, canonical tweets, observations, and auth state.
+- Documented the metrics endpoint.
+- Added tests for metric aggregation and frontend exposure.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add session/secret/network allocation primitives before expanding capability coverage.

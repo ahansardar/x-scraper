@@ -75,6 +75,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                     "storage": _storage_dict(),
                 }
             )
+        if parsed.path == "/api/metrics":
+            return self._json(_metrics_dict())
         if parsed.path == "/api/storage":
             return self._json(_storage_dict())
         if parsed.path == "/api/retention":
@@ -343,6 +345,32 @@ def _storage_dict():
         "sqlite_path": str(STATE.config.sqlite_path),
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
         "retention_days": STATE.config.retention_days,
+    }
+
+
+def _metrics_dict():
+    task_counts = STATE.ledger.task_state_counts()
+    canonical_counts = STATE.canonical_store.counts()
+    return {
+        "release_id": STATE.manifest.release_id,
+        "auth_ready": not STATE.auth.missing_fields(),
+        "tasks": {
+            "state_counts": task_counts,
+            "active": (
+                task_counts["CREATED"]
+                + task_counts["ENQUEUED"]
+                + task_counts["RUNNING"]
+                + task_counts["RETRY_SCHEDULED"]
+            ),
+            "terminal": (
+                task_counts["DONE"]
+                + task_counts["DEAD_LETTER"]
+                + task_counts["CANCELLED"]
+            ),
+        },
+        "outbox": STATE.ledger.outbox_stats(),
+        "canonical": canonical_counts,
+        "storage": _storage_dict(),
     }
 
 

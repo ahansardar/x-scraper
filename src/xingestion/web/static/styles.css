@@ -90,6 +90,7 @@ h2 {
 
 .flow-panel,
 .ops-panel,
+.metrics-panel,
 .output-panel {
   grid-column: 2;
 }
@@ -123,6 +124,36 @@ h2 {
 .ops-panel {
   display: grid;
   gap: 12px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metrics-grid div {
+  min-height: 66px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbfcfd;
+}
+
+.metrics-grid strong,
+.metrics-grid span {
+  display: block;
+}
+
+.metrics-grid strong {
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.metrics-grid span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
 }
 
 label {
@@ -271,8 +302,13 @@ th {
   .control-panel,
   .task-panel,
   .flow-panel,
+  .metrics-panel,
   .output-panel {
     display: block;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .panel {

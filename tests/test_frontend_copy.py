@@ -17,6 +17,7 @@ class FrontendCopyTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("Run live acquisition", html)
+        self.assertIn("Metrics", html)
         self.assertNotIn("mock", html.lower())
 
 
