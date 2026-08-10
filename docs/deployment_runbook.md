@@ -32,6 +32,7 @@ Apply migrations first:
 ```powershell
 python .\run_migrations.py
 python .\run_preflight.py
+python .\run_health_report.py
 ```
 
 Terminal 1:
@@ -50,6 +51,7 @@ After the web process is listening, verify the deployed API shape:
 
 ```powershell
 python .\run_preflight.py --base-url http://127.0.0.1:8000
+python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
 ## Health Checks
@@ -70,6 +72,7 @@ The app stores:
 - task ledger: `XINGESTION_DATA_DIR\tasks.sqlite3`
 - raw evidence: `XINGESTION_DATA_DIR\raw_evidence`
 - canonical tweets and observations: `tasks.sqlite3`
+- health report exports: `XINGESTION_DATA_DIR\reports\health-report-*.json`
 
 Session records expose `health`, lease metadata, `cooldown_until`, attempt counters, last attempt/success times, and the latest error class/message. HTTP 429 protocol responses cool down only the leased session, so other healthy sessions can continue processing while the limited account waits. Once the cooldown expires, a successful retry restores that session to `HEALTHY`.
 
@@ -167,13 +170,21 @@ Run terminal-task retention cleanup:
 POST /api/retention/run
 ```
 
+Export an operator handoff report:
+
+```powershell
+python .\run_health_report.py --base-url http://127.0.0.1:8000
+```
+
+The report includes preflight checks, migration state, storage paths, task and outbox counts, canonical counts, telemetry summary, release risk, and safe session diagnostics. It intentionally excludes raw X secrets, credential references, and lease tokens.
+
 ## Verification Before Release
 
 Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py
 ```
 
 After starting web and worker:
@@ -182,6 +193,7 @@ After starting web and worker:
 python .\run_preflight.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000 --submit "india lang:en" --wait 90
+python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
 CI runs the same checks on Windows Python 3.11 and 3.12, including frontend and secret-hygiene checks.

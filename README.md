@@ -16,7 +16,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -46,6 +46,7 @@ Smoke-check a running deployment:
 ```powershell
 python .\run_preflight.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000
+python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
 Submit one real task and wait for the worker:
@@ -102,6 +103,7 @@ Storage locations:
 
 - Default task ledger: `./data/tasks.sqlite3`
 - Default raw evidence: `./data/raw_evidence/`
+- Default health reports: `./data/reports/`
 - Production/deployment override: set `XINGESTION_DATA_DIR` to a persistent disk path.
 
 The live app also exposes storage paths at:
@@ -170,6 +172,14 @@ python .\run_preflight.py --base-url http://127.0.0.1:8000
 ```
 
 Use `--strict-warnings` when auth/API warning states should fail the command in automation.
+
+Export an operator health report after preflight:
+
+```powershell
+python .\run_health_report.py --base-url http://127.0.0.1:8000
+```
+
+Reports are written to `XINGESTION_DATA_DIR\reports\health-report-*.json` unless `--output` is provided. The JSON includes preflight status, storage paths, migration status, task/outbox counts, canonical counts, telemetry summary, release risk, and safe session diagnostics. It does not export raw X secrets, credential references, or lease tokens.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
 

@@ -824,6 +824,27 @@ Next:
 
 - Add an operator-ready packaged health report export for deployments.
 
+## 2026-08-10 - Checkpoint 45: Operator Health Report Export
+
+Implemented:
+
+- Added `run_health_report.py` for no-Docker deployment report export.
+- Added `src/xingestion/health_report.py` to package preflight checks, migration state, storage paths, task/outbox counts, canonical counts, telemetry summary, release health, release risk, and safe session diagnostics.
+- Reports write to `XINGESTION_DATA_DIR\reports\health-report-*.json` by default, with `--output` support for explicit handoff paths.
+- Excluded raw X secrets, credential references, and lease tokens from exported JSON.
+- Added unit tests for report persistence, failed preflight reporting, and secret-reference redaction.
+- Updated README, deployment runbook, and CI compile/doc checks.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py`
+- `python .\run_health_report.py`
+
+Next:
+
+- Add a deployable process supervision guide for running web and worker as durable Windows services or host-managed processes.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

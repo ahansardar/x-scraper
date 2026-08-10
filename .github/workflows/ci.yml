@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py
 
       - name: Static smoke check frontend assets
         shell: pwsh
@@ -76,4 +76,7 @@ jobs:
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_preflight.py" -Quiet)) {
             throw "Deployment runbook must document preflight"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_health_report.py" -Quiet)) {
+            throw "Deployment runbook must document health report export"
           }
