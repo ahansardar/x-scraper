@@ -18,7 +18,8 @@ from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
-from xrev.runtime import ProtocolHttpResponse, WebSessionAuth
+from xrev.runtime import ProtocolError, ProtocolHttpResponse, WebSessionAuth
+from xrev.runtime.transport import RetryDisposition
 
 
 class FakeTransport:
@@ -79,6 +80,16 @@ class FlakyTransport:
         if self.calls == 1:
             return ProtocolHttpResponse(500, {"errors": ["temporary"]})
         return FakeTransport().send(request)
+
+
+class AuthRejectedTransport:
+    def send(self, request):
+        return ProtocolHttpResponse(401, {"errors": ["auth rejected"]})
+
+
+class RateLimitedTransport:
+    def send(self, request):
+        return ProtocolHttpResponse(429, {"errors": ["rate limited"]})
 
 
 def load_manifest():
@@ -251,6 +262,89 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(result.error_class, "SESSION_UNAVAILABLE")
             self.assertEqual(task_after.error_json["error_class"], "SESSION_UNAVAILABLE")
             self.assertIsNotNone(task_after.next_attempt_at)
+
+    def test_worker_marks_session_auth_expired_on_auth_rejection(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            task = ledger.create_task(
+                idempotency_key="session-auth-expired-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=AuthRejectedTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+            )
+
+            result = worker.process_one()
+            session_after = sessions.get_session("session-1")
+
+            self.assertEqual(result.state, TaskState.DEAD_LETTER)
+            self.assertEqual(result.error_class, "AUTH_OR_SESSION_REJECTED")
+            self.assertEqual(session_after.health, SessionHealth.AUTH_EXPIRED)
+            self.assertIsNone(session_after.lease_token)
+
+    def test_worker_marks_session_degraded_on_rate_limit(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            ledger.create_task(
+                idempotency_key="session-rate-limit-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=RateLimitedTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+            )
+
+            result = worker.process_one()
+            session_after = sessions.get_session("session-1")
+
+            self.assertEqual(result.state, TaskState.RETRY_SCHEDULED)
+            self.assertEqual(result.error_class, "RATE_LIMITED")
+            self.assertEqual(session_after.health, SessionHealth.DEGRADED)
 
     def test_worker_queues_bounded_cursor_continuation(self):
         manifest = load_manifest()

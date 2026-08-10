@@ -55,6 +55,25 @@ class SessionStoreTests(unittest.TestCase):
             self.assertIsNone(blocked)
             self.assertEqual(leased_again.lease_owner, "worker-b")
 
+    def test_update_health_marks_session_unavailable_for_acquisition(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SessionStore(Path(temp_dir) / "sessions.sqlite3")
+            store.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+
+            updated = store.update_health(
+                "session-1",
+                health=SessionHealth.AUTH_EXPIRED,
+                reason="auth rejected",
+            )
+            leased = store.acquire_session(owner="worker-a", lease_seconds=60)
+
+            self.assertEqual(updated.health, SessionHealth.AUTH_EXPIRED)
+            self.assertIsNone(leased)
+
 
 if __name__ == "__main__":
     unittest.main()

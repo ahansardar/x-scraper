@@ -617,6 +617,26 @@ Next:
 
 - Add protocol/parser versioned reprocessing batches for bulk evidence repair.
 
+## 2026-08-10 - Checkpoint 35: Session Health Transitions
+
+Implemented:
+
+- Added durable session health updates.
+- Worker maps session-scoped protocol errors to session health transitions.
+- Auth/session rejection marks the leased session `AUTH_EXPIRED`.
+- Rate limiting marks the leased session `DEGRADED`.
+- Unhealthy sessions are excluded from future acquisition leases.
+- Added tests for health updates, auth-expired transition, and rate-limit degradation.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add protocol telemetry persistence.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

@@ -153,6 +153,33 @@ class SessionStore:
             )
             conn.commit()
 
+    def update_health(
+        self,
+        session_id: str,
+        *,
+        health: SessionHealth,
+        reason: str,
+    ) -> SessionRecord:
+        now = _now()
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE session_artifacts
+                SET health = ?,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (health.value, now, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Session {session_id} not found")
+            conn.commit()
+
+        session = self.get_session(session_id)
+        if session is None:
+            raise RuntimeError("updated session could not be reloaded")
+        return session
+
     def list_sessions(self) -> tuple[SessionRecord, ...]:
         with closing(self._connect()) as conn:
             rows = conn.execute(

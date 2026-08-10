@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseStore
-from xingestion.sessions import SessionStore
+from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xrev.evidence import RawEvidenceRef, RawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
@@ -152,6 +152,8 @@ class LocalWorker:
             task = self._renew_lease(task)
             lease_renewals += 1
         except (ProtocolError, ValueError) as exc:
+            if session is not None and isinstance(exc, ProtocolError):
+                self._update_session_health_from_error(session.session_id, exc)
             task = self._handle_failure(task, exc)
             return WorkerResult(
                 processed=True,
@@ -272,6 +274,16 @@ class LocalWorker:
             raw_evidence_sink=self.raw_evidence_sink,
         )
 
+    def _update_session_health_from_error(self, session_id: str, exc: ProtocolError) -> None:
+        health = _session_health_for_protocol_error(exc)
+        if health is None or self.session_store is None:
+            return
+        self.session_store.update_health(
+            session_id,
+            health=health,
+            reason=f"{exc.error_class}:{exc.scope_hint}",
+        )
+
     def _recipe_for_task(self, task):
         recipe_revision_id = task.plan_json["recipe_revision_id"]
         for binding in self.manifest.bindings:
@@ -323,3 +335,17 @@ class LocalWorker:
 
 def _backoff_seconds(attempt_count: int) -> int:
     return min(60, 2 ** max(0, attempt_count - 1))
+
+
+def _session_health_for_protocol_error(exc: ProtocolError) -> SessionHealth | None:
+    if exc.scope_hint != "SESSION":
+        return None
+    if exc.error_class == "AUTH_OR_SESSION_REJECTED":
+        return SessionHealth.AUTH_EXPIRED
+    if exc.error_class == "RATE_LIMITED":
+        return SessionHealth.DEGRADED
+    if "CHALLENGE" in exc.error_class:
+        return SessionHealth.CHALLENGED
+    if "LOCK" in exc.error_class:
+        return SessionHealth.LOCKED
+    return SessionHealth.DEGRADED

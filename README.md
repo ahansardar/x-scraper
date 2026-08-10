@@ -144,6 +144,8 @@ GET /api/sessions
 
 Workers acquire a healthy session lease before each acquisition attempt and release it after the attempt. If no healthy session is available, the task is moved to `RETRY_SCHEDULED` without making an X request.
 
+Session-scoped protocol errors update session health automatically. Auth/session rejection marks a session `AUTH_EXPIRED`; rate limits mark it `DEGRADED`, preventing immediate reuse until an operator restores or rotates the session.
+
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
