@@ -209,6 +209,39 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(replay_after.replay_origin_task_id, origin.task_id)
             self.assertEqual(origin_after.state, TaskState.DEAD_LETTER)
 
+    def test_worker_skips_cancelled_task_event(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="cancelled-worker-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            cancelled = ledger.cancel_task(task.task_id)
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+            )
+
+            result = worker.process_one()
+
+            self.assertTrue(result.processed)
+            self.assertEqual(result.task_id, cancelled.task_id)
+            self.assertEqual(result.state, TaskState.CANCELLED)
+
 
 if __name__ == "__main__":
     unittest.main()

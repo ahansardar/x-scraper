@@ -164,6 +164,11 @@ button:disabled {
   font-size: 12px;
 }
 
+.secondary {
+  background: #ffffff;
+  color: var(--blue);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 120px;

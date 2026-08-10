@@ -298,3 +298,22 @@ Verified:
 Next:
 
 - Add task cancellation and retention controls for long-running deployments.
+
+## 2026-08-10 - Checkpoint 18: Task Cancellation
+
+Implemented:
+
+- Added explicit `CANCELLED` terminal state for pre-execution tasks.
+- Added `SQLiteTaskLedger.cancel_task(...)` for `CREATED`, `ENQUEUED`, and `RETRY_SCHEDULED` work.
+- Added `POST /api/tasks/{task_id}/cancel` for operator control.
+- Added frontend Cancel controls for cancellable task states.
+- Added tests proving cancelled work is skipped by the worker and cannot be transitioned normally.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add retention cleanup controls for terminal deployment data.

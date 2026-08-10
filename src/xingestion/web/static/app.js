@@ -28,9 +28,19 @@ async function loadTasks() {
       <td>${task.task_id.slice(0, 18)}</td>
       <td>${task.capability_id}</td>
       <td><span class="state">${task.state}</span></td>
-      <td>${task.state === "DEAD_LETTER" ? `<button class="small-button" data-replay-task="${task.task_id}">Replay</button>` : ""}</td>
+      <td>${taskActions(task)}</td>
     </tr>
   `).join("");
+}
+
+function taskActions(task) {
+  if (task.state === "DEAD_LETTER") {
+    return `<button class="small-button" data-replay-task="${task.task_id}">Replay</button>`;
+  }
+  if (["CREATED", "ENQUEUED", "RETRY_SCHEDULED"].includes(task.state)) {
+    return `<button class="small-button secondary" data-cancel-task="${task.task_id}">Cancel</button>`;
+  }
+  return "";
 }
 
 function renderOutput(data) {
@@ -89,12 +99,26 @@ form.addEventListener("submit", async (event) => {
 });
 
 tasks.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-replay-task]");
+  const button = event.target.closest("[data-replay-task], [data-cancel-task]");
   if (!button) {
     return;
   }
 
   button.disabled = true;
+  if (button.dataset.cancelTask) {
+    summary.textContent = "Cancelling task...";
+    try {
+      const data = await getJson(`/api/tasks/${button.dataset.cancelTask}/cancel`, {
+        method: "POST"
+      });
+      summary.innerHTML = `<strong>${data.task.state}</strong> task ${data.task.task_id.slice(0, 18)} cancelled.`;
+    } catch (error) {
+      summary.textContent = error.message;
+    }
+    await loadTasks();
+    return;
+  }
+
   summary.textContent = "Queuing replay task...";
   tweets.innerHTML = "";
   try {

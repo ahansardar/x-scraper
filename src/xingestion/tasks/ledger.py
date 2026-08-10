@@ -20,6 +20,7 @@ class TaskState(StrEnum):
     RETRY_SCHEDULED = "RETRY_SCHEDULED"
     DONE = "DONE"
     DEAD_LETTER = "DEAD_LETTER"
+    CANCELLED = "CANCELLED"
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,53 @@ class SQLiteTaskLedger:
         if task is None:
             raise RuntimeError("replay task could not be reloaded")
         return task
+
+    def cancel_task(self, task_id: str, *, reason: str = "operator_cancelled") -> CapabilityTask:
+        task = self.get_task(task_id)
+        if task is None:
+            raise ValueError(f"Task {task_id} not found")
+        if task.state not in {
+            TaskState.CREATED,
+            TaskState.ENQUEUED,
+            TaskState.RETRY_SCHEDULED,
+        }:
+            raise ValueError(
+                "Only CREATED, ENQUEUED, or RETRY_SCHEDULED tasks can be cancelled"
+            )
+
+        now = _now()
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE capability_tasks
+                SET state = ?,
+                    error_json = ?,
+                    next_attempt_at = NULL,
+                    lease_owner = NULL,
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = ?
+                WHERE task_id = ?
+                  AND state IN (?, ?, ?)
+                """,
+                (
+                    TaskState.CANCELLED.value,
+                    _json({"reason": reason}),
+                    now,
+                    task_id,
+                    TaskState.CREATED.value,
+                    TaskState.ENQUEUED.value,
+                    TaskState.RETRY_SCHEDULED.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Task {task_id} could not be cancelled")
+            conn.commit()
+
+        cancelled = self.get_task(task_id)
+        if cancelled is None:
+            raise RuntimeError("cancelled task could not be reloaded")
+        return cancelled
 
     def claim_next_outbox_event(self) -> OutboxEvent | None:
         now = _now()

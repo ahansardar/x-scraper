@@ -90,6 +90,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 4 and parts[3] == "replay":
                 return self._replay_task(parts[2])
+            if len(parts) == 4 and parts[3] == "cancel":
+                return self._cancel_task(parts[2])
 
         if parsed.path != "/api/search-tweets":
             self.send_error(404)
@@ -147,6 +149,22 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 "result_url": f"/api/tasks/{task.task_id}/result",
             },
             status=201,
+        )
+
+    def _cancel_task(self, task_id):
+        try:
+            task = STATE.ledger.cancel_task(task_id)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 409
+            return self._json({"message": str(exc)}, status=status)
+
+        return self._json(
+            {
+                "task": _task_dict(task),
+                "message": "Task cancelled",
+                "status_url": f"/api/tasks/{task.task_id}",
+            },
+            status=200,
         )
 
     def _read_json(self):

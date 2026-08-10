@@ -273,6 +273,50 @@ class TaskLedgerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Only DEAD_LETTER"):
                 ledger.replay_task(task.task_id)
 
+    def test_cancel_pending_task_sets_terminal_state(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="cancel-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+
+            cancelled = ledger.cancel_task(task.task_id)
+
+            self.assertEqual(cancelled.state, TaskState.CANCELLED)
+            self.assertEqual(cancelled.error_json["reason"], "operator_cancelled")
+            with self.assertRaisesRegex(ValueError, "expected state CREATED"):
+                ledger.transition_task(
+                    task.task_id,
+                    from_state=TaskState.CREATED,
+                    to_state=TaskState.ENQUEUED,
+                )
+
+    def test_cancel_rejects_completed_task(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="cancel-done-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DONE,
+                result_json={"raw_evidence": {"storage_uri": "x"}},
+            )
+
+            with self.assertRaisesRegex(ValueError, "can be cancelled"):
+                ledger.cancel_task(task.task_id)
+
     def test_state_transition_requires_expected_current_state(self):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:
