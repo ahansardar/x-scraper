@@ -51,6 +51,10 @@ XINGESTION_DATA_DIR=F:\x-scraper-data
 XINGESTION_HOST=127.0.0.1
 XINGESTION_PORT=8000
 XINGESTION_RETENTION_DAYS=30
+XINGESTION_SESSION_ID=local-env-session
+XINGESTION_ACCOUNT_LABEL=local-env
+XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
+XINGESTION_NETWORK_CONTEXT=direct
 ```
 
 Storage locations:
@@ -84,6 +88,12 @@ GET /api/metrics
 ```
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
+
+Session metadata is stored without raw secrets in `session_artifacts`. The default local session points to the `.env` variables by reference. Inspect it at:
+
+```text
+GET /api/sessions
+```
 
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 

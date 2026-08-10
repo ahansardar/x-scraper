@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+from contextlib import closing
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from pathlib import Path
+import sqlite3
+from uuid import uuid4
+
+
+class SessionHealth(StrEnum):
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    AUTH_EXPIRED = "AUTH_EXPIRED"
+    CHALLENGED = "CHALLENGED"
+    LOCKED = "LOCKED"
+    DISABLED = "DISABLED"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class SessionRecord:
+    session_id: str
+    account_label: str
+    credential_ref: str
+    network_context: str
+    health: SessionHealth
+    lease_owner: str | None
+    lease_token: str | None
+    lease_expires_at: str | None
+    created_at: str
+    updated_at: str
+
+
+class SessionStore:
+    def __init__(self, db_path: str | Path) -> None:
+        self.db_path = str(db_path)
+        self._initialize()
+
+    def upsert_session(
+        self,
+        *,
+        session_id: str,
+        account_label: str,
+        credential_ref: str,
+        network_context: str = "direct",
+        health: SessionHealth = SessionHealth.HEALTHY,
+    ) -> SessionRecord:
+        if not session_id.strip():
+            raise ValueError("session_id cannot be empty")
+        if credential_ref.startswith(("auth_token=", "ct0=", "Bearer ")):
+            raise ValueError("credential_ref must be a secret reference, not raw secret material")
+
+        now = _now()
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT INTO session_artifacts (
+                    session_id,
+                    account_label,
+                    credential_ref,
+                    network_context,
+                    health,
+                    lease_owner,
+                    lease_token,
+                    lease_expires_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    account_label = excluded.account_label,
+                    credential_ref = excluded.credential_ref,
+                    network_context = excluded.network_context,
+                    health = excluded.health,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    session_id,
+                    account_label,
+                    credential_ref,
+                    network_context,
+                    health.value,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        session = self.get_session(session_id)
+        if session is None:
+            raise RuntimeError("session could not be reloaded")
+        return session
+
+    def acquire_session(
+        self,
+        *,
+        owner: str,
+        lease_seconds: int = 300,
+    ) -> SessionRecord | None:
+        now = _now()
+        expires = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        token = f"session-lease-{uuid4().hex}"
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT *
+                FROM session_artifacts
+                WHERE health = ?
+                  AND (
+                    lease_token IS NULL
+                    OR lease_expires_at IS NULL
+                    OR lease_expires_at <= ?
+                  )
+                ORDER BY updated_at ASC
+                LIMIT 1
+                """,
+                (SessionHealth.HEALTHY.value, now),
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return None
+            conn.execute(
+                """
+                UPDATE session_artifacts
+                SET lease_owner = ?,
+                    lease_token = ?,
+                    lease_expires_at = ?,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (owner, token, expires, now, row["session_id"]),
+            )
+            conn.commit()
+
+        return self.get_session(row["session_id"])
+
+    def release_session(self, session_id: str, lease_token: str) -> None:
+        now = _now()
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                UPDATE session_artifacts
+                SET lease_owner = NULL,
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = ?
+                WHERE session_id = ?
+                  AND lease_token = ?
+                """,
+                (now, session_id, lease_token),
+            )
+            conn.commit()
+
+    def list_sessions(self) -> tuple[SessionRecord, ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT * FROM session_artifacts ORDER BY updated_at DESC"
+            ).fetchall()
+        return tuple(_session_from_row(row) for row in rows)
+
+    def get_session(self, session_id: str) -> SessionRecord | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT * FROM session_artifacts WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return _session_from_row(row) if row else None
+
+    def _initialize(self) -> None:
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_artifacts (
+                    session_id TEXT PRIMARY KEY,
+                    account_label TEXT NOT NULL,
+                    credential_ref TEXT NOT NULL,
+                    network_context TEXT NOT NULL,
+                    health TEXT NOT NULL,
+                    lease_owner TEXT,
+                    lease_token TEXT,
+                    lease_expires_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.commit()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+
+def _session_from_row(row: sqlite3.Row) -> SessionRecord:
+    return SessionRecord(
+        session_id=row["session_id"],
+        account_label=row["account_label"],
+        credential_ref=row["credential_ref"],
+        network_context=row["network_context"],
+        health=SessionHealth(row["health"]),
+        lease_owner=row["lease_owner"],
+        lease_token=row["lease_token"],
+        lease_expires_at=row["lease_expires_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()

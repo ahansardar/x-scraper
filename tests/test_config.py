@@ -20,6 +20,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.host, "127.0.0.1")
         self.assertEqual(config.port, 8000)
         self.assertEqual(config.retention_days, 30)
+        self.assertEqual(config.default_session_id, "local-env-session")
+        self.assertEqual(config.default_credential_ref, "env:X_AUTH_TOKEN,X_CT0,X_BEARER")
 
     def test_env_and_args_override_deployment_settings(self):
         old_values = {
@@ -29,6 +31,10 @@ class ConfigTests(unittest.TestCase):
                 "XINGESTION_HOST",
                 "XINGESTION_PORT",
                 "XINGESTION_RETENTION_DAYS",
+                "XINGESTION_SESSION_ID",
+                "XINGESTION_ACCOUNT_LABEL",
+                "XINGESTION_CREDENTIAL_REF",
+                "XINGESTION_NETWORK_CONTEXT",
             )
         }
         try:
@@ -37,6 +43,10 @@ class ConfigTests(unittest.TestCase):
                 os.environ["XINGESTION_HOST"] = "0.0.0.0"
                 os.environ["XINGESTION_PORT"] = "9000"
                 os.environ["XINGESTION_RETENTION_DAYS"] = "14"
+                os.environ["XINGESTION_SESSION_ID"] = "session-a"
+                os.environ["XINGESTION_ACCOUNT_LABEL"] = "account-a"
+                os.environ["XINGESTION_CREDENTIAL_REF"] = "secret:x/session-a"
+                os.environ["XINGESTION_NETWORK_CONTEXT"] = "direct:iad"
 
                 config = load_app_config(ROOT, ["--port", "9001"])
 
@@ -44,6 +54,10 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(config.host, "0.0.0.0")
                 self.assertEqual(config.port, 9001)
                 self.assertEqual(config.retention_days, 14)
+                self.assertEqual(config.default_session_id, "session-a")
+                self.assertEqual(config.default_account_label, "account-a")
+                self.assertEqual(config.default_credential_ref, "secret:x/session-a")
+                self.assertEqual(config.default_network_context, "direct:iad")
         finally:
             for key, value in old_values.items():
                 if value is None:

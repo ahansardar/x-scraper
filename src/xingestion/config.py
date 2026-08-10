@@ -14,6 +14,10 @@ class AppConfig:
     host: str
     port: int
     retention_days: int
+    default_session_id: str
+    default_account_label: str
+    default_credential_ref: str
+    default_network_context: str
 
 
 def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
@@ -23,6 +27,13 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
     port_value = _value_from_args(argv, "--port") or os.getenv("XINGESTION_PORT", "8000")
     port = int(port_value)
     retention_days = int(os.getenv("XINGESTION_RETENTION_DAYS", "30"))
+    default_session_id = os.getenv("XINGESTION_SESSION_ID", "local-env-session")
+    default_account_label = os.getenv("XINGESTION_ACCOUNT_LABEL", "local-env")
+    default_credential_ref = os.getenv(
+        "XINGESTION_CREDENTIAL_REF",
+        "env:X_AUTH_TOKEN,X_CT0,X_BEARER",
+    )
+    default_network_context = os.getenv("XINGESTION_NETWORK_CONTEXT", "direct")
 
     return AppConfig(
         root=root,
@@ -32,6 +43,10 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
         host=host,
         port=port,
         retention_days=retention_days,
+        default_session_id=default_session_id,
+        default_account_label=default_account_label,
+        default_credential_ref=default_credential_ref,
+        default_network_context=default_network_context,
     )
 
 

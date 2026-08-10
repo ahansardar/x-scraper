@@ -377,3 +377,23 @@ Verified:
 Next:
 
 - Add session/secret/network allocation primitives before expanding capability coverage.
+
+## 2026-08-10 - Checkpoint 22: Session Metadata Plane
+
+Implemented:
+
+- Added a session artifact registry with account label, credential reference, network context, health, and lease metadata.
+- Added guarded session leasing and release without storing raw X secrets.
+- Bootstrapped a default deployment session from non-secret `.env` references.
+- Added `GET /api/sessions` and included session counts in `/api/metrics`.
+- Documented session metadata configuration and inspection.
+- Added tests for secret-reference enforcement and session leasing.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add protocol release health and quarantine controls.

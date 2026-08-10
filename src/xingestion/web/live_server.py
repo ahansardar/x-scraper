@@ -18,6 +18,7 @@ from xingestion.capabilities import (
 )
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
+from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -42,6 +43,18 @@ class LiveAppState:
         self.planner = CapabilityPlanner(self.manifest)
         self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
         self.canonical_store = CanonicalStore(self.config.sqlite_path)
+        self.session_store = SessionStore(self.config.sqlite_path)
+        self.session_store.upsert_session(
+            session_id=self.config.default_session_id,
+            account_label=self.config.default_account_label,
+            credential_ref=self.config.default_credential_ref,
+            network_context=self.config.default_network_context,
+            health=(
+                SessionHealth.HEALTHY
+                if not self.auth.missing_fields()
+                else SessionHealth.AUTH_EXPIRED
+            ),
+        )
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
         self.auth = web_session_auth_from_env()
@@ -79,6 +92,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json(_metrics_dict())
         if parsed.path == "/api/storage":
             return self._json(_storage_dict())
+        if parsed.path == "/api/sessions":
+            return self._json({"sessions": [_session_dict(s) for s in STATE.session_store.list_sessions()]})
         if parsed.path == "/api/retention":
             return self._json(
                 {
@@ -371,6 +386,28 @@ def _metrics_dict():
         "outbox": STATE.ledger.outbox_stats(),
         "canonical": canonical_counts,
         "storage": _storage_dict(),
+        "sessions": {
+            "total": len(STATE.session_store.list_sessions()),
+            "healthy": sum(
+                1
+                for session in STATE.session_store.list_sessions()
+                if session.health == SessionHealth.HEALTHY
+            ),
+        },
+    }
+
+
+def _session_dict(session):
+    return {
+        "session_id": session.session_id,
+        "account_label": session.account_label,
+        "credential_ref": session.credential_ref,
+        "network_context": session.network_context,
+        "health": session.health.value,
+        "lease_owner": session.lease_owner,
+        "lease_expires_at": session.lease_expires_at,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
     }
 
 
