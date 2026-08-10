@@ -67,6 +67,53 @@ def build_protocol_drift_package(
     }
 
 
+def build_release_risk_recommendation(
+    *,
+    manifest: ProtocolReleaseManifest,
+    release_store: ReleaseStore,
+    telemetry_store: ProtocolTelemetryStore,
+) -> dict[str, object]:
+    release = release_store.ensure_release(manifest.release_id)
+    signals = telemetry_store.release_error_signals(manifest.release_id)
+    signal_by_error = {signal.error_class: signal for signal in signals}
+
+    action = "NO_ACTION"
+    severity = "LOW"
+    reason = "No repeated release-level drift signal is present."
+    if _signal_count(signal_by_error, "OPERATION_NOT_FOUND") >= 3:
+        action = "QUARANTINE_RECOMMENDED"
+        severity = "HIGH"
+        reason = "Pinned GraphQL operation failures repeated for this release."
+    elif _signal_count(signal_by_error, "PARSER_FAILURE") >= 3:
+        action = "INVESTIGATE_RECOMMENDED"
+        severity = "MEDIUM"
+        reason = "Parser failures repeated for this release."
+    elif _signal_count(signal_by_error, "UNEXPECTED_HTTP_STATUS") >= 5:
+        action = "INVESTIGATE_RECOMMENDED"
+        severity = "MEDIUM"
+        reason = "Unexpected upstream statuses repeated for this release."
+    elif release.health.value == "QUARANTINED":
+        action = "ALREADY_QUARANTINED"
+        severity = "HIGH"
+        reason = "The release is already quarantined by operator state."
+
+    return {
+        "release_id": manifest.release_id,
+        "release_health": release.health.value,
+        "action": action,
+        "severity": severity,
+        "reason": reason,
+        "signals": [
+            {
+                "error_class": signal.error_class,
+                "count": signal.count,
+                "distinct_sessions": signal.distinct_sessions,
+            }
+            for signal in signals
+        ],
+    }
+
+
 def _binding_for_task(manifest, capability_id: str, contract_version: int):
     for binding in manifest.bindings:
         if (
@@ -75,6 +122,11 @@ def _binding_for_task(manifest, capability_id: str, contract_version: int):
         ):
             return binding
     return None
+
+
+def _signal_count(signal_by_error, error_class: str) -> int:
+    signal = signal_by_error.get(error_class)
+    return signal.count if signal else 0
 
 
 def _recipe_dict(recipe) -> dict[str, object]:

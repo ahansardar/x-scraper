@@ -126,9 +126,12 @@ Operational metrics are exposed at:
 GET /api/metrics
 GET /api/migrations
 GET /api/telemetry
+GET /api/releases/current/risk
 ```
 
 Protocol telemetry is stored append-only in `protocol_attempts` and summarizes successes, failures, and protocol error classes by acquisition attempt.
+
+Release risk recommendations are advisory. Repeated operation or parser drift signals can recommend investigation or quarantine, but only operator `POST` routes change release health.
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
 

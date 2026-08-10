@@ -55,6 +55,7 @@ GET /api/migrations
 GET /api/telemetry
 GET /api/sessions
 GET /api/releases/current
+GET /api/releases/current/risk
 ```
 
 The app stores:
@@ -115,6 +116,12 @@ Reactivate it after investigation:
 
 ```text
 POST /api/releases/current/activate
+```
+
+Review advisory release-risk recommendations:
+
+```text
+GET /api/releases/current/risk
 ```
 
 Restore a fixed session to worker rotation:

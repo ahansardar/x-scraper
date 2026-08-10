@@ -19,7 +19,10 @@ from xingestion.capabilities import (
 )
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
-from xingestion.investigation import build_protocol_drift_package
+from xingestion.investigation import (
+    build_protocol_drift_package,
+    build_release_risk_recommendation,
+)
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
@@ -118,6 +121,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json({"telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary())})
         if parsed.path == "/api/releases/current":
             return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
+        if parsed.path == "/api/releases/current/risk":
+            return self._json({"risk": _release_risk_dict()})
         if parsed.path == "/api/storage":
             return self._json(_storage_dict())
         if parsed.path == "/api/sessions":
@@ -618,6 +623,7 @@ def _metrics_dict():
         "storage": _storage_dict(),
         "migrations": _migration_status_dict(STATE.migration_runner.status()),
         "telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary()),
+        "release_risk": _release_risk_dict(),
         "sessions": {
             "total": len(sessions),
             "healthy": sum(
@@ -650,6 +656,14 @@ def _telemetry_summary_dict(summary):
         "failures": summary.failures,
         "errors_by_class": summary.errors_by_class,
     }
+
+
+def _release_risk_dict():
+    return build_release_risk_recommendation(
+        manifest=STATE.manifest,
+        release_store=STATE.release_store,
+        telemetry_store=STATE.telemetry_store,
+    )
 
 
 def _reprocess_result_dict(result):

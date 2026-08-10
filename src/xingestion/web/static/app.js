@@ -72,6 +72,7 @@ async function loadMetrics() {
     <div><strong>${data.canonical.canonical_tweets}</strong><span>canonical tweets</span></div>
     <div><strong>${data.canonical.engagement_observations}</strong><span>engagement observations</span></div>
     <div><strong>${data.sessions.cooling_down}</strong><span>sessions cooling</span></div>
+    <div><strong>${data.release_risk.action}</strong><span>release risk</span></div>
     <div><strong>${data.auth_ready ? "ready" : "missing"}</strong><span>auth state</span></div>
   `;
 }

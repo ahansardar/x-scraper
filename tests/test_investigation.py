@@ -7,7 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
-from xingestion.investigation import build_protocol_drift_package
+from xingestion.investigation import (
+    build_protocol_drift_package,
+    build_release_risk_recommendation,
+)
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
@@ -114,6 +117,60 @@ class InvestigationTests(unittest.TestCase):
                     session_store=SessionStore(db_path),
                     telemetry_store=ProtocolTelemetryStore(db_path),
                 )
+
+    def test_release_risk_recommends_quarantine_for_repeated_operation_failures(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            for index in range(3):
+                telemetry.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id="recipe-1",
+                    state="FAILURE",
+                    session_id=f"session-{index}",
+                    error_class="OPERATION_NOT_FOUND",
+                )
+
+            risk = build_release_risk_recommendation(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+            )
+
+            self.assertEqual(risk["action"], "QUARANTINE_RECOMMENDED")
+            self.assertEqual(risk["severity"], "HIGH")
+            self.assertEqual(risk["signals"][0]["error_class"], "OPERATION_NOT_FOUND")
+            self.assertEqual(risk["signals"][0]["distinct_sessions"], 3)
+
+    def test_release_risk_treats_session_errors_as_no_release_action(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            for index in range(5):
+                telemetry.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id="recipe-1",
+                    state="FAILURE",
+                    session_id="session-1",
+                    error_class="RATE_LIMITED",
+                )
+
+            risk = build_release_risk_recommendation(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+            )
+
+            self.assertEqual(risk["action"], "NO_ACTION")
+            self.assertEqual(risk["severity"], "LOW")
 
 
 if __name__ == "__main__":

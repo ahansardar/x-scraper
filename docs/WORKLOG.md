@@ -781,6 +781,28 @@ Next:
 
 - Add release quarantine suggestions from repeated drift packages.
 
+## 2026-08-10 - Checkpoint 43: Release Risk Recommendations
+
+Implemented:
+
+- Added release-scoped protocol error signals from telemetry.
+- Added advisory release-risk recommendation rules.
+- Repeated `OPERATION_NOT_FOUND` failures now recommend release quarantine.
+- Repeated parser or unexpected protocol failures recommend investigation.
+- Session-scoped rate-limit/auth errors remain session-level signals and do not recommend release quarantine.
+- Added `GET /api/releases/current/risk`.
+- Included release-risk recommendations in `/api/metrics` and the frontend Metrics panel.
+- Documented the advisory behavior in README and deployment runbook.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add a one-command deployment preflight that verifies migrations, auth readiness, storage, worker-session availability, and release risk.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

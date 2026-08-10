@@ -61,6 +61,9 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "data-investigate-task" -Quiet)) {
             throw "Frontend does not expose task investigation"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "release risk" -Quiet)) {
+            throw "Frontend does not expose release risk recommendations"
+          }
 
       - name: Check deployment runbook
         shell: pwsh

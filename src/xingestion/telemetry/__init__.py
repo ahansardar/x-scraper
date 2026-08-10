@@ -1,5 +1,15 @@
 """Operational protocol telemetry."""
 
-from .store import ProtocolAttempt, ProtocolTelemetryStore, TelemetrySummary
+from .store import (
+    ProtocolAttempt,
+    ProtocolTelemetryStore,
+    ReleaseErrorSignal,
+    TelemetrySummary,
+)
 
-__all__ = ["ProtocolAttempt", "ProtocolTelemetryStore", "TelemetrySummary"]
+__all__ = [
+    "ProtocolAttempt",
+    "ProtocolTelemetryStore",
+    "ReleaseErrorSignal",
+    "TelemetrySummary",
+]

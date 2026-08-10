@@ -256,6 +256,34 @@ class NorthboundApiTests(unittest.TestCase):
             )
             self.assertEqual(payload["investigation"]["task"]["task_id"], failed.task_id)
 
+    def test_release_risk_dict_returns_recommendation(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            telemetry = ProtocolTelemetryStore(db_path)
+            for index in range(3):
+                telemetry.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id="recipe-1",
+                    state="FAILURE",
+                    session_id=f"session-{index}",
+                    error_class="OPERATION_NOT_FOUND",
+                )
+            live_server.STATE = SimpleNamespace(
+                manifest=manifest,
+                release_store=ReleaseStore(db_path),
+                telemetry_store=telemetry,
+            )
+
+            risk = live_server._release_risk_dict()
+
+            self.assertEqual(risk["action"], "QUARANTINE_RECOMMENDED")
+            self.assertEqual(risk["severity"], "HIGH")
+
 
 if __name__ == "__main__":
     unittest.main()

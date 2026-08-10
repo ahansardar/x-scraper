@@ -31,6 +31,13 @@ class ProtocolAttempt:
     created_at: str
 
 
+@dataclass(frozen=True)
+class ReleaseErrorSignal:
+    error_class: str
+    count: int
+    distinct_sessions: int
+
+
 class ProtocolTelemetryStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
@@ -126,6 +133,31 @@ class ProtocolTelemetryStore:
                 (task_id,),
             ).fetchall()
         return tuple(_attempt_from_row(row) for row in rows)
+
+    def release_error_signals(self, release_id: str) -> tuple[ReleaseErrorSignal, ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    error_class,
+                    COUNT(*) AS count,
+                    COUNT(DISTINCT session_id) AS distinct_sessions
+                FROM protocol_attempts
+                WHERE release_id = ?
+                  AND error_class IS NOT NULL
+                GROUP BY error_class
+                ORDER BY count DESC, error_class ASC
+                """,
+                (release_id,),
+            ).fetchall()
+        return tuple(
+            ReleaseErrorSignal(
+                error_class=row["error_class"],
+                count=int(row["count"]),
+                distinct_sessions=int(row["distinct_sessions"]),
+            )
+            for row in rows
+        )
 
     def _initialize(self) -> None:
         with closing(self._connect()) as conn:
