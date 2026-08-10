@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.canonical import CanonicalStore
-from xingestion.reprocessing import reprocess_task_evidence
+from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -129,6 +129,50 @@ class ReprocessingTests(unittest.TestCase):
                     ledger=ledger,
                     canonical_store=store,
                 )
+
+    def test_reprocess_job_runs_for_completed_tasks_in_release(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            store = CanonicalStore(db_path)
+            jobs = ReprocessJobStore(db_path)
+            task = ledger.create_task(
+                idempotency_key="reprocess-job-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                canonical_store=store,
+            )
+            worker.process_one()
+
+            job = jobs.run_for_release(
+                release_id=manifest.release_id,
+                ledger=ledger,
+                canonical_store=store,
+                limit=10,
+            )
+
+            self.assertEqual(job.state, "DONE")
+            self.assertEqual(job.matched_tasks, 1)
+            self.assertEqual(job.processed_tasks, 1)
+            self.assertEqual(job.failed_tasks, 0)
+            self.assertEqual(store.counts()["engagement_observations"], 2)
 
 
 if __name__ == "__main__":

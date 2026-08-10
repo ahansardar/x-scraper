@@ -164,6 +164,7 @@ Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in
 - `POST /api/releases/current/quarantine`
 - `POST /api/releases/current/activate`
 - `POST /api/tasks/{task_id}/reprocess`
+- `POST /api/reprocess/jobs`
 
 Reprocessing parses stored raw evidence again and appends canonical observations without making a new X request.
 

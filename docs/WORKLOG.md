@@ -677,6 +677,26 @@ Next:
 
 - Add bulk reprocessing jobs.
 
+## 2026-08-10 - Checkpoint 38: Bulk Reprocessing Jobs
+
+Implemented:
+
+- Added durable `reprocess_jobs` with matched, processed, failed, and error counts.
+- Added migration `003_reprocess_jobs.sql`.
+- Added release-scoped bulk reprocessing for completed tasks with stored raw evidence.
+- Added protected `POST /api/reprocess/jobs`.
+- Documented bulk reprocessing endpoint.
+- Added tests for migration coverage and successful release-scoped bulk reprocessing.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add asynchronous job execution for large reprocessing batches.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

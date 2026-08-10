@@ -22,7 +22,7 @@ from xingestion.config import AppConfig, load_app_config
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
-from xingestion.reprocessing import reprocess_task_evidence
+from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
@@ -64,6 +64,7 @@ class LiveAppState:
         self.auth = web_session_auth_from_env()
         self.session_store = SessionStore(self.config.sqlite_path)
         self.telemetry_store = ProtocolTelemetryStore(self.config.sqlite_path)
+        self.reprocess_jobs = ReprocessJobStore(self.config.sqlite_path)
         self.session_store.upsert_session(
             session_id=self.config.default_session_id,
             account_label=self.config.default_account_label,
@@ -183,6 +184,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._set_release_health(ReleaseHealth.ACTIVE, "operator_activate")
+        if parsed.path == "/api/reprocess/jobs":
+            if not self._require_admin():
+                return
+            return self._run_reprocess_job(self._read_json())
 
         if parsed.path == "/api/capability-tasks":
             return self._create_capability_task(self._read_json())
@@ -339,6 +344,20 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             status = 404 if "not found" in str(exc).lower() else 409
             return self._json({"message": str(exc)}, status=status)
         return self._json({"reprocess": _reprocess_result_dict(result)}, status=200)
+
+    def _run_reprocess_job(self, body):
+        release_id = str(body.get("release_id") or STATE.manifest.release_id)
+        limit = int(body.get("limit", 100))
+        try:
+            job = STATE.reprocess_jobs.run_for_release(
+                release_id=release_id,
+                ledger=STATE.ledger,
+                canonical_store=STATE.canonical_store,
+                limit=limit,
+            )
+        except ValueError as exc:
+            return self._json({"message": str(exc)}, status=400)
+        return self._json({"job": _reprocess_job_dict(job)}, status=201)
 
     def _api_not_found(self, path):
         return self._json({"message": f"API route not found: {path}"}, status=404)
@@ -569,6 +588,20 @@ def _reprocess_result_dict(result):
         "raw_evidence_id": result.raw_evidence_id,
         "parsed_tweets": result.parsed_tweets,
         "canonical_counts": result.canonical_counts,
+    }
+
+
+def _reprocess_job_dict(job):
+    return {
+        "job_id": job.job_id,
+        "release_id": job.release_id,
+        "state": job.state,
+        "matched_tasks": job.matched_tasks,
+        "processed_tasks": job.processed_tasks,
+        "failed_tasks": job.failed_tasks,
+        "error_json": job.error_json,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
     }
 
 

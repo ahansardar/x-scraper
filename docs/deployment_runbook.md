@@ -121,6 +121,12 @@ Reprocess stored raw evidence without recollecting:
 POST /api/tasks/{task_id}/reprocess
 ```
 
+Bulk reprocess completed tasks for a release:
+
+```text
+POST /api/reprocess/jobs
+```
+
 Run terminal-task retention cleanup:
 
 ```text
