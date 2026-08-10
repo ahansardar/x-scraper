@@ -577,6 +577,26 @@ Next:
 
 - Integrate worker session leasing with per-task acquisition.
 
+## 2026-08-10 - Checkpoint 33: Worker Session Leasing
+
+Implemented:
+
+- Worker now acquires a healthy session lease before each acquisition attempt.
+- Worker releases the session lease after success or failure.
+- Standalone worker bootstraps the default session metadata from deployment config.
+- If no healthy session is available, the task moves to `RETRY_SCHEDULED` without making an X request.
+- Task results include safe session provenance: session ID and network context.
+- Added tests for session lease release and unavailable-session retry scheduling.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add raw evidence reprocessing from stored evidence.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

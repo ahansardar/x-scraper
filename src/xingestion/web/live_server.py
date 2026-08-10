@@ -80,6 +80,7 @@ class LiveAppState:
             raw_evidence_sink=self.evidence_sink,
             canonical_store=self.canonical_store,
             release_store=self.release_store,
+            session_store=self.session_store,
         )
 
 

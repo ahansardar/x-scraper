@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseStore
+from xingestion.sessions import SessionStore
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xrev.evidence import RawEvidenceRef, RawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
@@ -29,6 +30,7 @@ class WorkerResult:
     error_class: str | None = None
     message: str | None = None
     lease_renewals: int = 0
+    session_id: str | None = None
 
 
 class LocalWorker:
@@ -42,6 +44,7 @@ class LocalWorker:
         raw_evidence_sink: RawEvidenceSink,
         canonical_store: CanonicalStore | None = None,
         release_store: ReleaseStore | None = None,
+        session_store: SessionStore | None = None,
         owner: str | None = None,
         lease_seconds: int = 300,
     ) -> None:
@@ -52,6 +55,7 @@ class LocalWorker:
         self.raw_evidence_sink = raw_evidence_sink
         self.canonical_store = canonical_store
         self.release_store = release_store
+        self.session_store = session_store
         self.planner = CapabilityPlanner(self.manifest)
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
@@ -106,17 +110,42 @@ class LocalWorker:
                 message=f"Protocol release {self.manifest.release_id} is not executable",
             )
 
+        session = None
+        if self.session_store is not None:
+            session = self.session_store.acquire_session(
+                owner=self.owner,
+                lease_seconds=self.lease_seconds,
+            )
+            if session is None:
+                scheduled = self.ledger.transition_task(
+                    task.task_id,
+                    from_state=TaskState.ENQUEUED,
+                    to_state=TaskState.RETRY_SCHEDULED,
+                    error_json={
+                        "error_class": "SESSION_UNAVAILABLE",
+                        "message": "No healthy session lease is available",
+                    },
+                    next_attempt_at=(datetime.now(UTC) + timedelta(seconds=60)).isoformat(),
+                )
+                return WorkerResult(
+                    processed=True,
+                    task_id=scheduled.task_id,
+                    state=scheduled.state,
+                    error_class="SESSION_UNAVAILABLE",
+                    message="No healthy session lease is available",
+                )
+
         lease_expires_at = (
             datetime.now(UTC) + timedelta(seconds=self.lease_seconds)
         ).isoformat()
-        task = self.ledger.acquire_execution_lease(
-            task.task_id,
-            owner=self.owner,
-            lease_expires_at=lease_expires_at,
-        )
         lease_renewals = 0
 
         try:
+            task = self.ledger.acquire_execution_lease(
+                task.task_id,
+                owner=self.owner,
+                lease_expires_at=lease_expires_at,
+            )
             task = self._renew_lease(task)
             lease_renewals += 1
             page = self._execute_task(task)
@@ -131,7 +160,11 @@ class LocalWorker:
                 error_class=getattr(exc, "error_class", exc.__class__.__name__),
                 message=str(exc),
                 lease_renewals=lease_renewals,
+                session_id=session.session_id if session else None,
             )
+        finally:
+            if session is not None and session.lease_token:
+                self.session_store.release_session(session.session_id, session.lease_token)
 
         if self.canonical_store is not None:
             self.canonical_store.ingest_search_tweets_page(
@@ -161,6 +194,10 @@ class LocalWorker:
                     "max_pages": int(task.request_json["payload"].get("max_pages", 1)),
                     "continuation_task_id": continuation_task_id,
                 },
+                "session": {
+                    "session_id": session.session_id if session else None,
+                    "network_context": session.network_context if session else None,
+                },
             },
         )
         return WorkerResult(
@@ -169,6 +206,7 @@ class LocalWorker:
             state=task.state,
             raw_evidence_ref=page.raw_evidence_ref,
             lease_renewals=lease_renewals,
+            session_id=session.session_id if session else None,
         )
 
     def _queue_continuation_if_needed(self, task, page):

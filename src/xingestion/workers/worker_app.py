@@ -7,6 +7,7 @@ import time
 from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseStore
+from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -25,14 +26,25 @@ def main(argv=None):
     config.data_dir.mkdir(parents=True, exist_ok=True)
     config.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
 
+    auth = web_session_auth_from_env()
+    session_store = SessionStore(config.sqlite_path)
+    session_store.upsert_session(
+        session_id=config.default_session_id,
+        account_label=config.default_account_label,
+        credential_ref=config.default_credential_ref,
+        network_context=config.default_network_context,
+        health=SessionHealth.HEALTHY if not auth.missing_fields() else SessionHealth.AUTH_EXPIRED,
+    )
+
     worker = LocalWorker(
         release_store=ReleaseStore(config.sqlite_path),
         ledger=SQLiteTaskLedger(config.sqlite_path),
         manifest=ProtocolReleaseManifest.from_file(MANIFEST_PATH),
-        auth=web_session_auth_from_env(),
+        auth=auth,
         transport=UrllibJsonTransport(),
         raw_evidence_sink=FileRawEvidenceSink(config.raw_evidence_dir),
         canonical_store=CanonicalStore(config.sqlite_path),
+        session_store=session_store,
     )
 
     once = "--once" in argv

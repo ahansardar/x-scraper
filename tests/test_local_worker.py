@@ -14,6 +14,7 @@ from xingestion.capabilities import (
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
+from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
@@ -162,6 +163,94 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(store.counts()["engagement_observations"], 1)
             self.assertEqual(store.get_tweet("1").username, "alice")
             self.assertEqual(ledger.get_task(task.task_id).state, TaskState.DONE)
+
+    def test_worker_acquires_and_releases_session_lease(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+                network_context="direct",
+            )
+            task = ledger.create_task(
+                idempotency_key="session-worker-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+            )
+
+            result = worker.process_one()
+            session_after = sessions.get_session("session-1")
+            task_after = ledger.get_task(task.task_id)
+
+            self.assertEqual(result.state, TaskState.DONE)
+            self.assertEqual(result.session_id, "session-1")
+            self.assertIsNone(session_after.lease_token)
+            self.assertEqual(task_after.result_json["session"]["session_id"], "session-1")
+            self.assertEqual(task_after.result_json["session"]["network_context"], "direct")
+
+    def test_worker_schedules_retry_when_no_healthy_session_available(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+                health=SessionHealth.AUTH_EXPIRED,
+            )
+            task = ledger.create_task(
+                idempotency_key="session-unavailable-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+            )
+
+            result = worker.process_one()
+            task_after = ledger.get_task(task.task_id)
+
+            self.assertEqual(result.state, TaskState.RETRY_SCHEDULED)
+            self.assertEqual(result.error_class, "SESSION_UNAVAILABLE")
+            self.assertEqual(task_after.error_json["error_class"], "SESSION_UNAVAILABLE")
+            self.assertIsNotNone(task_after.next_attempt_at)
 
     def test_worker_queues_bounded_cursor_continuation(self):
         manifest = load_manifest()
