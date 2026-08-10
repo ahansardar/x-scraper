@@ -153,12 +153,22 @@ class LocalWorker:
             )
             task = self._renew_lease(task)
             lease_renewals += 1
+            if session is not None and self.session_store is not None:
+                session = self.session_store.record_attempt_started(session.session_id)
             page = self._execute_task(task)
+            if session is not None and self.session_store is not None:
+                session = self.session_store.record_attempt_success(session.session_id)
             task = self._renew_lease(task)
             lease_renewals += 1
         except (ProtocolError, ValueError) as exc:
             if session is not None and isinstance(exc, ProtocolError):
                 self._update_session_health_from_error(session.session_id, exc)
+            if session is not None and self.session_store is not None:
+                self.session_store.record_attempt_failure(
+                    session.session_id,
+                    error_class=getattr(exc, "error_class", exc.__class__.__name__),
+                    error_message=str(exc),
+                )
             self._record_telemetry(
                 task=task,
                 session_id=session.session_id if session else None,

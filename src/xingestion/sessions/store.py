@@ -30,6 +30,13 @@ class SessionRecord:
     lease_token: str | None
     lease_expires_at: str | None
     cooldown_until: str | None
+    attempt_count: int
+    success_count: int
+    failure_count: int
+    last_attempt_at: str | None
+    last_success_at: str | None
+    last_error_class: str | None
+    last_error_message: str | None
     created_at: str
     updated_at: str
 
@@ -201,6 +208,78 @@ class SessionStore:
             raise RuntimeError("updated session could not be reloaded")
         return session
 
+    def record_attempt_started(self, session_id: str) -> SessionRecord:
+        now = _now()
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE session_artifacts
+                SET attempt_count = attempt_count + 1,
+                    last_attempt_at = ?,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (now, now, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Session {session_id} not found")
+            conn.commit()
+        session = self.get_session(session_id)
+        if session is None:
+            raise RuntimeError("updated session could not be reloaded")
+        return session
+
+    def record_attempt_success(self, session_id: str) -> SessionRecord:
+        now = _now()
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE session_artifacts
+                SET success_count = success_count + 1,
+                    last_success_at = ?,
+                    last_error_class = NULL,
+                    last_error_message = NULL,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (now, now, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Session {session_id} not found")
+            conn.commit()
+        session = self.get_session(session_id)
+        if session is None:
+            raise RuntimeError("updated session could not be reloaded")
+        return session
+
+    def record_attempt_failure(
+        self,
+        session_id: str,
+        *,
+        error_class: str,
+        error_message: str,
+    ) -> SessionRecord:
+        now = _now()
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE session_artifacts
+                SET failure_count = failure_count + 1,
+                    last_error_class = ?,
+                    last_error_message = ?,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (error_class, _shorten(error_message), now, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Session {session_id} not found")
+            conn.commit()
+        session = self.get_session(session_id)
+        if session is None:
+            raise RuntimeError("updated session could not be reloaded")
+        return session
+
     def list_sessions(self) -> tuple[SessionRecord, ...]:
         with closing(self._connect()) as conn:
             rows = conn.execute(
@@ -230,6 +309,13 @@ class SessionStore:
                     lease_token TEXT,
                     lease_expires_at TEXT,
                     cooldown_until TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    success_count INTEGER NOT NULL DEFAULT 0,
+                    failure_count INTEGER NOT NULL DEFAULT 0,
+                    last_attempt_at TEXT,
+                    last_success_at TEXT,
+                    last_error_class TEXT,
+                    last_error_message TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -254,6 +340,13 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         lease_token=row["lease_token"],
         lease_expires_at=row["lease_expires_at"],
         cooldown_until=row["cooldown_until"],
+        attempt_count=int(row["attempt_count"]),
+        success_count=int(row["success_count"]),
+        failure_count=int(row["failure_count"]),
+        last_attempt_at=row["last_attempt_at"],
+        last_success_at=row["last_success_at"],
+        last_error_class=row["last_error_class"],
+        last_error_message=row["last_error_message"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -261,3 +354,7 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _shorten(value: str, limit: int = 500) -> str:
+    return value if len(value) <= limit else value[: limit - 3] + "..."

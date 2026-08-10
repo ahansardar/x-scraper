@@ -75,6 +75,13 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
     lease_token TEXT,
     lease_expires_at TEXT,
     cooldown_until TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    last_success_at TEXT,
+    last_error_class TEXT,
+    last_error_message TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

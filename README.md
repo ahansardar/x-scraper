@@ -154,6 +154,8 @@ Workers acquire a healthy session lease before each acquisition attempt and rele
 
 Session-scoped protocol errors update session health automatically. Auth/session rejection marks a session `AUTH_EXPIRED`; rate limits mark it `DEGRADED` with a durable `cooldown_until` timestamp. Workers skip cooled-down sessions until the timestamp expires, then allow that degraded session back into rotation for another attempt. A successful cooled-down attempt restores that session to `HEALTHY`.
 
+Each session also stores safe operational attempt visibility: total attempts, successes, failures, last attempt time, last success time, and the last error class/message. These fields are available from `GET /api/sessions` and the Sessions panel.
+
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.

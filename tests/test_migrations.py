@@ -24,9 +24,9 @@ class MigrationRunnerTests(unittest.TestCase):
             second = runner.apply()
             status = runner.status()
 
-            self.assertEqual(first, ("001", "002", "003", "004"))
+            self.assertEqual(first, ("001", "002", "003", "004", "005"))
             self.assertEqual(second, ())
-            self.assertEqual(runner.applied_versions(), ("001", "002", "003", "004"))
+            self.assertEqual(runner.applied_versions(), ("001", "002", "003", "004", "005"))
             self.assertTrue(status.current)
             self.assertEqual(status.pending_versions, ())
 
@@ -37,12 +37,20 @@ class MigrationRunnerTests(unittest.TestCase):
                         "SELECT name FROM sqlite_master WHERE type = 'table'"
                     ).fetchall()
                 }
+                session_columns = {
+                    row[1]
+                    for row in conn.execute(
+                        "PRAGMA table_info(session_artifacts)"
+                    ).fetchall()
+                }
             self.assertIn("capability_tasks", tables)
             self.assertIn("canonical_tweets", tables)
             self.assertIn("session_artifacts", tables)
             self.assertIn("protocol_release_health", tables)
             self.assertIn("protocol_attempts", tables)
             self.assertIn("reprocess_jobs", tables)
+            self.assertIn("attempt_count", session_columns)
+            self.assertIn("last_error_class", session_columns)
 
     def test_status_reports_pending_migrations_before_apply(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -55,9 +63,9 @@ class MigrationRunnerTests(unittest.TestCase):
             status = runner.status()
 
             self.assertFalse(status.current)
-            self.assertEqual(status.available_versions, ("001", "002", "003", "004"))
+            self.assertEqual(status.available_versions, ("001", "002", "003", "004", "005"))
             self.assertEqual(status.applied_versions, ())
-            self.assertEqual(status.pending_versions, ("001", "002", "003", "004"))
+            self.assertEqual(status.pending_versions, ("001", "002", "003", "004", "005"))
             with self.assertRaisesRegex(RuntimeError, "Pending database migrations"):
                 runner.require_current()
 

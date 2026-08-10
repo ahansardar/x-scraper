@@ -676,6 +676,13 @@ def _session_dict(session):
         "lease_owner": session.lease_owner,
         "lease_expires_at": session.lease_expires_at,
         "cooldown_until": session.cooldown_until,
+        "attempt_count": session.attempt_count,
+        "success_count": session.success_count,
+        "failure_count": session.failure_count,
+        "last_attempt_at": session.last_attempt_at,
+        "last_success_at": session.last_success_at,
+        "last_error_class": session.last_error_class,
+        "last_error_message": session.last_error_message,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     }

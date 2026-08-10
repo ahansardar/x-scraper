@@ -739,6 +739,27 @@ Next:
 
 - Add per-session acquisition attempt counters and last-error visibility.
 
+## 2026-08-10 - Checkpoint 41: Session Attempt Visibility
+
+Implemented:
+
+- Added durable per-session attempt, success, and failure counters.
+- Added last attempt time, last success time, last error class, and last error message fields.
+- Added migration `005_session_attempt_visibility.sql`.
+- Worker now records session attempt start, success, and failure around real protocol acquisition attempts.
+- `GET /api/sessions` exposes safe operational attempt metadata.
+- Frontend Sessions panel now shows attempt counts and last error details.
+- Hardened migration execution for multi-statement additive migrations.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add protocol drift investigation packages for failed attempts.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

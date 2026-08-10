@@ -219,6 +219,11 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(result.state, TaskState.DONE)
             self.assertEqual(result.session_id, "session-1")
             self.assertIsNone(session_after.lease_token)
+            self.assertEqual(session_after.attempt_count, 1)
+            self.assertEqual(session_after.success_count, 1)
+            self.assertEqual(session_after.failure_count, 0)
+            self.assertIsNotNone(session_after.last_attempt_at)
+            self.assertIsNotNone(session_after.last_success_at)
             self.assertEqual(task_after.result_json["session"]["session_id"], "session-1")
             self.assertEqual(task_after.result_json["session"]["network_context"], "direct")
 
@@ -379,6 +384,11 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(result.error_class, "AUTH_OR_SESSION_REJECTED")
             self.assertEqual(session_after.health, SessionHealth.AUTH_EXPIRED)
             self.assertIsNone(session_after.lease_token)
+            self.assertEqual(session_after.attempt_count, 1)
+            self.assertEqual(session_after.success_count, 0)
+            self.assertEqual(session_after.failure_count, 1)
+            self.assertEqual(session_after.last_error_class, "AUTH_OR_SESSION_REJECTED")
+            self.assertEqual(session_after.last_error_message, "X returned HTTP 401")
 
     def test_worker_marks_session_degraded_on_rate_limit(self):
         manifest = load_manifest()
@@ -420,6 +430,10 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(result.state, TaskState.RETRY_SCHEDULED)
             self.assertEqual(result.error_class, "RATE_LIMITED")
             self.assertEqual(session_after.health, SessionHealth.DEGRADED)
+            self.assertEqual(session_after.attempt_count, 1)
+            self.assertEqual(session_after.success_count, 0)
+            self.assertEqual(session_after.failure_count, 1)
+            self.assertEqual(session_after.last_error_class, "RATE_LIMITED")
             self.assertIsNotNone(session_after.cooldown_until)
             self.assertGreater(
                 datetime.fromisoformat(session_after.cooldown_until),

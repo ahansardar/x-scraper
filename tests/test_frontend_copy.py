@@ -19,6 +19,7 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("Run live acquisition", html)
         self.assertIn("Metrics", html)
         self.assertIn("Sessions", html)
+        self.assertIn("Last Error", html)
         self.assertNotIn("mock", html.lower())
 
     def test_frontend_reports_non_json_api_responses(self):
@@ -47,6 +48,7 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("/api/sessions", js)
         self.assertIn("data-restore-session", js)
         self.assertIn("data-disable-session", js)
+        self.assertIn("formatSessionError", js)
 
 
 if __name__ == "__main__":

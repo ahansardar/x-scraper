@@ -25,6 +25,10 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(session.health, SessionHealth.HEALTHY)
             self.assertEqual(session.credential_ref, "secret:x/session-1")
             self.assertIsNone(session.lease_token)
+            self.assertEqual(session.attempt_count, 0)
+            self.assertEqual(session.success_count, 0)
+            self.assertEqual(session.failure_count, 0)
+            self.assertIsNone(session.last_error_class)
 
     def test_rejects_raw_secret_material_as_credential_ref(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -106,6 +110,35 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(restored.cooldown_until, past)
             self.assertEqual(leased.session_id, "session-1")
             self.assertEqual(leased.health, SessionHealth.DEGRADED)
+
+    def test_records_attempt_success_and_failure_visibility(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SessionStore(Path(temp_dir) / "sessions.sqlite3")
+            store.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+
+            started = store.record_attempt_started("session-1")
+            failed = store.record_attempt_failure(
+                "session-1",
+                error_class="RATE_LIMITED",
+                error_message="X returned HTTP 429",
+            )
+            store.record_attempt_started("session-1")
+            succeeded = store.record_attempt_success("session-1")
+
+            self.assertEqual(started.attempt_count, 1)
+            self.assertIsNotNone(started.last_attempt_at)
+            self.assertEqual(failed.failure_count, 1)
+            self.assertEqual(failed.last_error_class, "RATE_LIMITED")
+            self.assertEqual(failed.last_error_message, "X returned HTTP 429")
+            self.assertEqual(succeeded.attempt_count, 2)
+            self.assertEqual(succeeded.success_count, 1)
+            self.assertEqual(succeeded.failure_count, 1)
+            self.assertIsNotNone(succeeded.last_success_at)
+            self.assertIsNone(succeeded.last_error_class)
 
 
 if __name__ == "__main__":

@@ -82,7 +82,9 @@ async function loadSessions() {
     <tr>
       <td>${session.session_id}</td>
       <td><span class="${sessionStateClass(session.health)}">${session.health}</span></td>
+      <td>${session.attempt_count} / ${session.success_count} / ${session.failure_count}</td>
       <td>${session.cooldown_until || ""}</td>
+      <td>${formatSessionError(session)}</td>
       <td>${sessionActions(session)}</td>
     </tr>
   `).join("");
@@ -113,6 +115,14 @@ function sessionStateClass(health) {
     return "state warn";
   }
   return "state bad";
+}
+
+function formatSessionError(session) {
+  if (!session.last_error_class) {
+    return "";
+  }
+  const message = session.last_error_message ? `: ${session.last_error_message}` : "";
+  return `${session.last_error_class}${message}`;
 }
 
 function renderOutput(data) {
@@ -312,5 +322,5 @@ loadMetrics().catch((error) => {
   metrics.innerHTML = `<div><strong>error</strong><span>${error.message}</span></div>`;
 });
 loadSessions().catch((error) => {
-  sessions.innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`;
+  sessions.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
 });
