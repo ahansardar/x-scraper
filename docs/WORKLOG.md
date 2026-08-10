@@ -37,3 +37,21 @@ Verified:
 Next:
 
 - Add a raw evidence sink boundary so runtime parsing can refer to durable response evidence before normalization.
+
+## 2026-08-10 - Checkpoint 3: Raw Evidence Boundary
+
+Implemented:
+
+- Added `src/xrev/evidence` with a `RawEvidenceSink` protocol, `RawEvidenceRef`, and local `FileRawEvidenceSink`.
+- Stored raw JSON responses with SHA-256 content hashes and sidecar metadata.
+- Updated SearchTweets parsing results so parsed pages can carry the raw evidence reference used to produce them.
+- Added tests for raw JSON persistence, metadata persistence, content hashing, and parser evidence reference propagation.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests`
+
+Next:
+
+- Add a one-attempt transport boundary that executes a prepared protocol HTTP request and persists raw evidence before parsing.

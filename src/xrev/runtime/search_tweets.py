@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from xrev.evidence import RawEvidenceRef
 from xrev.protocol import AcquisitionRecipeRevision
 
 
@@ -60,6 +61,7 @@ class TweetRecord:
 class SearchTweetsPage:
     tweets: tuple[TweetRecord, ...]
     next_cursor: str | None
+    raw_evidence_ref: RawEvidenceRef | None = None
 
 
 def build_search_timeline_request(
@@ -120,13 +122,18 @@ def build_search_timeline_request(
     )
 
 
-def parse_search_tweets_page(payload: Mapping[str, Any]) -> SearchTweetsPage:
+def parse_search_tweets_page(
+    payload: Mapping[str, Any],
+    *,
+    raw_evidence_ref: RawEvidenceRef | None = None,
+) -> SearchTweetsPage:
     tweets: list[TweetRecord] = []
     seen_ids: set[str] = set()
     _find_tweets(payload, tweets, seen_ids)
     return SearchTweetsPage(
         tweets=tuple(tweets),
         next_cursor=_find_bottom_cursor(payload),
+        raw_evidence_ref=raw_evidence_ref,
     )
 
 
