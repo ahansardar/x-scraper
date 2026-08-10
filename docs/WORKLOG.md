@@ -92,3 +92,23 @@ Verified:
 Next:
 
 - Add a minimal durable task ledger interface and SQLite-backed implementation for capability tasks before introducing Redis or worker leases.
+
+## 2026-08-10 - Checkpoint 6: Durable Task Ledger
+
+Implemented:
+
+- Added `src/xingestion/tasks` with task states matching the production lifecycle vocabulary.
+- Added `TaskLedger` protocol and `SQLiteTaskLedger` local durable implementation.
+- Added idempotent task creation keyed by `idempotency_key`.
+- Added fenced-style state transitions that require the expected current state.
+- Persisted public capability request and acquisition plan JSON without GraphQL internals.
+- Added tests for create/reload durability, idempotency, and guarded transitions.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests`
+
+Next:
+
+- Add a transactional outbox table beside the task ledger so task creation and publish intent can commit atomically.
