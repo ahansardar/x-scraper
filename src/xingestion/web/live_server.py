@@ -19,6 +19,7 @@ from xingestion.capabilities import (
 )
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
+from xingestion.investigation import build_protocol_drift_package
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
@@ -182,6 +183,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 if not self._require_admin():
                     return
                 return self._reprocess_task(parts[2])
+            if len(parts) == 4 and parts[3] == "investigate":
+                if not self._require_admin():
+                    return
+                return self._investigate_task(parts[2])
 
         if parsed.path == "/api/retention/run":
             if not self._require_admin():
@@ -389,6 +394,20 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             status = 404 if "not found" in str(exc).lower() else 409
             return self._json({"message": str(exc)}, status=status)
         return self._json({"reprocess": _reprocess_result_dict(result)}, status=200)
+
+    def _investigate_task(self, task_id):
+        try:
+            package = build_protocol_drift_package(
+                task_id=task_id,
+                ledger=STATE.ledger,
+                manifest=STATE.manifest,
+                release_store=STATE.release_store,
+                session_store=STATE.session_store,
+                telemetry_store=STATE.telemetry_store,
+            )
+        except ValueError as exc:
+            return self._json({"message": str(exc)}, status=404)
+        return self._json({"investigation": package}, status=200)
 
     def _run_reprocess_job(self, body):
         release_id = str(body.get("release_id") or STATE.manifest.release_id)

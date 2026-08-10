@@ -49,6 +49,8 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("data-restore-session", js)
         self.assertIn("data-disable-session", js)
         self.assertIn("formatSessionError", js)
+        self.assertIn("data-investigate-task", js)
+        self.assertIn("renderInvestigation", js)
 
 
 if __name__ == "__main__":

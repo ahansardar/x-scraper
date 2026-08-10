@@ -135,6 +135,12 @@ Reprocess stored raw evidence without recollecting:
 POST /api/tasks/{task_id}/reprocess
 ```
 
+Build a protocol drift investigation package:
+
+```text
+POST /api/tasks/{task_id}/investigate
+```
+
 Bulk reprocess completed tasks for a release:
 
 ```text

@@ -43,6 +43,13 @@ class ProtocolTelemetryStoreTests(unittest.TestCase):
             self.assertEqual(summary.failures, 1)
             self.assertEqual(summary.errors_by_class["RATE_LIMITED"], 1)
 
+            task_attempts = store.list_for_task("task-2")
+
+            self.assertEqual(len(task_attempts), 1)
+            self.assertEqual(task_attempts[0].task_id, "task-2")
+            self.assertEqual(task_attempts[0].state, "FAILURE")
+            self.assertEqual(task_attempts[0].error_class, "RATE_LIMITED")
+
 
 if __name__ == "__main__":
     unittest.main()

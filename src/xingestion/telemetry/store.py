@@ -15,6 +15,22 @@ class TelemetrySummary:
     errors_by_class: dict[str, int]
 
 
+@dataclass(frozen=True)
+class ProtocolAttempt:
+    attempt_id: int
+    task_id: str
+    capability_id: str
+    release_id: str
+    recipe_revision_id: str
+    state: str
+    session_id: str | None
+    error_class: str | None
+    tweet_count: int
+    next_cursor_present: bool
+    duration_ms: int
+    created_at: str
+
+
 class ProtocolTelemetryStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
@@ -98,6 +114,19 @@ class ProtocolTelemetryStore:
             },
         )
 
+    def list_for_task(self, task_id: str) -> tuple[ProtocolAttempt, ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM protocol_attempts
+                WHERE task_id = ?
+                ORDER BY attempt_id ASC
+                """,
+                (task_id,),
+            ).fetchall()
+        return tuple(_attempt_from_row(row) for row in rows)
+
     def _initialize(self) -> None:
         with closing(self._connect()) as conn:
             conn.execute(
@@ -134,3 +163,20 @@ class ProtocolTelemetryStore:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _attempt_from_row(row: sqlite3.Row) -> ProtocolAttempt:
+    return ProtocolAttempt(
+        attempt_id=int(row["attempt_id"]),
+        task_id=row["task_id"],
+        capability_id=row["capability_id"],
+        release_id=row["release_id"],
+        recipe_revision_id=row["recipe_revision_id"],
+        state=row["state"],
+        session_id=row["session_id"],
+        error_class=row["error_class"],
+        tweet_count=int(row["tweet_count"]),
+        next_cursor_present=bool(row["next_cursor_present"]),
+        duration_ms=int(row["duration_ms"]),
+        created_at=row["created_at"],
+    )

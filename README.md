@@ -168,11 +168,18 @@ Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in
 - `POST /api/releases/current/quarantine`
 - `POST /api/releases/current/activate`
 - `POST /api/tasks/{task_id}/reprocess`
+- `POST /api/tasks/{task_id}/investigate`
 - `POST /api/reprocess/jobs`
 - `POST /api/sessions/{session_id}/restore`
 - `POST /api/sessions/{session_id}/disable`
 
 Reprocessing parses stored raw evidence again and appends canonical observations without making a new X request.
+
+Investigation packages combine task error state, release and recipe metadata, session diagnostics, telemetry attempts, and raw evidence references:
+
+```text
+POST /api/tasks/{task_id}/investigate
+```
 
 Retention cleanup is available from the Operations panel and:
 

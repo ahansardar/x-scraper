@@ -1,5 +1,5 @@
 """Operational protocol telemetry."""
 
-from .store import ProtocolTelemetryStore, TelemetrySummary
+from .store import ProtocolAttempt, ProtocolTelemetryStore, TelemetrySummary
 
-__all__ = ["ProtocolTelemetryStore", "TelemetrySummary"]
+__all__ = ["ProtocolAttempt", "ProtocolTelemetryStore", "TelemetrySummary"]

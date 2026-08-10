@@ -8,11 +8,13 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xingestion.capabilities import CapabilityPlanner
+from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
+from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
-from xingestion.tasks import SQLiteTaskLedger
+from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.web import live_server
-from xrev.protocol import ProtocolReleaseManifest
+from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 class FakeHandler(live_server.LiveAppHandler):
@@ -193,6 +195,66 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 200)
             self.assertEqual(payload["session"]["health"], "DISABLED")
             self.assertIsNone(acquired)
+
+    def test_investigate_task_returns_package(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            task = ledger.create_task(
+                idempotency_key="investigate-route",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            failed = ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={"error_class": "OPERATION_NOT_FOUND"},
+            )
+            telemetry.record_attempt(
+                task_id=failed.task_id,
+                capability_id=failed.capability_id.value,
+                release_id=manifest.release_id,
+                recipe_revision_id=str(failed.plan_json["recipe_revision_id"]),
+                state="FAILURE",
+                session_id="session-1",
+                error_class="OPERATION_NOT_FOUND",
+            )
+            live_server.STATE = SimpleNamespace(
+                ledger=ledger,
+                manifest=manifest,
+                release_store=ReleaseStore(db_path),
+                session_store=sessions,
+                telemetry_store=telemetry,
+            )
+            handler = FakeHandler()
+
+            payload = handler._investigate_task(failed.task_id)
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(
+                payload["investigation"]["package_type"],
+                "PROTOCOL_DRIFT_INVESTIGATION",
+            )
+            self.assertEqual(payload["investigation"]["task"]["task_id"], failed.task_id)
 
 
 if __name__ == "__main__":

@@ -760,6 +760,27 @@ Next:
 
 - Add protocol drift investigation packages for failed attempts.
 
+## 2026-08-10 - Checkpoint 42: Protocol Drift Investigation Packages
+
+Implemented:
+
+- Added task-scoped protocol telemetry lookup.
+- Added `build_protocol_drift_package(...)` for safe JSON investigation bundles.
+- Investigation bundles include task error state, release health, recipe revision metadata, session diagnostics, telemetry attempts, raw evidence references, and diagnosis hints.
+- Added protected `POST /api/tasks/{task_id}/investigate`.
+- Added an Investigate action for dead-letter tasks in the frontend.
+- Documented the investigation endpoint in README and deployment runbook.
+- Hardened CI/static tests to require the task investigation UI.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add release quarantine suggestions from repeated drift packages.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

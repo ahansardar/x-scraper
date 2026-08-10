@@ -92,7 +92,10 @@ async function loadSessions() {
 
 function taskActions(task) {
   if (task.state === "DEAD_LETTER") {
-    return `<button class="small-button" data-replay-task="${task.task_id}">Replay</button>`;
+    return `
+      <button class="small-button" data-replay-task="${task.task_id}">Replay</button>
+      <button class="small-button secondary" data-investigate-task="${task.task_id}">Investigate</button>
+    `;
   }
   if (["CREATED", "ENQUEUED", "RETRY_SCHEDULED"].includes(task.state)) {
     return `<button class="small-button secondary" data-cancel-task="${task.task_id}">Cancel</button>`;
@@ -146,6 +149,20 @@ function renderOutput(data) {
   `).join("");
 }
 
+function renderInvestigation(data) {
+  const investigation = data.investigation;
+  summary.innerHTML = `
+    <strong>${investigation.task.state}</strong>
+    investigation package for task ${investigation.task.task_id.slice(0, 18)}
+    with ${investigation.diagnosis.telemetry_attempts} telemetry attempts.
+  `;
+  tweets.innerHTML = "";
+  const packageView = document.createElement("pre");
+  packageView.className = "diagnostic-pre";
+  packageView.textContent = JSON.stringify(investigation, null, 2);
+  tweets.appendChild(packageView);
+}
+
 function formatViews(value) {
   return value === null || value === undefined || value === ""
     ? "views unavailable"
@@ -183,12 +200,30 @@ form.addEventListener("submit", async (event) => {
 });
 
 tasks.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-replay-task], [data-cancel-task]");
+  const button = event.target.closest("[data-replay-task], [data-cancel-task], [data-investigate-task]");
   if (!button) {
     return;
   }
 
   button.disabled = true;
+  if (button.dataset.investigateTask) {
+    summary.textContent = "Building investigation package...";
+    tweets.innerHTML = "";
+    try {
+      const data = await getJson(`/api/tasks/${button.dataset.investigateTask}/investigate`, {
+        method: "POST",
+        headers: adminHeaders()
+      });
+      renderInvestigation(data);
+    } catch (error) {
+      summary.textContent = error.message;
+    }
+    await loadTasks();
+    await loadMetrics();
+    await loadSessions();
+    return;
+  }
+
   if (button.dataset.cancelTask) {
     summary.textContent = "Cancelling task...";
     try {

@@ -261,6 +261,19 @@ button:disabled {
   line-height: 1.45;
 }
 
+.diagnostic-pre {
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  background: #111827;
+  color: #edf2f7;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .metrics {
   display: flex;
   flex-wrap: wrap;
