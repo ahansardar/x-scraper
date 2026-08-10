@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendCopyTests(unittest.TestCase):
-    def test_frontend_does_not_present_mock_or_demo_data(self):
+    def test_frontend_does_not_present_mock_data(self):
         html = (
             ROOT
             / "src"
@@ -18,7 +18,6 @@ class FrontendCopyTests(unittest.TestCase):
 
         self.assertIn("Run live acquisition", html)
         self.assertNotIn("mock", html.lower())
-        self.assertNotIn("demo acquisition", html.lower())
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ python -m unittest discover -s tests
 No Docker is required.
 
 ```powershell
-python .\run_demo.py --port 8000
+python .\run_app.py --port 8000
 ```
 
 Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.

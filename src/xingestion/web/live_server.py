@@ -30,7 +30,7 @@ DATA_ROOT = ROOT / "data"
 MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
 
 
-class DemoState:
+class LiveAppState:
     def __init__(self) -> None:
         load_env_file(ROOT / ".env")
         DATA_ROOT.mkdir(parents=True, exist_ok=True)
@@ -42,10 +42,10 @@ class DemoState:
         self.auth = web_session_auth_from_env()
 
 
-STATE = DemoState()
+STATE = LiveAppState()
 
 
-class DemoHandler(SimpleHTTPRequestHandler):
+class LiveAppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_ROOT), **kwargs)
 
@@ -76,7 +76,7 @@ class DemoHandler(SimpleHTTPRequestHandler):
         page_size = int(body.get("page_size", 20))
         idempotency_key = str(
             body.get("idempotency_key")
-            or f"demo:{query}:{product}:{page_size}"
+            or f"live:{query}:{product}:{page_size}"
         )
 
         capability_request = CapabilityRequest(
@@ -230,8 +230,8 @@ def main(argv=None):
     if "--port" in argv:
         port = int(argv[argv.index("--port") + 1])
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), DemoHandler)
-    print(f"X ingestion demo running at http://127.0.0.1:{port}")
+    server = ThreadingHTTPServer(("127.0.0.1", port), LiveAppHandler)
+    print(f"X ingestion live app running at http://127.0.0.1:{port}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

@@ -5,7 +5,7 @@ import sys
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from xingestion.web.demo_server import main
+from xingestion.web.live_server import main
 
 
 if __name__ == "__main__":

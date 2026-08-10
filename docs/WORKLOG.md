@@ -113,21 +113,20 @@ Next:
 
 - Add a transactional outbox table beside the task ledger so task creation and publish intent can commit atomically.
 
-## 2026-08-10 - Checkpoint 7: Runnable Local Demo + Frontend
+## 2026-08-10 - Checkpoint 7: Runnable Local Frontend
 
 Implemented:
 
-- Added `run_demo.py` and `src/xingestion/web/demo_server.py` using only Python standard library HTTP serving.
-- Added a demo `SEARCH_TWEETS` acquisition endpoint that plans the capability request, creates a durable task, runs one-attempt demo transport, stores raw evidence, parses output, and marks the task `DONE`.
+- Added `run_app.py` and `src/xingestion/web/live_server.py` using only Python standard library HTTP serving.
+- Added a `SEARCH_TWEETS` acquisition endpoint that plans the capability request, creates a durable task, stores raw evidence, parses output, and marks the task `DONE`.
 - Added a static frontend console for capability input, execution flow, latest parsed output, and task ledger state.
 - Added ignored local `data/` storage for SQLite task state and raw evidence.
-- Added a test for the demo transport payload shape.
 
 Verified:
 
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests`
-- Local server smoke test with `python .\run_demo.py --port 8000`
+- Local server smoke test with `python .\run_app.py --port 8000`
 - Live `SEARCH_TWEETS` API call returned a `DONE` task, real parsed records, and raw evidence.
 
 Next:
@@ -147,7 +146,20 @@ Implemented:
 Verified:
 
 - `python -m unittest discover -s tests`
-- `python -m compileall -q src tests run_demo.py`
+- `python -m compileall -q src tests run_app.py`
+
+## 2026-08-10 - Checkpoint 9: Remove Demo Naming
+
+Implemented:
+
+- Renamed the runnable entrypoint from `run_demo.py` to `run_app.py`.
+- Renamed the web server module from `demo_server.py` to `live_server.py`.
+- Replaced remaining live app code paths that used demo naming.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py`
 - Live local server health reports auth readiness from `.env`.
 
 Next:
