@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -90,7 +91,7 @@ class AuthRejectedTransport:
 
 class RateLimitedTransport:
     def send(self, request):
-        return ProtocolHttpResponse(429, {"errors": ["rate limited"]})
+        return ProtocolHttpResponse(429, {"errors": ["rate limited"]}, {"retry-after": "120"})
 
 
 def load_manifest():
@@ -419,6 +420,59 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(result.state, TaskState.RETRY_SCHEDULED)
             self.assertEqual(result.error_class, "RATE_LIMITED")
             self.assertEqual(session_after.health, SessionHealth.DEGRADED)
+            self.assertIsNotNone(session_after.cooldown_until)
+            self.assertGreater(
+                datetime.fromisoformat(session_after.cooldown_until),
+                datetime.now(UTC),
+            )
+            self.assertIsNone(sessions.acquire_session(owner="worker-b", lease_seconds=60))
+
+    def test_worker_restores_degraded_session_after_successful_cooldown_retry(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            sessions.update_health(
+                "session-1",
+                health=SessionHealth.DEGRADED,
+                reason="cooldown elapsed",
+                cooldown_until=(datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+            )
+            ledger.create_task(
+                idempotency_key="session-cooldown-success-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+            )
+
+            result = worker.process_one()
+            session_after = sessions.get_session("session-1")
+
+            self.assertEqual(result.state, TaskState.DONE)
+            self.assertEqual(session_after.health, SessionHealth.HEALTHY)
+            self.assertIsNone(session_after.cooldown_until)
 
     def test_worker_queues_bounded_cursor_continuation(self):
         manifest = load_manifest()

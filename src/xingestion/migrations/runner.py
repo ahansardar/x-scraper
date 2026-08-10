@@ -43,7 +43,13 @@ class MigrationRunner:
                     continue
                 sql = migration.path.read_text(encoding="utf-8")
                 conn.execute("BEGIN")
-                conn.executescript(sql)
+                try:
+                    conn.executescript(sql)
+                except sqlite3.OperationalError as exc:
+                    conn.rollback()
+                    if not _is_duplicate_column_error(exc):
+                        raise
+                    conn.execute("BEGIN")
                 conn.execute(
                     "INSERT INTO schema_migrations (version) VALUES (?)",
                     (migration.version,),
@@ -95,3 +101,7 @@ class MigrationRunner:
             """
         )
         conn.commit()
+
+
+def _is_duplicate_column_error(exc: sqlite3.OperationalError) -> bool:
+    return "duplicate column name" in str(exc).lower()

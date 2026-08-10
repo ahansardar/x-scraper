@@ -29,6 +29,7 @@ class SessionRecord:
     lease_owner: str | None
     lease_token: str | None
     lease_expires_at: str | None
+    cooldown_until: str | None
     created_at: str
     updated_at: str
 
@@ -65,15 +66,21 @@ class SessionStore:
                     lease_owner,
                     lease_token,
                     lease_expires_at,
+                    cooldown_until,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     account_label = excluded.account_label,
                     credential_ref = excluded.credential_ref,
                     network_context = excluded.network_context,
                     health = excluded.health,
+                    cooldown_until = CASE
+                        WHEN excluded.health = ?
+                        THEN NULL
+                        ELSE session_artifacts.cooldown_until
+                    END,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -84,6 +91,7 @@ class SessionStore:
                     health.value,
                     now,
                     now,
+                    SessionHealth.HEALTHY.value,
                 ),
             )
             conn.commit()
@@ -107,7 +115,18 @@ class SessionStore:
                 """
                 SELECT *
                 FROM session_artifacts
-                WHERE health = ?
+                WHERE (
+                    health = ?
+                    OR (
+                        health = ?
+                        AND cooldown_until IS NOT NULL
+                        AND cooldown_until <= ?
+                    )
+                  )
+                  AND (
+                    cooldown_until IS NULL
+                    OR cooldown_until <= ?
+                  )
                   AND (
                     lease_token IS NULL
                     OR lease_expires_at IS NULL
@@ -116,7 +135,7 @@ class SessionStore:
                 ORDER BY updated_at ASC
                 LIMIT 1
                 """,
-                (SessionHealth.HEALTHY.value, now),
+                (SessionHealth.HEALTHY.value, SessionHealth.DEGRADED.value, now, now, now),
             ).fetchone()
             if row is None:
                 conn.commit()
@@ -159,6 +178,7 @@ class SessionStore:
         *,
         health: SessionHealth,
         reason: str,
+        cooldown_until: str | None = None,
     ) -> SessionRecord:
         now = _now()
         with closing(self._connect()) as conn:
@@ -166,10 +186,11 @@ class SessionStore:
                 """
                 UPDATE session_artifacts
                 SET health = ?,
+                    cooldown_until = ?,
                     updated_at = ?
                 WHERE session_id = ?
                 """,
-                (health.value, now, session_id),
+                (health.value, cooldown_until, now, session_id),
             )
             if cursor.rowcount != 1:
                 raise ValueError(f"Session {session_id} not found")
@@ -208,6 +229,7 @@ class SessionStore:
                     lease_owner TEXT,
                     lease_token TEXT,
                     lease_expires_at TEXT,
+                    cooldown_until TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -231,6 +253,7 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         lease_owner=row["lease_owner"],
         lease_token=row["lease_token"],
         lease_expires_at=row["lease_expires_at"],
+        cooldown_until=row["cooldown_until"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

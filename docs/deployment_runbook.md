@@ -63,6 +63,8 @@ The app stores:
 - raw evidence: `XINGESTION_DATA_DIR\raw_evidence`
 - canonical tweets and observations: `tasks.sqlite3`
 
+Session records expose `health`, lease metadata, and `cooldown_until`. HTTP 429 protocol responses cool down only the leased session, so other healthy sessions can continue processing while the limited account waits. Once the cooldown expires, a successful retry restores that session to `HEALTHY`.
+
 ## Submit Work
 
 ```http

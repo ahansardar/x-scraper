@@ -529,6 +529,7 @@ def _storage_dict():
 def _metrics_dict():
     task_counts = STATE.ledger.task_state_counts()
     canonical_counts = STATE.canonical_store.counts()
+    sessions = STATE.session_store.list_sessions()
     return {
         "release_id": STATE.manifest.release_id,
         "release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id)),
@@ -554,11 +555,16 @@ def _metrics_dict():
         "migrations": _migration_status_dict(STATE.migration_runner.status()),
         "telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary()),
         "sessions": {
-            "total": len(STATE.session_store.list_sessions()),
+            "total": len(sessions),
             "healthy": sum(
                 1
-                for session in STATE.session_store.list_sessions()
+                for session in sessions
                 if session.health == SessionHealth.HEALTHY
+            ),
+            "cooling_down": sum(
+                1
+                for session in sessions
+                if session.cooldown_until is not None
             ),
         },
     }
@@ -624,6 +630,7 @@ def _session_dict(session):
         "health": session.health.value,
         "lease_owner": session.lease_owner,
         "lease_expires_at": session.lease_expires_at,
+        "cooldown_until": session.cooldown_until,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     }

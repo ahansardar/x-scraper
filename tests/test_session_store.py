@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -73,6 +74,38 @@ class SessionStoreTests(unittest.TestCase):
 
             self.assertEqual(updated.health, SessionHealth.AUTH_EXPIRED)
             self.assertIsNone(leased)
+
+    def test_acquire_skips_session_until_cooldown_expires(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SessionStore(Path(temp_dir) / "sessions.sqlite3")
+            store.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            future = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
+            past = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+
+            cooled = store.update_health(
+                "session-1",
+                health=SessionHealth.DEGRADED,
+                reason="rate limited",
+                cooldown_until=future,
+            )
+            blocked = store.acquire_session(owner="worker-a", lease_seconds=60)
+            restored = store.update_health(
+                "session-1",
+                health=SessionHealth.DEGRADED,
+                reason="cooldown elapsed",
+                cooldown_until=past,
+            )
+            leased = store.acquire_session(owner="worker-b", lease_seconds=60)
+
+            self.assertEqual(cooled.cooldown_until, future)
+            self.assertIsNone(blocked)
+            self.assertEqual(restored.cooldown_until, past)
+            self.assertEqual(leased.session_id, "session-1")
+            self.assertEqual(leased.health, SessionHealth.DEGRADED)
 
 
 if __name__ == "__main__":

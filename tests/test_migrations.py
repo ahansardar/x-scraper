@@ -24,9 +24,9 @@ class MigrationRunnerTests(unittest.TestCase):
             second = runner.apply()
             status = runner.status()
 
-            self.assertEqual(first, ("001", "002", "003"))
+            self.assertEqual(first, ("001", "002", "003", "004"))
             self.assertEqual(second, ())
-            self.assertEqual(runner.applied_versions(), ("001", "002", "003"))
+            self.assertEqual(runner.applied_versions(), ("001", "002", "003", "004"))
             self.assertTrue(status.current)
             self.assertEqual(status.pending_versions, ())
 
@@ -55,9 +55,9 @@ class MigrationRunnerTests(unittest.TestCase):
             status = runner.status()
 
             self.assertFalse(status.current)
-            self.assertEqual(status.available_versions, ("001", "002", "003"))
+            self.assertEqual(status.available_versions, ("001", "002", "003", "004"))
             self.assertEqual(status.applied_versions, ())
-            self.assertEqual(status.pending_versions, ("001", "002", "003"))
+            self.assertEqual(status.pending_versions, ("001", "002", "003", "004"))
             with self.assertRaisesRegex(RuntimeError, "Pending database migrations"):
                 runner.require_current()
 

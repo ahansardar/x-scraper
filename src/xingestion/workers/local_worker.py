@@ -180,6 +180,17 @@ class LocalWorker:
             if session is not None and session.lease_token:
                 self.session_store.release_session(session.session_id, session.lease_token)
 
+        if (
+            session is not None
+            and self.session_store is not None
+            and session.health == SessionHealth.DEGRADED
+        ):
+            session = self.session_store.update_health(
+                session.session_id,
+                health=SessionHealth.HEALTHY,
+                reason="successful acquisition after cooldown",
+            )
+
         if self.canonical_store is not None:
             self.canonical_store.ingest_search_tweets_page(
                 page,
@@ -328,6 +339,7 @@ class LocalWorker:
             session_id,
             health=health,
             reason=f"{exc.error_class}:{exc.scope_hint}",
+            cooldown_until=_session_cooldown_until(exc),
         )
 
     def _recipe_for_task(self, task):
@@ -399,3 +411,10 @@ def _session_health_for_protocol_error(exc: ProtocolError) -> SessionHealth | No
     if "LOCK" in exc.error_class:
         return SessionHealth.LOCKED
     return SessionHealth.DEGRADED
+
+
+def _session_cooldown_until(exc: ProtocolError) -> str | None:
+    if exc.scope_hint != "SESSION" or exc.error_class != "RATE_LIMITED":
+        return None
+    retry_after = exc.retry_after_seconds if exc.retry_after_seconds is not None else 300
+    return (datetime.now(UTC) + timedelta(seconds=retry_after)).isoformat()

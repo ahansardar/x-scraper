@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
     lease_owner TEXT,
     lease_token TEXT,
     lease_expires_at TEXT,
+    cooldown_until TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

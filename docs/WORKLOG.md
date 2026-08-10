@@ -697,6 +697,27 @@ Next:
 
 - Add asynchronous job execution for large reprocessing batches.
 
+## 2026-08-10 - Checkpoint 39: Session Cooldowns
+
+Implemented:
+
+- Added durable `cooldown_until` metadata to session artifacts.
+- Added migration `004_session_cooldowns.sql`.
+- Worker now stores a per-session cooldown on HTTP 429 protocol errors using `Retry-After` when available.
+- Session acquisition skips cooled-down sessions and allows expired degraded cooldowns back into rotation.
+- Successful cooled-down retries restore the session to `HEALTHY`.
+- Exposed session cooldowns through `/api/sessions` and cooldown counts through `/api/metrics`.
+- Documented cooldown behavior for no-Docker deployment operations.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add operator session restore and disable paths.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
