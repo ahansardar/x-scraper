@@ -146,6 +146,8 @@ Session metadata is stored without raw secrets in `session_artifacts`. The defau
 
 ```text
 GET /api/sessions
+POST /api/sessions/{session_id}/restore
+POST /api/sessions/{session_id}/disable
 ```
 
 Workers acquire a healthy session lease before each acquisition attempt and release it after the attempt. If no healthy session is available, the task is moved to `RETRY_SCHEDULED` without making an X request.
@@ -165,6 +167,8 @@ Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in
 - `POST /api/releases/current/activate`
 - `POST /api/tasks/{task_id}/reprocess`
 - `POST /api/reprocess/jobs`
+- `POST /api/sessions/{session_id}/restore`
+- `POST /api/sessions/{session_id}/disable`
 
 Reprocessing parses stored raw evidence again and appends canonical observations without making a new X request.
 

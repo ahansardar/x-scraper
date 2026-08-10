@@ -157,6 +157,17 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/sessions/"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 4 and parts[3] == "restore":
+                if not self._require_admin():
+                    return
+                return self._restore_session(parts[2])
+            if len(parts) == 4 and parts[3] == "disable":
+                if not self._require_admin():
+                    return
+                return self._disable_session(parts[2])
+
         if parsed.path.startswith("/api/tasks/"):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 4 and parts[3] == "replay":
@@ -332,6 +343,40 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             reason=reason,
         )
         return self._json({"release": _release_dict(release)}, status=200)
+
+    def _restore_session(self, session_id):
+        try:
+            session = STATE.session_store.update_health(
+                session_id,
+                health=SessionHealth.HEALTHY,
+                reason="operator_restore",
+            )
+        except ValueError as exc:
+            return self._json({"message": str(exc)}, status=404)
+        return self._json(
+            {
+                "session": _session_dict(session),
+                "message": "Session restored",
+            },
+            status=200,
+        )
+
+    def _disable_session(self, session_id):
+        try:
+            session = STATE.session_store.update_health(
+                session_id,
+                health=SessionHealth.DISABLED,
+                reason="operator_disable",
+            )
+        except ValueError as exc:
+            return self._json({"message": str(exc)}, status=404)
+        return self._json(
+            {
+                "session": _session_dict(session),
+                "message": "Session disabled",
+            },
+            status=200,
+        )
 
     def _reprocess_task(self, task_id):
         try:

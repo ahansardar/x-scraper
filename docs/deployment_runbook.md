@@ -117,6 +117,18 @@ Reactivate it after investigation:
 POST /api/releases/current/activate
 ```
 
+Restore a fixed session to worker rotation:
+
+```text
+POST /api/sessions/{session_id}/restore
+```
+
+Disable a session without deleting its metadata:
+
+```text
+POST /api/sessions/{session_id}/disable
+```
+
 Reprocess stored raw evidence without recollecting:
 
 ```text

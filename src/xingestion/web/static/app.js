@@ -6,6 +6,7 @@ const tasks = document.querySelector("#tasks");
 const retention = document.querySelector("#retention");
 const runRetention = document.querySelector("#runRetention");
 const metrics = document.querySelector("#metrics");
+const sessions = document.querySelector("#sessions");
 let adminToken = "";
 
 async function getJson(url, options) {
@@ -70,8 +71,21 @@ async function loadMetrics() {
     <div><strong>${data.outbox.unpublished_events}</strong><span>outbox pending</span></div>
     <div><strong>${data.canonical.canonical_tweets}</strong><span>canonical tweets</span></div>
     <div><strong>${data.canonical.engagement_observations}</strong><span>engagement observations</span></div>
+    <div><strong>${data.sessions.cooling_down}</strong><span>sessions cooling</span></div>
     <div><strong>${data.auth_ready ? "ready" : "missing"}</strong><span>auth state</span></div>
   `;
+}
+
+async function loadSessions() {
+  const data = await getJson("/api/sessions");
+  sessions.innerHTML = data.sessions.map((session) => `
+    <tr>
+      <td>${session.session_id}</td>
+      <td><span class="${sessionStateClass(session.health)}">${session.health}</span></td>
+      <td>${session.cooldown_until || ""}</td>
+      <td>${sessionActions(session)}</td>
+    </tr>
+  `).join("");
 }
 
 function taskActions(task) {
@@ -82,6 +96,23 @@ function taskActions(task) {
     return `<button class="small-button secondary" data-cancel-task="${task.task_id}">Cancel</button>`;
   }
   return "";
+}
+
+function sessionActions(session) {
+  if (session.health !== "HEALTHY") {
+    return `<button class="small-button" data-restore-session="${session.session_id}">Restore</button>`;
+  }
+  return `<button class="small-button secondary" data-disable-session="${session.session_id}">Disable</button>`;
+}
+
+function sessionStateClass(health) {
+  if (health === "HEALTHY") {
+    return "state";
+  }
+  if (health === "DEGRADED") {
+    return "state warn";
+  }
+  return "state bad";
 }
 
 function renderOutput(data) {
@@ -134,6 +165,7 @@ form.addEventListener("submit", async (event) => {
     `;
     await loadTasks();
     await loadMetrics();
+    await loadSessions();
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
@@ -160,6 +192,7 @@ tasks.addEventListener("click", async (event) => {
     }
     await loadTasks();
     await loadMetrics();
+    await loadSessions();
     return;
   }
 
@@ -176,10 +209,37 @@ tasks.addEventListener("click", async (event) => {
     `;
     await loadTasks();
     await loadMetrics();
+    await loadSessions();
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
     await loadTasks();
+    await loadMetrics();
+    await loadSessions();
+  }
+});
+
+sessions.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-restore-session], [data-disable-session]");
+  if (!button) {
+    return;
+  }
+
+  button.disabled = true;
+  const sessionId = button.dataset.restoreSession || button.dataset.disableSession;
+  const action = button.dataset.restoreSession ? "restore" : "disable";
+  summary.textContent = `${action === "restore" ? "Restoring" : "Disabling"} session...`;
+  try {
+    const data = await getJson(`/api/sessions/${sessionId}/${action}`, {
+      method: "POST",
+      headers: adminHeaders()
+    });
+    summary.innerHTML = `<strong>${data.session.health}</strong> session ${data.session.session_id} updated.`;
+    await loadSessions();
+    await loadMetrics();
+  } catch (error) {
+    summary.textContent = error.message;
+    await loadSessions();
     await loadMetrics();
   }
 });
@@ -197,6 +257,7 @@ runRetention.addEventListener("click", async () => {
     `;
     await loadTasks();
     await loadMetrics();
+    await loadSessions();
   } catch (error) {
     retention.textContent = error.message;
   } finally {
@@ -212,12 +273,14 @@ async function waitForResult(resultUrl) {
       renderOutput(data);
       await loadTasks();
       await loadMetrics();
+      await loadSessions();
       return;
     }
     if (response.status >= 500) {
       summary.textContent = data.error?.message || data.message || "Task failed";
       await loadTasks();
       await loadMetrics();
+      await loadSessions();
       return;
     }
     summary.innerHTML = `
@@ -227,6 +290,7 @@ async function waitForResult(resultUrl) {
     await delay(1500);
     await loadTasks();
     await loadMetrics();
+    await loadSessions();
   }
   summary.textContent = "Timed out waiting for worker result.";
 }
@@ -246,4 +310,7 @@ loadRetention().catch((error) => {
 });
 loadMetrics().catch((error) => {
   metrics.innerHTML = `<div><strong>error</strong><span>${error.message}</span></div>`;
+});
+loadSessions().catch((error) => {
+  sessions.innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`;
 });

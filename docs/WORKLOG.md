@@ -718,6 +718,27 @@ Next:
 
 - Add operator session restore and disable paths.
 
+## 2026-08-10 - Checkpoint 40: Session Operator Controls
+
+Implemented:
+
+- Added protected `POST /api/sessions/{session_id}/restore`.
+- Added protected `POST /api/sessions/{session_id}/disable`.
+- Restore clears cooldown state and marks the session `HEALTHY`.
+- Disable marks the session `DISABLED`, keeping metadata but excluding it from worker acquisition.
+- Added a Sessions panel to the frontend with restore/disable actions.
+- Hardened CI/static tests to require session operator controls.
+- Documented session operations in README and the deployment runbook.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add per-session acquisition attempt counters and last-error visibility.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

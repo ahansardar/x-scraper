@@ -90,6 +90,7 @@ h2 {
 
 .flow-panel,
 .ops-panel,
+.session-panel,
 .metrics-panel,
 .output-panel {
   grid-column: 2;
@@ -292,6 +293,14 @@ th {
   font-weight: 700;
 }
 
+.state.warn {
+  color: var(--amber);
+}
+
+.state.bad {
+  color: #a83232;
+}
+
 @media (max-width: 840px) {
   .topbar {
     align-items: flex-start;
@@ -302,6 +311,8 @@ th {
   .control-panel,
   .task-panel,
   .flow-panel,
+  .ops-panel,
+  .session-panel,
   .metrics-panel,
   .output-panel {
     display: block;

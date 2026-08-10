@@ -52,6 +52,9 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Metrics" -Quiet)) {
             throw "Frontend does not expose operational metrics"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Sessions" -Quiet)) {
+            throw "Frontend does not expose session operations"
+          }
 
       - name: Check deployment runbook
         shell: pwsh

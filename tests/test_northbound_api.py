@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.capabilities import CapabilityPlanner
+from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.web import live_server
 from xrev.protocol import ProtocolReleaseManifest
@@ -155,6 +156,43 @@ class NorthboundApiTests(unittest.TestCase):
 
         self.assertFalse(payload["current"])
         self.assertEqual(payload["pending_versions"], ["002"])
+
+    def test_restore_session_marks_session_healthy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SessionStore(Path(temp_dir) / "tasks.sqlite3")
+            store.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+                health=SessionHealth.AUTH_EXPIRED,
+            )
+            live_server.STATE = SimpleNamespace(session_store=store)
+            handler = FakeHandler()
+
+            payload = handler._restore_session("session-1")
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["session"]["health"], "HEALTHY")
+            self.assertIsNone(payload["session"]["cooldown_until"])
+            self.assertEqual(store.get_session("session-1").health, SessionHealth.HEALTHY)
+
+    def test_disable_session_marks_session_unavailable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SessionStore(Path(temp_dir) / "tasks.sqlite3")
+            store.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            live_server.STATE = SimpleNamespace(session_store=store)
+            handler = FakeHandler()
+
+            payload = handler._disable_session("session-1")
+            acquired = store.acquire_session(owner="worker-a", lease_seconds=60)
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["session"]["health"], "DISABLED")
+            self.assertIsNone(acquired)
 
 
 if __name__ == "__main__":

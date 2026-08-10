@@ -18,6 +18,7 @@ class FrontendCopyTests(unittest.TestCase):
 
         self.assertIn("Run live acquisition", html)
         self.assertIn("Metrics", html)
+        self.assertIn("Sessions", html)
         self.assertNotIn("mock", html.lower())
 
     def test_frontend_reports_non_json_api_responses(self):
@@ -32,6 +33,20 @@ class FrontendCopyTests(unittest.TestCase):
 
         self.assertIn("returned non-JSON", js)
         self.assertIn("parseJsonResponse", js)
+
+    def test_frontend_exposes_session_operator_controls(self):
+        js = (
+            ROOT
+            / "src"
+            / "xingestion"
+            / "web"
+            / "static"
+            / "app.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("/api/sessions", js)
+        self.assertIn("data-restore-session", js)
+        self.assertIn("data-disable-session", js)
 
 
 if __name__ == "__main__":
