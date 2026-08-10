@@ -22,6 +22,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.retention_days, 30)
         self.assertEqual(config.default_session_id, "local-env-session")
         self.assertEqual(config.default_credential_ref, "env:X_AUTH_TOKEN,X_CT0,X_BEARER")
+        self.assertEqual(config.admin_token, "")
 
     def test_env_and_args_override_deployment_settings(self):
         old_values = {
@@ -35,6 +36,7 @@ class ConfigTests(unittest.TestCase):
                 "XINGESTION_ACCOUNT_LABEL",
                 "XINGESTION_CREDENTIAL_REF",
                 "XINGESTION_NETWORK_CONTEXT",
+                "XINGESTION_ADMIN_TOKEN",
             )
         }
         try:
@@ -47,6 +49,7 @@ class ConfigTests(unittest.TestCase):
                 os.environ["XINGESTION_ACCOUNT_LABEL"] = "account-a"
                 os.environ["XINGESTION_CREDENTIAL_REF"] = "secret:x/session-a"
                 os.environ["XINGESTION_NETWORK_CONTEXT"] = "direct:iad"
+                os.environ["XINGESTION_ADMIN_TOKEN"] = "admin-secret"
 
                 config = load_app_config(ROOT, ["--port", "9001"])
 
@@ -58,6 +61,7 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(config.default_account_label, "account-a")
                 self.assertEqual(config.default_credential_ref, "secret:x/session-a")
                 self.assertEqual(config.default_network_context, "direct:iad")
+                self.assertEqual(config.admin_token, "admin-secret")
         finally:
             for key, value in old_values.items():
                 if value is None:

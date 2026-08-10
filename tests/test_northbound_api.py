@@ -25,6 +25,12 @@ class FakeHandler(live_server.LiveAppHandler):
         return payload
 
 
+class HeaderBackedHandler(FakeHandler):
+    def __init__(self, headers):
+        super().__init__()
+        self.headers = headers
+
+
 class NorthboundApiTests(unittest.TestCase):
     def test_generic_capability_task_submission_queues_task(self):
         manifest = ProtocolReleaseManifest.from_file(
@@ -67,6 +73,38 @@ class NorthboundApiTests(unittest.TestCase):
 
         self.assertEqual(handler.status, 400)
         self.assertIn("Unsupported capability", payload["message"])
+
+    def test_operator_route_requires_configured_admin_token(self):
+        live_server.STATE = SimpleNamespace(
+            config=SimpleNamespace(admin_token="expected-token")
+        )
+        handler = HeaderBackedHandler(headers={})
+
+        result = handler._require_admin()
+
+        self.assertFalse(result)
+        self.assertEqual(handler.status, 401)
+        self.assertIn("Admin token required", handler.payload["message"])
+
+    def test_operator_route_accepts_matching_admin_token(self):
+        live_server.STATE = SimpleNamespace(
+            config=SimpleNamespace(admin_token="expected-token")
+        )
+        handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+
+        self.assertTrue(handler._require_admin())
+
+    def test_operator_route_rejects_when_admin_token_unconfigured(self):
+        live_server.STATE = SimpleNamespace(
+            config=SimpleNamespace(admin_token="")
+        )
+        handler = HeaderBackedHandler(headers={"x-admin-token": "anything"})
+
+        result = handler._require_admin()
+
+        self.assertFalse(result)
+        self.assertEqual(handler.status, 503)
+        self.assertIn("not configured", handler.payload["message"])
 
 
 if __name__ == "__main__":

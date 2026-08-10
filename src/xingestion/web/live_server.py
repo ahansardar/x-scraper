@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from hmac import compare_digest
 import json
 from pathlib import Path
 import sys
@@ -46,6 +47,9 @@ class LiveAppState:
         self.canonical_store = CanonicalStore(self.config.sqlite_path)
         self.release_store = ReleaseStore(self.config.sqlite_path)
         self.release_store.ensure_release(self.manifest.release_id)
+        self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
+        self.transport = UrllibJsonTransport()
+        self.auth = web_session_auth_from_env()
         self.session_store = SessionStore(self.config.sqlite_path)
         self.session_store.upsert_session(
             session_id=self.config.default_session_id,
@@ -58,9 +62,6 @@ class LiveAppState:
                 else SessionHealth.AUTH_EXPIRED
             ),
         )
-        self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
-        self.transport = UrllibJsonTransport()
-        self.auth = web_session_auth_from_env()
         self.worker = LocalWorker(
             ledger=self.ledger,
             manifest=self.manifest,
@@ -137,15 +138,25 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/tasks/"):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 4 and parts[3] == "replay":
+                if not self._require_admin():
+                    return
                 return self._replay_task(parts[2])
             if len(parts) == 4 and parts[3] == "cancel":
+                if not self._require_admin():
+                    return
                 return self._cancel_task(parts[2])
 
         if parsed.path == "/api/retention/run":
+            if not self._require_admin():
+                return
             return self._run_retention()
         if parsed.path == "/api/releases/current/quarantine":
+            if not self._require_admin():
+                return
             return self._set_release_health(ReleaseHealth.QUARANTINED, "operator_quarantine")
         if parsed.path == "/api/releases/current/activate":
+            if not self._require_admin():
+                return
             return self._set_release_health(ReleaseHealth.ACTIVE, "operator_activate")
 
         if parsed.path == "/api/capability-tasks":
@@ -278,6 +289,20 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if length == 0:
             return {}
         return json.loads(self.rfile.read(length).decode("utf-8"))
+
+    def _require_admin(self):
+        expected = STATE.config.admin_token
+        if not expected:
+            self._json(
+                {"message": "Admin token is not configured"},
+                status=503,
+            )
+            return False
+        supplied = self.headers.get("x-admin-token", "")
+        if not compare_digest(supplied, expected):
+            self._json({"message": "Admin token required"}, status=401)
+            return False
+        return True
 
     def _json(self, payload, *, status=200):
         encoded = json.dumps(payload, indent=2).encode("utf-8")
@@ -414,6 +439,7 @@ def _storage_dict():
         "sqlite_path": str(STATE.config.sqlite_path),
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
         "retention_days": STATE.config.retention_days,
+        "admin_token_configured": bool(STATE.config.admin_token),
     }
 
 

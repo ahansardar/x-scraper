@@ -75,6 +75,7 @@ XINGESTION_SESSION_ID=local-env-session
 XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
 XINGESTION_NETWORK_CONTEXT=direct
+XINGESTION_ADMIN_TOKEN=
 ```
 
 Storage locations:
@@ -128,6 +129,14 @@ GET /api/sessions
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
+
+Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in the `x-admin-token` header:
+
+- `POST /api/tasks/{task_id}/cancel`
+- `POST /api/tasks/{task_id}/replay`
+- `POST /api/retention/run`
+- `POST /api/releases/current/quarantine`
+- `POST /api/releases/current/activate`
 
 Retention cleanup is available from the Operations panel and:
 

@@ -456,3 +456,24 @@ Verified:
 Next:
 
 - Add authenticated/admin-only controls before exposing this beyond a trusted deployment boundary.
+
+## 2026-08-10 - Checkpoint 26: Admin Operator Protection
+
+Implemented:
+
+- Added `XINGESTION_ADMIN_TOKEN` deployment configuration.
+- Required `x-admin-token` for destructive/operator POST routes.
+- Blocked operator routes with `503` when the admin token is not configured.
+- Added frontend admin-token prompting for cancel, replay, and retention actions.
+- Fixed live app startup ordering so session bootstrap reads auth after auth is initialized.
+- Documented protected operator routes in README and deployment runbook.
+- Added tests for admin-token accept/reject behavior.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add explicit SQLite migrations and a migration runner.

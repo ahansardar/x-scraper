@@ -18,6 +18,7 @@ XINGESTION_SESSION_ID=local-env-session
 XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
 XINGESTION_NETWORK_CONTEXT=direct
+XINGESTION_ADMIN_TOKEN=
 ```
 
 Use a persistent disk for `XINGESTION_DATA_DIR`. Do not use the build checkout as production storage.
@@ -73,6 +74,12 @@ Content-Type: application/json
 Poll `status_url` until the task is `DONE`, then read `result_url`.
 
 ## Operator Controls
+
+All operator `POST` routes require:
+
+```text
+x-admin-token: <XINGESTION_ADMIN_TOKEN>
+```
 
 Cancel pending work:
 

@@ -6,6 +6,7 @@ const tasks = document.querySelector("#tasks");
 const retention = document.querySelector("#retention");
 const runRetention = document.querySelector("#runRetention");
 const metrics = document.querySelector("#metrics");
+let adminToken = "";
 
 async function getJson(url, options) {
   const response = await fetch(url, options);
@@ -14,6 +15,13 @@ async function getJson(url, options) {
     throw new Error(data.message || data.error || response.statusText);
   }
   return data;
+}
+
+function adminHeaders() {
+  if (!adminToken) {
+    adminToken = window.prompt("Admin token") || "";
+  }
+  return {"x-admin-token": adminToken};
 }
 
 async function loadHealth() {
@@ -133,7 +141,8 @@ tasks.addEventListener("click", async (event) => {
     summary.textContent = "Cancelling task...";
     try {
       const data = await getJson(`/api/tasks/${button.dataset.cancelTask}/cancel`, {
-        method: "POST"
+        method: "POST",
+        headers: adminHeaders()
       });
       summary.innerHTML = `<strong>${data.task.state}</strong> task ${data.task.task_id.slice(0, 18)} cancelled.`;
     } catch (error) {
@@ -148,7 +157,8 @@ tasks.addEventListener("click", async (event) => {
   tweets.innerHTML = "";
   try {
     const data = await getJson(`/api/tasks/${button.dataset.replayTask}/replay`, {
-      method: "POST"
+      method: "POST",
+      headers: adminHeaders()
     });
     summary.innerHTML = `
       <strong>${data.task.state}</strong>
@@ -167,7 +177,10 @@ tasks.addEventListener("click", async (event) => {
 runRetention.addEventListener("click", async () => {
   runRetention.disabled = true;
   try {
-    const data = await getJson("/api/retention/run", {method: "POST"});
+    const data = await getJson("/api/retention/run", {
+      method: "POST",
+      headers: adminHeaders()
+    });
     retention.innerHTML = `
       Deleted <strong>${data.retention.deleted_tasks}</strong> terminal tasks
       older than <code>${data.retention.cutoff}</code>.
