@@ -597,6 +597,26 @@ Next:
 
 - Add raw evidence reprocessing from stored evidence.
 
+## 2026-08-10 - Checkpoint 34: Raw Evidence Reprocessing
+
+Implemented:
+
+- Added a reprocessing service that loads stored raw evidence from completed task results.
+- Reprocessing parses existing raw JSON and appends canonical engagement observations without making a new X request.
+- Added protected `POST /api/tasks/{task_id}/reprocess`.
+- Added safe response serialization with parsed tweet count and canonical counts.
+- Documented reprocessing in README and deployment runbook.
+- Added tests for reprocessing completed evidence and rejecting incomplete tasks.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add protocol/parser versioned reprocessing batches for bulk evidence repair.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

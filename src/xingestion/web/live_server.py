@@ -22,6 +22,7 @@ from xingestion.config import AppConfig, load_app_config
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
+from xingestion.reprocessing import reprocess_task_evidence
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -160,6 +161,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 if not self._require_admin():
                     return
                 return self._cancel_task(parts[2])
+            if len(parts) == 4 and parts[3] == "reprocess":
+                if not self._require_admin():
+                    return
+                return self._reprocess_task(parts[2])
 
         if parsed.path == "/api/retention/run":
             if not self._require_admin():
@@ -303,6 +308,18 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             reason=reason,
         )
         return self._json({"release": _release_dict(release)}, status=200)
+
+    def _reprocess_task(self, task_id):
+        try:
+            result = reprocess_task_evidence(
+                task_id=task_id,
+                ledger=STATE.ledger,
+                canonical_store=STATE.canonical_store,
+            )
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 409
+            return self._json({"message": str(exc)}, status=status)
+        return self._json({"reprocess": _reprocess_result_dict(result)}, status=200)
 
     def _api_not_found(self, path):
         return self._json({"message": f"API route not found: {path}"}, status=404)
@@ -512,6 +529,15 @@ def _migration_status_dict(status):
         "available_versions": list(status.available_versions),
         "applied_versions": list(status.applied_versions),
         "pending_versions": list(status.pending_versions),
+    }
+
+
+def _reprocess_result_dict(result):
+    return {
+        "task_id": result.task_id,
+        "raw_evidence_id": result.raw_evidence_id,
+        "parsed_tweets": result.parsed_tweets,
+        "canonical_counts": result.canonical_counts,
     }
 
 

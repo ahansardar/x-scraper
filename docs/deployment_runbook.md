@@ -113,6 +113,12 @@ Reactivate it after investigation:
 POST /api/releases/current/activate
 ```
 
+Reprocess stored raw evidence without recollecting:
+
+```text
+POST /api/tasks/{task_id}/reprocess
+```
+
 Run terminal-task retention cleanup:
 
 ```text
