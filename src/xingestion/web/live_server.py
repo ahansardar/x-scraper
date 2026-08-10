@@ -19,6 +19,7 @@ from xingestion.capabilities import (
 )
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
+from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
@@ -41,6 +42,15 @@ class LiveAppState:
         self.config = config
         self.config.data_dir.mkdir(parents=True, exist_ok=True)
         self.config.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
+        self.migration_runner = MigrationRunner(
+            self.config.sqlite_path,
+            ROOT / "src" / "xingestion" / "migrations" / "sql",
+        )
+        self.migration_status = (
+            self.migration_runner.require_current()
+            if self.config.require_migrations
+            else self.migration_runner.status()
+        )
         self.manifest = ProtocolReleaseManifest.from_file(MANIFEST_PATH)
         self.planner = CapabilityPlanner(self.manifest)
         self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
@@ -95,6 +105,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             )
         if parsed.path == "/api/metrics":
             return self._json(_metrics_dict())
+        if parsed.path == "/api/migrations":
+            return self._json({"migrations": _migration_status_dict(STATE.migration_runner.status())})
         if parsed.path == "/api/releases/current":
             return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
         if parsed.path == "/api/storage":
@@ -453,6 +465,7 @@ def _storage_dict():
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
         "retention_days": STATE.config.retention_days,
         "admin_token_configured": bool(STATE.config.admin_token),
+        "require_migrations": STATE.config.require_migrations,
     }
 
 
@@ -480,6 +493,7 @@ def _metrics_dict():
         "outbox": STATE.ledger.outbox_stats(),
         "canonical": canonical_counts,
         "storage": _storage_dict(),
+        "migrations": _migration_status_dict(STATE.migration_runner.status()),
         "sessions": {
             "total": len(STATE.session_store.list_sessions()),
             "healthy": sum(
@@ -488,6 +502,15 @@ def _metrics_dict():
                 if session.health == SessionHealth.HEALTHY
             ),
         },
+    }
+
+
+def _migration_status_dict(status):
+    return {
+        "current": status.current,
+        "available_versions": list(status.available_versions),
+        "applied_versions": list(status.applied_versions),
+        "pending_versions": list(status.pending_versions),
     }
 
 

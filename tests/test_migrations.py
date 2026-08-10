@@ -22,10 +22,13 @@ class MigrationRunnerTests(unittest.TestCase):
 
             first = runner.apply()
             second = runner.apply()
+            status = runner.status()
 
             self.assertEqual(first, ("001",))
             self.assertEqual(second, ())
             self.assertEqual(runner.applied_versions(), ("001",))
+            self.assertTrue(status.current)
+            self.assertEqual(status.pending_versions, ())
 
             with closing(sqlite3.connect(db_path)) as conn:
                 tables = {
@@ -38,6 +41,23 @@ class MigrationRunnerTests(unittest.TestCase):
             self.assertIn("canonical_tweets", tables)
             self.assertIn("session_artifacts", tables)
             self.assertIn("protocol_release_health", tables)
+
+    def test_status_reports_pending_migrations_before_apply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            runner = MigrationRunner(
+                db_path,
+                ROOT / "src" / "xingestion" / "migrations" / "sql",
+            )
+
+            status = runner.status()
+
+            self.assertFalse(status.current)
+            self.assertEqual(status.available_versions, ("001",))
+            self.assertEqual(status.applied_versions, ())
+            self.assertEqual(status.pending_versions, ("001",))
+            with self.assertRaisesRegex(RuntimeError, "Pending database migrations"):
+                runner.require_current()
 
 
 if __name__ == "__main__":

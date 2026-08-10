@@ -12,6 +12,17 @@ class Migration:
     path: Path
 
 
+@dataclass(frozen=True)
+class MigrationStatus:
+    available_versions: tuple[str, ...]
+    applied_versions: tuple[str, ...]
+    pending_versions: tuple[str, ...]
+
+    @property
+    def current(self) -> bool:
+        return not self.pending_versions
+
+
 class MigrationRunner:
     def __init__(self, db_path: str | Path, migrations_dir: str | Path) -> None:
         self.db_path = Path(db_path)
@@ -51,6 +62,24 @@ class MigrationRunner:
                 "SELECT version FROM schema_migrations ORDER BY version"
             ).fetchall()
         return tuple(row["version"] for row in rows)
+
+    def status(self) -> MigrationStatus:
+        available = tuple(migration.version for migration in self._migrations())
+        applied = self.applied_versions()
+        applied_set = set(applied)
+        pending = tuple(version for version in available if version not in applied_set)
+        return MigrationStatus(
+            available_versions=available,
+            applied_versions=applied,
+            pending_versions=pending,
+        )
+
+    def require_current(self) -> MigrationStatus:
+        status = self.status()
+        if not status.current:
+            joined = ", ".join(status.pending_versions)
+            raise RuntimeError(f"Pending database migrations: {joined}. Run run_migrations.py first.")
+        return status
 
     def _migrations(self) -> tuple[Migration, ...]:
         paths = sorted(self.migrations_dir.glob("*.sql"))

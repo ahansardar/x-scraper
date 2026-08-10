@@ -556,6 +556,27 @@ Next:
 
 - Harden migration status and startup validation.
 
+## 2026-08-10 - Checkpoint 32: Migration Status Enforcement
+
+Implemented:
+
+- Added migration status reporting with available, applied, and pending versions.
+- Added `require_current()` to fail startup when required migrations are pending.
+- Added `XINGESTION_REQUIRE_MIGRATIONS` deployment configuration, defaulting to enabled.
+- Live app now validates migrations before initializing stores.
+- Added `GET /api/migrations` and included migration status in `/api/metrics`.
+- Documented migration enforcement in README and deployment runbook.
+- Added tests for pending/current migration status and public-safe status serialization.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Integrate worker session leasing with per-task acquisition.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

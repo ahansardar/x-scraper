@@ -117,6 +117,19 @@ class NorthboundApiTests(unittest.TestCase):
         self.assertEqual(handler.status, 404)
         self.assertEqual(payload["message"], "API route not found: /api/missing")
 
+    def test_migration_status_dict_is_public_safe(self):
+        status = SimpleNamespace(
+            current=False,
+            available_versions=("001", "002"),
+            applied_versions=("001",),
+            pending_versions=("002",),
+        )
+
+        payload = live_server._migration_status_dict(status)
+
+        self.assertFalse(payload["current"])
+        self.assertEqual(payload["pending_versions"], ["002"])
+
 
 if __name__ == "__main__":
     unittest.main()

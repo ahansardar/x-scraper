@@ -19,6 +19,7 @@ XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
+XINGESTION_REQUIRE_MIGRATIONS=true
 ```
 
 Use a persistent disk for `XINGESTION_DATA_DIR`. Do not use the build checkout as production storage.
@@ -49,6 +50,7 @@ python .\run_worker.py
 GET /api/health
 GET /api/storage
 GET /api/metrics
+GET /api/migrations
 GET /api/sessions
 GET /api/releases/current
 ```

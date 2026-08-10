@@ -19,6 +19,7 @@ class AppConfig:
     default_credential_ref: str
     default_network_context: str
     admin_token: str
+    require_migrations: bool
 
 
 def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
@@ -36,6 +37,11 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
     )
     default_network_context = os.getenv("XINGESTION_NETWORK_CONTEXT", "direct")
     admin_token = os.getenv("XINGESTION_ADMIN_TOKEN", "")
+    require_migrations = os.getenv("XINGESTION_REQUIRE_MIGRATIONS", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+    }
 
     return AppConfig(
         root=root,
@@ -50,6 +56,7 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
         default_credential_ref=default_credential_ref,
         default_network_context=default_network_context,
         admin_token=admin_token,
+        require_migrations=require_migrations,
     )
 
 

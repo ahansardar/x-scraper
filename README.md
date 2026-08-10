@@ -90,6 +90,7 @@ XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
+XINGESTION_REQUIRE_MIGRATIONS=true
 ```
 
 Storage locations:
@@ -120,6 +121,7 @@ Operational metrics are exposed at:
 
 ```text
 GET /api/metrics
+GET /api/migrations
 ```
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
