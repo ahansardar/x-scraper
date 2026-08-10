@@ -205,6 +205,23 @@ Verified:
 
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests run_app.py`
+
+## 2026-08-10 - Checkpoint 13: Deployment Storage Configuration
+
+Implemented:
+
+- Added root `.env.example` for live/deployment settings.
+- Added `XINGESTION_DATA_DIR`, `XINGESTION_HOST`, and `XINGESTION_PORT`.
+- Added deployment config loader with resolved storage paths.
+- Replaced hard-coded `./data` access in the live server with configurable persistent storage.
+- Added `/api/storage` and included storage paths in `/api/health`.
+- Updated README with exact default storage locations and deployment override guidance.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py`
+- Live `/api/storage` reports SQLite and raw evidence locations.
 - Live local server health reports auth readiness from `.env`.
 
 Next:

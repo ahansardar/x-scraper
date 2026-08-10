@@ -10,7 +10,7 @@ The original GraphQL scripts and local research artifacts now live under `playgr
 
 ## Current Checkpoint
 
-The current checkpoint defines immutable protocol revision models, a `SEARCH_TWEETS` capability binding for the observed SearchTimeline GraphQL recipe, tested runtime helpers, a raw evidence sink boundary, a one-attempt acquisition boundary, a production-facing capability planner shell, and a local durable task ledger. It does not perform live network acquisition yet.
+The current checkpoint defines immutable protocol revision models, a live `SEARCH_TWEETS` capability path, raw evidence persistence, a one-attempt transport boundary, a production-facing capability planner, a durable SQLite task ledger, transactional outbox events, and a local worker dispatcher.
 
 ## Verify
 
@@ -26,7 +26,35 @@ GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
 No Docker is required.
 
 ```powershell
-python .\run_app.py --port 8000
+python .\run_app.py --host 127.0.0.1 --port 8000
 ```
 
 Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
+
+## Deployment Configuration
+
+Create `.env` from `.env.example` and set:
+
+```env
+X_AUTH_TOKEN=
+X_CT0=
+X_BEARER=
+XINGESTION_DATA_DIR=F:\x-scraper-data
+XINGESTION_HOST=127.0.0.1
+XINGESTION_PORT=8000
+```
+
+Storage locations:
+
+- Default task ledger: `./data/tasks.sqlite3`
+- Default raw evidence: `./data/raw_evidence/`
+- Production/deployment override: set `XINGESTION_DATA_DIR` to a persistent disk path.
+
+The live app also exposes storage paths at:
+
+```text
+GET /api/storage
+GET /api/health
+```
+
+For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.

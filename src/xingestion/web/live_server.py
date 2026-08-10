@@ -16,6 +16,7 @@ from xingestion.capabilities import (
     CapabilityRequest,
     SearchTweetsInput,
 )
+from xingestion.config import AppConfig, load_app_config
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -28,18 +29,18 @@ from xrev.runtime import (
 
 
 STATIC_ROOT = ROOT / "src" / "xingestion" / "web" / "static"
-DATA_ROOT = ROOT / "data"
 MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
 
 
 class LiveAppState:
-    def __init__(self) -> None:
-        load_env_file(ROOT / ".env")
-        DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+        self.config.data_dir.mkdir(parents=True, exist_ok=True)
+        self.config.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
         self.manifest = ProtocolReleaseManifest.from_file(MANIFEST_PATH)
         self.planner = CapabilityPlanner(self.manifest)
-        self.ledger = SQLiteTaskLedger(DATA_ROOT / "tasks.sqlite3")
-        self.evidence_sink = FileRawEvidenceSink(DATA_ROOT / "raw_evidence")
+        self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
+        self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
         self.auth = web_session_auth_from_env()
         self.worker = LocalWorker(
@@ -51,7 +52,7 @@ class LiveAppState:
         )
 
 
-STATE = LiveAppState()
+STATE: LiveAppState | None = None
 
 
 class LiveAppHandler(SimpleHTTPRequestHandler):
@@ -68,8 +69,11 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                     "mode": "live",
                     "auth_ready": not STATE.auth.missing_fields(),
                     "dispatch": "outbox-local-worker",
+                    "storage": _storage_dict(),
                 }
             )
+        if parsed.path == "/api/storage":
+            return self._json(_storage_dict())
         if parsed.path == "/api/tasks":
             return self._json({"tasks": self._list_tasks()})
         return super().do_GET()
@@ -166,7 +170,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
     def _list_tasks(self):
         import sqlite3
 
-        path = DATA_ROOT / "tasks.sqlite3"
+        path = STATE.config.sqlite_path
         if not path.exists():
             return []
         with sqlite3.connect(path) as conn:
@@ -223,6 +227,14 @@ def _load_page_from_evidence(storage_uri, raw_evidence_ref):
     return parse_search_tweets_page(payload, raw_evidence_ref=raw_evidence_ref)
 
 
+def _storage_dict():
+    return {
+        "data_dir": str(STATE.config.data_dir),
+        "sqlite_path": str(STATE.config.sqlite_path),
+        "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
+    }
+
+
 def _process_until_task_terminal(task_id, max_events=10):
     last_result = None
     for _ in range(max_events):
@@ -237,12 +249,15 @@ def _process_until_task_terminal(task_id, max_events=10):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    port = 8000
-    if "--port" in argv:
-        port = int(argv[argv.index("--port") + 1])
+    global STATE
+    load_env_file(ROOT / ".env")
+    config = load_app_config(ROOT, argv)
+    STATE = LiveAppState(config)
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), LiveAppHandler)
-    print(f"X ingestion live app running at http://127.0.0.1:{port}")
+    server = ThreadingHTTPServer((config.host, config.port), LiveAppHandler)
+    print(f"X ingestion live app running at http://{config.host}:{config.port}")
+    print(f"SQLite task ledger: {config.sqlite_path}")
+    print(f"Raw evidence directory: {config.raw_evidence_dir}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
