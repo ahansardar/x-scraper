@@ -595,6 +595,44 @@ class SQLiteTaskLedger:
             raise RuntimeError("leased task could not be reloaded")
         return task
 
+    def renew_execution_lease(
+        self,
+        task_id: str,
+        *,
+        lease_token: str,
+        delivery_generation: int,
+        lease_expires_at: str,
+    ) -> CapabilityTask:
+        now = _now()
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE capability_tasks
+                SET lease_expires_at = ?,
+                    updated_at = ?
+                WHERE task_id = ?
+                  AND state = ?
+                  AND lease_token = ?
+                  AND delivery_generation = ?
+                """,
+                (
+                    lease_expires_at,
+                    now,
+                    task_id,
+                    TaskState.RUNNING.value,
+                    lease_token,
+                    delivery_generation,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Task {task_id} could not renew execution lease")
+            conn.commit()
+
+        task = self.get_task(task_id)
+        if task is None:
+            raise RuntimeError("renewed task could not be reloaded")
+        return task
+
     def get_outbox_event(self, event_id: str) -> OutboxEvent | None:
         with closing(self._connect()) as conn:
             row = conn.execute(

@@ -27,6 +27,7 @@ class WorkerResult:
     raw_evidence_ref: RawEvidenceRef | None = None
     error_class: str | None = None
     message: str | None = None
+    lease_renewals: int = 0
 
 
 class LocalWorker:
@@ -111,9 +112,14 @@ class LocalWorker:
             owner=self.owner,
             lease_expires_at=lease_expires_at,
         )
+        lease_renewals = 0
 
         try:
+            task = self._renew_lease(task)
+            lease_renewals += 1
             page = self._execute_task(task)
+            task = self._renew_lease(task)
+            lease_renewals += 1
         except (ProtocolError, ValueError) as exc:
             task = self._handle_failure(task, exc)
             return WorkerResult(
@@ -122,6 +128,7 @@ class LocalWorker:
                 state=task.state,
                 error_class=getattr(exc, "error_class", exc.__class__.__name__),
                 message=str(exc),
+                lease_renewals=lease_renewals,
             )
 
         if self.canonical_store is not None:
@@ -152,6 +159,18 @@ class LocalWorker:
             task_id=task.task_id,
             state=task.state,
             raw_evidence_ref=page.raw_evidence_ref,
+            lease_renewals=lease_renewals,
+        )
+
+    def _renew_lease(self, task):
+        lease_expires_at = (
+            datetime.now(UTC) + timedelta(seconds=self.lease_seconds)
+        ).isoformat()
+        return self.ledger.renew_execution_lease(
+            task.task_id,
+            lease_token=task.lease_token,
+            delivery_generation=task.delivery_generation,
+            lease_expires_at=lease_expires_at,
         )
 
     def _execute_task(self, task):

@@ -109,6 +109,7 @@ class LocalWorkerTests(unittest.TestCase):
 
             self.assertTrue(result.processed)
             self.assertEqual(result.state, TaskState.DONE)
+            self.assertEqual(result.lease_renewals, 2)
             self.assertIsNotNone(result.raw_evidence_ref)
             self.assertEqual(reloaded.state, TaskState.DONE)
             self.assertEqual(

@@ -194,6 +194,44 @@ class TaskLedgerTests(unittest.TestCase):
 
             self.assertEqual(ledger.get_task(task.task_id).state, TaskState.RUNNING)
 
+    def test_renew_execution_lease_requires_current_token_and_generation(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="renew-lease-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.ENQUEUED,
+            )
+            leased = ledger.acquire_execution_lease(
+                task.task_id,
+                owner="worker-a",
+                lease_expires_at="2999-01-01T00:00:00+00:00",
+            )
+
+            renewed = ledger.renew_execution_lease(
+                task.task_id,
+                lease_token=leased.lease_token,
+                delivery_generation=leased.delivery_generation,
+                lease_expires_at="2999-01-01T00:10:00+00:00",
+            )
+
+            self.assertEqual(renewed.lease_expires_at, "2999-01-01T00:10:00+00:00")
+            with self.assertRaisesRegex(ValueError, "renew execution lease"):
+                ledger.renew_execution_lease(
+                    task.task_id,
+                    lease_token="lease-stale",
+                    delivery_generation=leased.delivery_generation,
+                    lease_expires_at="2999-01-01T00:20:00+00:00",
+                )
+
     def test_expired_lease_is_recovered_and_reenqueued(self):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:

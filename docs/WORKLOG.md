@@ -496,3 +496,22 @@ Verified:
 Next:
 
 - Add worker lease heartbeat renewal for long-running attempts.
+
+## 2026-08-10 - Checkpoint 28: Worker Lease Renewal
+
+Implemented:
+
+- Added fenced `renew_execution_lease(...)` on the SQLite task ledger.
+- Renewal requires task ID, current lease token, current delivery generation, and `RUNNING` state.
+- Worker refreshes the lease before protocol execution and again before completion writes.
+- Worker results expose lease renewal counts for diagnostics.
+- Added tests for valid lease renewal, stale-token rejection, and worker renewal behavior.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py`
+
+Next:
+
+- Add a local live smoke command for deployment verification.

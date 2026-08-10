@@ -10,7 +10,7 @@ The original GraphQL scripts and local research artifacts now live under `playgr
 
 ## Current Checkpoint
 
-The current checkpoint defines immutable protocol revision models, a live `SEARCH_TWEETS` capability path, raw evidence persistence, a one-attempt transport boundary, a production-facing capability planner, a durable SQLite task ledger, transactional outbox events, and a local worker dispatcher.
+The current checkpoint defines immutable protocol revision models, a live `SEARCH_TWEETS` capability path, raw evidence persistence, a one-attempt transport boundary, a production-facing capability planner, a durable SQLite task ledger, transactional outbox events, worker leases with renewal, and a local worker dispatcher.
 
 ## Verify
 
