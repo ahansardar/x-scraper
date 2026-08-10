@@ -16,7 +16,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -29,6 +29,7 @@ Terminal 1, web app:
 
 ```powershell
 python .\run_migrations.py
+python .\run_preflight.py
 python .\run_app.py --host 127.0.0.1 --port 8000
 ```
 
@@ -43,6 +44,7 @@ Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The web
 Smoke-check a running deployment:
 
 ```powershell
+python .\run_preflight.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000
 ```
 
@@ -160,6 +162,14 @@ Session-scoped protocol errors update session health automatically. Auth/session
 Each session also stores safe operational attempt visibility: total attempts, successes, failures, last attempt time, last success time, and the last error class/message. These fields are available from `GET /api/sessions` and the Sessions panel.
 
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
+
+Before exposing a deployment, run:
+
+```powershell
+python .\run_preflight.py --base-url http://127.0.0.1:8000
+```
+
+Use `--strict-warnings` when auth/API warning states should fail the command in automation.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
 

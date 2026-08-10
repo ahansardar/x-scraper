@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py
 
       - name: Static smoke check frontend assets
         shell: pwsh
@@ -73,4 +73,7 @@ jobs:
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "No-Docker|no-Docker|no-docker" -Quiet)) {
             throw "Deployment runbook must state the no-Docker deployment model"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_preflight.py" -Quiet)) {
+            throw "Deployment runbook must document preflight"
           }

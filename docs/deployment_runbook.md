@@ -31,6 +31,7 @@ Apply migrations first:
 
 ```powershell
 python .\run_migrations.py
+python .\run_preflight.py
 ```
 
 Terminal 1:
@@ -43,6 +44,12 @@ Terminal 2:
 
 ```powershell
 python .\run_worker.py
+```
+
+After the web process is listening, verify the deployed API shape:
+
+```powershell
+python .\run_preflight.py --base-url http://127.0.0.1:8000
 ```
 
 ## Health Checks
@@ -166,12 +173,13 @@ Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py
 ```
 
 After starting web and worker:
 
 ```powershell
+python .\run_preflight.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000 --submit "india lang:en" --wait 90
 ```

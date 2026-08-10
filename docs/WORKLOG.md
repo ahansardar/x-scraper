@@ -803,6 +803,27 @@ Next:
 
 - Add a one-command deployment preflight that verifies migrations, auth readiness, storage, worker-session availability, and release risk.
 
+## 2026-08-10 - Checkpoint 44: Deployment Preflight Command
+
+Implemented:
+
+- Added `run_preflight.py`.
+- Added `DeploymentPreflight` checks for migrations, storage writability, X auth readiness, session availability, release health, advisory release risk, and optional API shape.
+- `--base-url` verifies a running deployment exposes the expected JSON API surfaces.
+- `--strict-warnings` lets automation fail on warning states.
+- Added preflight unit tests without requiring a live server.
+- Added preflight to CI compile checks and deployment runbook checks.
+- Documented preflight usage in README and the no-Docker deployment runbook.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py`
+
+Next:
+
+- Add an operator-ready packaged health report export for deployments.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
