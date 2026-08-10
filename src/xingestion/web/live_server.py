@@ -215,6 +215,9 @@ def _task_dict(task):
         "attempt_count": task.attempt_count,
         "max_attempts": task.max_attempts,
         "next_attempt_at": task.next_attempt_at,
+        "lease_owner": task.lease_owner,
+        "lease_expires_at": task.lease_expires_at,
+        "delivery_generation": task.delivery_generation,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }

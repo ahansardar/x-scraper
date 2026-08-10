@@ -130,6 +130,102 @@ class TaskLedgerTests(unittest.TestCase):
             self.assertEqual(reloaded.state, TaskState.ENQUEUED)
             self.assertEqual(event.task_id, task.task_id)
 
+    def test_execution_lease_sets_owner_token_and_generation(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="lease-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.ENQUEUED,
+            )
+
+            leased = ledger.acquire_execution_lease(
+                task.task_id,
+                owner="worker-a",
+                lease_expires_at="2999-01-01T00:00:00+00:00",
+            )
+
+            self.assertEqual(leased.state, TaskState.RUNNING)
+            self.assertEqual(leased.lease_owner, "worker-a")
+            self.assertTrue(leased.lease_token.startswith("lease-"))
+            self.assertEqual(leased.delivery_generation, 1)
+            self.assertEqual(leased.attempt_count, 1)
+
+    def test_fenced_transition_rejects_stale_lease_token(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="stale-token-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.ENQUEUED,
+            )
+            leased = ledger.acquire_execution_lease(
+                task.task_id,
+                owner="worker-a",
+                lease_expires_at="2999-01-01T00:00:00+00:00",
+            )
+
+            with self.assertRaisesRegex(ValueError, "expected state"):
+                ledger.transition_task(
+                    task.task_id,
+                    from_state=TaskState.RUNNING,
+                    to_state=TaskState.DONE,
+                    lease_token="lease-stale",
+                    delivery_generation=leased.delivery_generation,
+                    clear_lease=True,
+                )
+
+            self.assertEqual(ledger.get_task(task.task_id).state, TaskState.RUNNING)
+
+    def test_expired_lease_is_recovered_and_reenqueued(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="expired-lease-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.claim_next_outbox_event()
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.ENQUEUED,
+            )
+            ledger.acquire_execution_lease(
+                task.task_id,
+                owner="worker-a",
+                lease_expires_at="2000-01-01T00:00:00+00:00",
+            )
+
+            recovered = ledger.recover_expired_leases(now="2000-01-01T00:00:01+00:00")
+            task_after = ledger.get_task(task.task_id)
+            event = ledger.claim_next_outbox_event()
+
+            self.assertEqual(recovered, 1)
+            self.assertEqual(task_after.state, TaskState.ENQUEUED)
+            self.assertIsNone(task_after.lease_token)
+            self.assertEqual(event.event_type, "CAPABILITY_TASK_LEASE_EXPIRED")
+            self.assertEqual(event.task_id, task.task_id)
+
     def test_state_transition_requires_expected_current_state(self):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -256,6 +256,23 @@ Verified:
 
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests run_app.py run_worker.py`
+
+## 2026-08-10 - Checkpoint 16: Worker Lease Fencing
+
+Implemented:
+
+- Added `lease_owner`, `lease_token`, `lease_expires_at`, and `delivery_generation` to tasks.
+- Worker now acquires an execution lease before moving work to `RUNNING`.
+- Completion, retry scheduling, and dead-letter writes are fenced by lease token and delivery generation.
+- Expired `RUNNING` leases can be recovered to `ENQUEUED` with a fresh outbox event.
+- Worker checks for due retries and expired leases before claiming new work.
+- Task API exposes lease owner, lease expiry, and delivery generation.
+- Added tests for lease acquisition, stale-token rejection, and expired lease recovery.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
 - Live local server health reports auth readiness from `.env`.
 
 Next:

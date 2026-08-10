@@ -14,6 +14,7 @@ from xrev.runtime import (
 )
 from xrev.runtime.transport import OneAttemptTransport
 from xrev.runtime.transport import RetryDisposition
+from uuid import uuid4
 
 
 @dataclass(frozen=True)
@@ -35,15 +36,20 @@ class LocalWorker:
         auth: WebSessionAuth,
         transport: OneAttemptTransport,
         raw_evidence_sink: RawEvidenceSink,
+        owner: str | None = None,
+        lease_seconds: int = 300,
     ) -> None:
         self.ledger = ledger
         self.manifest = manifest
         self.auth = auth
         self.transport = transport
         self.raw_evidence_sink = raw_evidence_sink
+        self.owner = owner or f"worker-{uuid4().hex[:12]}"
+        self.lease_seconds = lease_seconds
 
     def process_one(self) -> WorkerResult:
         self.ledger.enqueue_due_retries()
+        self.ledger.recover_expired_leases()
         event = self.ledger.claim_next_outbox_event()
         if event is None:
             return WorkerResult(processed=False)
@@ -72,11 +78,13 @@ class LocalWorker:
                 message="Task was already processed or not ready",
             )
 
-        task = self.ledger.transition_task(
+        lease_expires_at = (
+            datetime.now(UTC) + timedelta(seconds=self.lease_seconds)
+        ).isoformat()
+        task = self.ledger.acquire_execution_lease(
             task.task_id,
-            from_state=TaskState.ENQUEUED,
-            to_state=TaskState.RUNNING,
-            increment_attempt=True,
+            owner=self.owner,
+            lease_expires_at=lease_expires_at,
         )
 
         try:
@@ -95,6 +103,9 @@ class LocalWorker:
             task.task_id,
             from_state=TaskState.RUNNING,
             to_state=TaskState.DONE,
+            lease_token=task.lease_token,
+            delivery_generation=task.delivery_generation,
+            clear_lease=True,
             result_json={
                 "raw_evidence": {
                     "evidence_id": page.raw_evidence_ref.evidence_id,
@@ -153,6 +164,9 @@ class LocalWorker:
                 task.task_id,
                 from_state=TaskState.RUNNING,
                 to_state=TaskState.RETRY_SCHEDULED,
+                lease_token=task.lease_token,
+                delivery_generation=task.delivery_generation,
+                clear_lease=True,
                 error_json={
                     **error_json,
                     "retry_disposition": str(retry_disposition),
@@ -165,6 +179,9 @@ class LocalWorker:
             task.task_id,
             from_state=TaskState.RUNNING,
             to_state=TaskState.DEAD_LETTER,
+            lease_token=task.lease_token,
+            delivery_generation=task.delivery_generation,
+            clear_lease=True,
             error_json={
                 **error_json,
                 "retry_disposition": str(retry_disposition),

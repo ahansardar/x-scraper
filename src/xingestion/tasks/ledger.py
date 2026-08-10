@@ -36,6 +36,10 @@ class CapabilityTask:
     attempt_count: int
     max_attempts: int
     next_attempt_at: str | None
+    lease_owner: str | None
+    lease_token: str | None
+    lease_expires_at: str | None
+    delivery_generation: int
     created_at: str
     updated_at: str
 
@@ -116,10 +120,14 @@ class SQLiteTaskLedger:
                         attempt_count,
                         max_attempts,
                         next_attempt_at,
+                        lease_owner,
+                        lease_token,
+                        lease_expires_at,
+                        delivery_generation,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 3, NULL, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 3, NULL, NULL, NULL, NULL, 0, ?, ?)
                     """,
                     (
                         task_id,
@@ -258,6 +266,102 @@ class SQLiteTaskLedger:
             count += 1
         return count
 
+    def recover_expired_leases(self, *, now: str | None = None) -> int:
+        now = now or _now()
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM capability_tasks
+                WHERE state = ?
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= ?
+                ORDER BY lease_expires_at ASC
+                """,
+                (TaskState.RUNNING.value, now),
+            ).fetchall()
+
+        count = 0
+        for row in rows:
+            task = _task_from_row(row)
+            self.reclaim_expired_lease(task.task_id, now=now)
+            self.create_outbox_event(
+                task_id=task.task_id,
+                event_type="CAPABILITY_TASK_LEASE_EXPIRED",
+            )
+            count += 1
+        return count
+
+    def reclaim_expired_lease(self, task_id: str, *, now: str | None = None) -> CapabilityTask:
+        now = now or _now()
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE capability_tasks
+                SET state = ?,
+                    lease_owner = NULL,
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = ?
+                WHERE task_id = ?
+                  AND state = ?
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= ?
+                """,
+                (TaskState.ENQUEUED.value, now, task_id, TaskState.RUNNING.value, now),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Task {task_id} does not have an expired lease")
+            conn.commit()
+
+        task = self.get_task(task_id)
+        if task is None:
+            raise RuntimeError("reclaimed task could not be reloaded")
+        return task
+
+    def acquire_execution_lease(
+        self,
+        task_id: str,
+        *,
+        owner: str,
+        lease_expires_at: str,
+    ) -> CapabilityTask:
+        now = _now()
+        token = f"lease-{uuid4().hex}"
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE capability_tasks
+                SET state = ?,
+                    lease_owner = ?,
+                    lease_token = ?,
+                    lease_expires_at = ?,
+                    delivery_generation = delivery_generation + 1,
+                    attempt_count = attempt_count + 1,
+                    updated_at = ?
+                WHERE task_id = ?
+                  AND state = ?
+                  AND lease_token IS NULL
+                """,
+                (
+                    TaskState.RUNNING.value,
+                    owner,
+                    token,
+                    lease_expires_at,
+                    now,
+                    task_id,
+                    TaskState.ENQUEUED.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Task {task_id} could not acquire execution lease")
+            conn.commit()
+
+        task = self.get_task(task_id)
+        if task is None:
+            raise RuntimeError("leased task could not be reloaded")
+        return task
+
     def get_outbox_event(self, event_id: str) -> OutboxEvent | None:
         with closing(self._connect()) as conn:
             row = conn.execute(
@@ -305,19 +409,34 @@ class SQLiteTaskLedger:
         error_json: Mapping[str, object] | None = None,
         next_attempt_at: str | None = None,
         increment_attempt: bool = False,
+        lease_token: str | None = None,
+        delivery_generation: int | None = None,
+        clear_lease: bool = False,
     ) -> CapabilityTask:
         now = _now()
         with closing(self._connect()) as conn:
+            lease_clause = ""
+            params_extra: list[object] = []
+            if lease_token is not None:
+                lease_clause += " AND lease_token = ?"
+                params_extra.append(lease_token)
+            if delivery_generation is not None:
+                lease_clause += " AND delivery_generation = ?"
+                params_extra.append(delivery_generation)
+
             cursor = conn.execute(
-                """
+                f"""
                 UPDATE capability_tasks
                 SET state = ?,
                     result_json = COALESCE(?, result_json),
                     error_json = COALESCE(?, error_json),
                     next_attempt_at = ?,
                     attempt_count = attempt_count + ?,
+                    lease_owner = CASE WHEN ? THEN NULL ELSE lease_owner END,
+                    lease_token = CASE WHEN ? THEN NULL ELSE lease_token END,
+                    lease_expires_at = CASE WHEN ? THEN NULL ELSE lease_expires_at END,
                     updated_at = ?
-                WHERE task_id = ? AND state = ?
+                WHERE task_id = ? AND state = ?{lease_clause}
                 """,
                 (
                     to_state.value,
@@ -325,9 +444,13 @@ class SQLiteTaskLedger:
                     _json(error_json) if error_json is not None else None,
                     next_attempt_at,
                     1 if increment_attempt else 0,
+                    1 if clear_lease else 0,
+                    1 if clear_lease else 0,
+                    1 if clear_lease else 0,
                     now,
                     task_id,
                     from_state.value,
+                    *params_extra,
                 ),
             )
             if cursor.rowcount != 1:
@@ -363,6 +486,10 @@ class SQLiteTaskLedger:
             _ensure_column(conn, "capability_tasks", "attempt_count", "INTEGER NOT NULL DEFAULT 0")
             _ensure_column(conn, "capability_tasks", "max_attempts", "INTEGER NOT NULL DEFAULT 3")
             _ensure_column(conn, "capability_tasks", "next_attempt_at", "TEXT")
+            _ensure_column(conn, "capability_tasks", "lease_owner", "TEXT")
+            _ensure_column(conn, "capability_tasks", "lease_token", "TEXT")
+            _ensure_column(conn, "capability_tasks", "lease_expires_at", "TEXT")
+            _ensure_column(conn, "capability_tasks", "delivery_generation", "INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS outbox_events (
@@ -404,6 +531,10 @@ def _task_from_row(row: sqlite3.Row) -> CapabilityTask:
         attempt_count=int(row["attempt_count"]),
         max_attempts=int(row["max_attempts"]),
         next_attempt_at=row["next_attempt_at"],
+        lease_owner=row["lease_owner"],
+        lease_token=row["lease_token"],
+        lease_expires_at=row["lease_expires_at"],
+        delivery_generation=int(row["delivery_generation"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
