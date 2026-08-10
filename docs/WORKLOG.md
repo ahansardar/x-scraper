@@ -437,3 +437,22 @@ Verified:
 Next:
 
 - Add deployment runbook and CI hardening checks.
+
+## 2026-08-10 - Checkpoint 25: Deployment Runbook and CI Hardening
+
+Implemented:
+
+- Added a no-Docker deployment runbook with environment, start commands, health checks, storage paths, task submission, operator controls, and verification commands.
+- Added a secret-hygiene unit test scanning tracked text files for raw X auth material patterns.
+- Hardened CI frontend checks to require the Metrics panel.
+- Hardened CI documentation checks to require the deployment runbook.
+- Linked the runbook from README.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add authenticated/admin-only controls before exposing this beyond a trusted deployment boundary.

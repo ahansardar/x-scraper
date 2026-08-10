@@ -127,6 +127,8 @@ GET /api/sessions
 
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 
+See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
+
 Retention cleanup is available from the Operations panel and:
 
 ```text

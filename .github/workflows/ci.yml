@@ -49,3 +49,16 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Run live acquisition" -Quiet)) {
             throw "Frontend does not expose live acquisition action"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Metrics" -Quiet)) {
+            throw "Frontend does not expose operational metrics"
+          }
+
+      - name: Check deployment runbook
+        shell: pwsh
+        run: |
+          if (-not (Test-Path .\docs\deployment_runbook.md)) {
+            throw "Missing deployment runbook"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "No-Docker|no-Docker|no-docker" -Quiet)) {
+            throw "Deployment runbook must state the no-Docker deployment model"
+          }
