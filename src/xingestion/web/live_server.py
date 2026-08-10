@@ -131,6 +131,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 return self._task_detail(parts[2])
             if len(parts) == 4 and parts[3] == "result":
                 return self._task_result(parts[2])
+        if parsed.path.startswith("/api/"):
+            return self._api_not_found(parsed.path)
         return super().do_GET()
 
     def do_POST(self):
@@ -163,8 +165,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._create_capability_task(self._read_json())
 
         if parsed.path != "/api/search-tweets":
-            self.send_error(404)
-            return
+            return self._api_not_found(parsed.path)
 
         return self._create_search_tweets_task(self._read_json())
 
@@ -284,11 +285,17 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         )
         return self._json({"release": _release_dict(release)}, status=200)
 
+    def _api_not_found(self, path):
+        return self._json({"message": f"API route not found: {path}"}, status=404)
+
     def _read_json(self):
         length = int(self.headers.get("content-length", "0"))
         if length == 0:
             return {}
-        return json.loads(self.rfile.read(length).decode("utf-8"))
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON body: {exc.msg}") from exc
 
     def _require_admin(self):
         expected = STATE.config.admin_token

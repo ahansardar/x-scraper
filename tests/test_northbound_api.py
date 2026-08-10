@@ -106,6 +106,14 @@ class NorthboundApiTests(unittest.TestCase):
         self.assertEqual(handler.status, 503)
         self.assertIn("not configured", handler.payload["message"])
 
+    def test_api_miss_returns_json_not_html(self):
+        handler = FakeHandler()
+
+        payload = handler._api_not_found("/api/missing")
+
+        self.assertEqual(handler.status, 404)
+        self.assertEqual(payload["message"], "API route not found: /api/missing")
+
 
 if __name__ == "__main__":
     unittest.main()

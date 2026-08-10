@@ -10,11 +10,21 @@ let adminToken = "";
 
 async function getJson(url, options) {
   const response = await fetch(url, options);
-  const data = await response.json();
+  const data = await parseJsonResponse(response, url);
   if (!response.ok) {
     throw new Error(data.message || data.error || response.statusText);
   }
   return data;
+}
+
+async function parseJsonResponse(response, url) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (error) {
+    const contentType = response.headers.get("content-type") || "unknown content type";
+    throw new Error(`${url} returned non-JSON ${contentType} with HTTP ${response.status}`);
+  }
 }
 
 function adminHeaders() {
@@ -197,7 +207,7 @@ runRetention.addEventListener("click", async () => {
 async function waitForResult(resultUrl) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(resultUrl);
-    const data = await response.json();
+    const data = await parseJsonResponse(response, resultUrl);
     if (response.status === 200) {
       renderOutput(data);
       await loadTasks();
@@ -228,6 +238,12 @@ function delay(ms) {
 loadHealth().catch((error) => {
   health.textContent = error.message;
 });
-loadTasks();
-loadRetention();
-loadMetrics();
+loadTasks().catch((error) => {
+  tasks.innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`;
+});
+loadRetention().catch((error) => {
+  retention.textContent = error.message;
+});
+loadMetrics().catch((error) => {
+  metrics.innerHTML = `<div><strong>error</strong><span>${error.message}</span></div>`;
+});

@@ -535,3 +535,23 @@ Verified:
 Next:
 
 - Add multi-page pagination orchestration with bounded cursor tasks.
+
+## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
+
+Implemented:
+
+- API misses under `/api/*` now return JSON 404 payloads instead of SimpleHTTP HTML.
+- Frontend JSON parsing now reports the exact endpoint, content type, and HTTP status when an API returns HTML or another non-JSON response.
+- Initial dashboard loaders now render endpoint errors inline instead of throwing uncaught parser errors.
+- Added tests for frontend non-JSON reporting and API JSON error payload shape.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+- Fresh local server probe: `GET /api/retention` returned JSON.
+- Fresh local server probe: missing `/api/*` route returned JSON 404.
+
+Next:
+
+- Add multi-page pagination orchestration with bounded cursor tasks.
