@@ -189,6 +189,22 @@ Verified:
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests run_app.py`
 - Live `SEARCH_TWEETS` API call returned populated likes, reposts, replies, quotes, bookmarks, and views.
+
+## 2026-08-10 - Checkpoint 12: Transactional Outbox and Local Worker
+
+Implemented:
+
+- Added `outbox_events` beside `capability_tasks`.
+- Task creation now commits task state and publish intent in one SQLite transaction.
+- Added outbox claiming for the oldest unpublished event.
+- Added `LocalWorker` that claims one event, transitions `CREATED -> ENQUEUED -> RUNNING -> DONE`, stores raw evidence, and handles dead-letter failures.
+- Updated the live web app to submit tasks through the outbox/worker path instead of executing acquisition directly in the HTTP handler.
+- Added tests for atomic outbox creation, idempotency without duplicate events, event claiming, and local worker completion.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py`
 - Live local server health reports auth readiness from `.env`.
 
 Next:

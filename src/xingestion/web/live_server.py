@@ -17,13 +17,11 @@ from xingestion.capabilities import (
     SearchTweetsInput,
 )
 from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import (
-    ProtocolError,
-    SearchTweetsRequest,
     UrllibJsonTransport,
-    acquire_search_tweets_page,
     load_env_file,
     web_session_auth_from_env,
 )
@@ -44,6 +42,13 @@ class LiveAppState:
         self.evidence_sink = FileRawEvidenceSink(DATA_ROOT / "raw_evidence")
         self.transport = UrllibJsonTransport()
         self.auth = web_session_auth_from_env()
+        self.worker = LocalWorker(
+            ledger=self.ledger,
+            manifest=self.manifest,
+            auth=self.auth,
+            transport=self.transport,
+            raw_evidence_sink=self.evidence_sink,
+        )
 
 
 STATE = LiveAppState()
@@ -62,6 +67,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                     "release_id": STATE.manifest.release_id,
                     "mode": "live",
                     "auth_ready": not STATE.auth.missing_fields(),
+                    "dispatch": "outbox-local-worker",
                 }
             )
         if parsed.path == "/api/tasks":
@@ -101,48 +107,23 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             plan_json=plan.public_dict(),
         )
 
-        if task.state == TaskState.CREATED:
-            task = STATE.ledger.transition_task(
-                task.task_id,
-                from_state=TaskState.CREATED,
-                to_state=TaskState.ENQUEUED,
+        worker_result = _process_until_task_terminal(task.task_id)
+        task = STATE.ledger.get_task(task.task_id) or task
+
+        if worker_result and worker_result.error_class:
+            return self._json(
+                {
+                    "task": _task_dict(task),
+                    "error": worker_result.error_class,
+                    "message": worker_result.message,
+                },
+                status=502,
             )
-        if task.state == TaskState.ENQUEUED:
-            task = STATE.ledger.transition_task(
-                task.task_id,
-                from_state=TaskState.ENQUEUED,
-                to_state=TaskState.RUNNING,
-            )
-            try:
-                page = acquire_search_tweets_page(
-                    recipe=plan.binding.recipe,
-                    auth=STATE.auth,
-                    request=SearchTweetsRequest(
-                        query=query,
-                        product=product,
-                        count=page_size,
-                    ),
-                    transport=STATE.transport,
-                    raw_evidence_sink=STATE.evidence_sink,
-                )
-            except (ProtocolError, ValueError) as exc:
-                task = STATE.ledger.transition_task(
-                    task.task_id,
-                    from_state=TaskState.RUNNING,
-                    to_state=TaskState.DEAD_LETTER,
-                )
-                return self._json(
-                    {
-                        "task": _task_dict(task),
-                        "error": getattr(exc, "error_class", exc.__class__.__name__),
-                        "message": str(exc),
-                    },
-                    status=502,
-                )
-            task = STATE.ledger.transition_task(
-                task.task_id,
-                from_state=TaskState.RUNNING,
-                to_state=TaskState.DONE,
+
+        if worker_result and worker_result.raw_evidence_ref:
+            page = _load_page_from_evidence(
+                worker_result.raw_evidence_ref.storage_uri,
+                worker_result.raw_evidence_ref,
             )
             result = {
                 "task": _task_dict(task),
@@ -159,7 +140,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             }
             return self._json(result, status=201)
 
-        return self._json({"task": _task_dict(task), "message": "Task already exists"})
+        return self._json(
+            {
+                "task": _task_dict(task),
+                "message": (worker_result.message if worker_result else None)
+                or "Task queued or already processed",
+            },
+            status=202,
+        )
 
     def _read_json(self):
         length = int(self.headers.get("content-length", "0"))
@@ -226,6 +214,25 @@ def _tweet_dict(tweet):
         "view_count": tweet.view_count,
         "canonical_url": tweet.canonical_url,
     }
+
+
+def _load_page_from_evidence(storage_uri, raw_evidence_ref):
+    from xrev.runtime import parse_search_tweets_page
+
+    payload = json.loads(Path(storage_uri).read_text(encoding="utf-8"))
+    return parse_search_tweets_page(payload, raw_evidence_ref=raw_evidence_ref)
+
+
+def _process_until_task_terminal(task_id, max_events=10):
+    last_result = None
+    for _ in range(max_events):
+        task = STATE.ledger.get_task(task_id)
+        if task and task.state in (TaskState.DONE, TaskState.DEAD_LETTER):
+            return last_result
+        last_result = STATE.worker.process_one()
+        if not last_result.processed:
+            return last_result
+    return last_result
 
 
 def main(argv=None):

@@ -35,6 +35,16 @@ class CapabilityTask:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class OutboxEvent:
+    event_id: str
+    task_id: str
+    event_type: str
+    payload_json: Mapping[str, object]
+    created_at: str
+    published_at: str | None
+
+
 class TaskLedger(Protocol):
     def create_task(
         self,
@@ -46,6 +56,9 @@ class TaskLedger(Protocol):
         plan_json: Mapping[str, object],
     ) -> CapabilityTask:
         """Create a durable task or return the existing idempotent task."""
+
+    def claim_next_outbox_event(self) -> OutboxEvent | None:
+        """Claim the oldest unpublished outbox event."""
 
     def get_task(self, task_id: str) -> CapabilityTask | None:
         """Load a task by ID."""
@@ -79,6 +92,7 @@ class SQLiteTaskLedger:
 
         now = _now()
         task_id = f"task-{uuid4().hex}"
+        event_id = f"outbox-{uuid4().hex}"
         with closing(self._connect()) as conn:
             conn.execute("BEGIN")
             try:
@@ -109,6 +123,26 @@ class SQLiteTaskLedger:
                         now,
                     ),
                 )
+                conn.execute(
+                    """
+                    INSERT INTO outbox_events (
+                        event_id,
+                        task_id,
+                        event_type,
+                        payload_json,
+                        created_at,
+                        published_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, NULL)
+                    """,
+                    (
+                        event_id,
+                        task_id,
+                        "CAPABILITY_TASK_CREATED",
+                        _json({"task_id": task_id}),
+                        now,
+                    ),
+                )
                 conn.commit()
             except sqlite3.IntegrityError:
                 conn.rollback()
@@ -121,6 +155,59 @@ class SQLiteTaskLedger:
         if task is None:
             raise RuntimeError("created task could not be reloaded")
         return task
+
+    def claim_next_outbox_event(self) -> OutboxEvent | None:
+        now = _now()
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT *
+                FROM outbox_events
+                WHERE published_at IS NULL
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return None
+
+            conn.execute(
+                """
+                UPDATE outbox_events
+                SET published_at = ?
+                WHERE event_id = ? AND published_at IS NULL
+                """,
+                (now, row["event_id"]),
+            )
+            conn.commit()
+
+        event = self.get_outbox_event(row["event_id"])
+        if event is None:
+            raise RuntimeError("claimed outbox event could not be reloaded")
+        return event
+
+    def get_outbox_event(self, event_id: str) -> OutboxEvent | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT * FROM outbox_events WHERE event_id = ?",
+                (event_id,),
+            ).fetchone()
+        return _outbox_event_from_row(row) if row else None
+
+    def list_outbox_events_for_task(self, task_id: str) -> tuple[OutboxEvent, ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM outbox_events
+                WHERE task_id = ?
+                ORDER BY created_at ASC
+                """,
+                (task_id,),
+            ).fetchall()
+        return tuple(_outbox_event_from_row(row) for row in rows)
 
     def get_task(self, task_id: str) -> CapabilityTask | None:
         with closing(self._connect()) as conn:
@@ -183,6 +270,25 @@ class SQLiteTaskLedger:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outbox_events (
+                    event_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT,
+                    FOREIGN KEY (task_id) REFERENCES capability_tasks(task_id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_outbox_unpublished
+                ON outbox_events (published_at, created_at)
+                """
+            )
             conn.commit()
 
     def _connect(self) -> sqlite3.Connection:
@@ -202,6 +308,17 @@ def _task_from_row(row: sqlite3.Row) -> CapabilityTask:
         plan_json=json.loads(row["plan_json"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+    )
+
+
+def _outbox_event_from_row(row: sqlite3.Row) -> OutboxEvent:
+    return OutboxEvent(
+        event_id=row["event_id"],
+        task_id=row["task_id"],
+        event_type=row["event_type"],
+        payload_json=json.loads(row["payload_json"]),
+        created_at=row["created_at"],
+        published_at=row["published_at"],
     )
 
 

@@ -68,7 +68,7 @@ form.addEventListener("submit", async (event) => {
     page_size: Number(formData.get("page_size")),
     idempotency_key: `ui:${Date.now()}`
   };
-  summary.textContent = "Planning capability request and calling X...";
+  summary.textContent = "Planning capability request and dispatching worker...";
   tweets.innerHTML = "";
   try {
     const data = await getJson("/api/search-tweets", {

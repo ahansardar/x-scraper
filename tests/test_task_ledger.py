@@ -73,6 +73,32 @@ class TaskLedgerTests(unittest.TestCase):
 
             self.assertEqual(first.task_id, second.task_id)
             self.assertEqual(second.state, TaskState.CREATED)
+            self.assertEqual(len(ledger.list_outbox_events_for_task(first.task_id)), 1)
+
+    def test_create_task_creates_atomic_outbox_event(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="outbox-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+
+            events = ledger.list_outbox_events_for_task(task.task_id)
+
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0].event_type, "CAPABILITY_TASK_CREATED")
+            self.assertEqual(events[0].payload_json["task_id"], task.task_id)
+            self.assertIsNone(events[0].published_at)
+
+            claimed = ledger.claim_next_outbox_event()
+
+            self.assertEqual(claimed.event_id, events[0].event_id)
+            self.assertIsNotNone(claimed.published_at)
+            self.assertIsNone(ledger.claim_next_outbox_event())
 
     def test_state_transition_requires_expected_current_state(self):
         request, plan = make_request_and_plan()
