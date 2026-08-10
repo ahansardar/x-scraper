@@ -417,3 +417,23 @@ Verified:
 Next:
 
 - Add a generic northbound capability task API.
+
+## 2026-08-10 - Checkpoint 24: Northbound Capability API
+
+Implemented:
+
+- Added stable `POST /api/capability-tasks` for parent-system task submission.
+- Kept `POST /api/search-tweets` as a compatibility shortcut.
+- Validated capability ID, contract version, payload shape, and unsupported capabilities.
+- Returned the same task, status URL, and result URL contract as the UI route.
+- Documented the parent-system request shape.
+- Added handler-level tests for generic task submission and rejection.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add deployment runbook and CI hardening checks.

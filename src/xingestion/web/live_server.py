@@ -148,11 +148,16 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/releases/current/activate":
             return self._set_release_health(ReleaseHealth.ACTIVE, "operator_activate")
 
+        if parsed.path == "/api/capability-tasks":
+            return self._create_capability_task(self._read_json())
+
         if parsed.path != "/api/search-tweets":
             self.send_error(404)
             return
 
-        body = self._read_json()
+        return self._create_search_tweets_task(self._read_json())
+
+    def _create_search_tweets_task(self, body):
         query = str(body.get("query", "")).strip()
         product = str(body.get("product", "Top"))
         page_size = int(body.get("page_size", 20))
@@ -160,7 +165,6 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             body.get("idempotency_key")
             or f"live:{query}:{product}:{page_size}"
         )
-
         capability_request = CapabilityRequest(
             capability_id=CapabilityId.SEARCH_TWEETS,
             contract_version=1,
@@ -170,6 +174,38 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 page_size=page_size,
             ),
         )
+        return self._queue_capability_request(capability_request, idempotency_key)
+
+    def _create_capability_task(self, body):
+        capability_id = str(body.get("capability_id", "")).strip()
+        contract_version = int(body.get("contract_version", 1))
+        payload = body.get("payload", {})
+        if capability_id != CapabilityId.SEARCH_TWEETS.value:
+            return self._json({"message": f"Unsupported capability {capability_id}"}, status=400)
+        if not isinstance(payload, dict):
+            return self._json({"message": "payload must be an object"}, status=400)
+
+        try:
+            capability_request = CapabilityRequest(
+                capability_id=CapabilityId.SEARCH_TWEETS,
+                contract_version=contract_version,
+                payload=SearchTweetsInput(
+                    query=str(payload.get("query", "")),
+                    product=str(payload.get("product", "Top")),
+                    cursor=payload.get("cursor"),
+                    page_size=int(payload.get("page_size", 20)),
+                ),
+            )
+            idempotency_key = str(
+                body.get("idempotency_key")
+                or f"capability:{capability_id}:{json.dumps(payload, sort_keys=True)}"
+            )
+        except (TypeError, ValueError) as exc:
+            return self._json({"message": str(exc)}, status=400)
+
+        return self._queue_capability_request(capability_request, idempotency_key)
+
+    def _queue_capability_request(self, capability_request, idempotency_key):
         plan = STATE.planner.plan(capability_request)
         task = STATE.ledger.create_task(
             idempotency_key=idempotency_key,

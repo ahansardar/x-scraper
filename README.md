@@ -39,6 +39,26 @@ python .\run_worker.py
 
 Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The web app queues a task and the worker processes it from the transactional outbox. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
 
+Parent systems can submit through the stable capability API:
+
+```http
+POST /api/capability-tasks
+Content-Type: application/json
+
+{
+  "capability_id": "SEARCH_TWEETS",
+  "contract_version": 1,
+  "payload": {
+    "query": "india lang:en",
+    "product": "Top",
+    "page_size": 20
+  },
+  "idempotency_key": "client-request-001"
+}
+```
+
+The search-specific `POST /api/search-tweets` route remains as a UI compatibility shortcut.
+
 ## Deployment Configuration
 
 Create `.env` from `.env.example` and set:
