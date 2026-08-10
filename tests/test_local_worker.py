@@ -98,6 +98,10 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(result.state, TaskState.DONE)
             self.assertIsNotNone(result.raw_evidence_ref)
             self.assertEqual(reloaded.state, TaskState.DONE)
+            self.assertEqual(
+                reloaded.result_json["raw_evidence"]["evidence_id"],
+                result.raw_evidence_ref.evidence_id,
+            )
             self.assertIsNone(worker.process_one().task_id)
 
 

@@ -25,11 +25,19 @@ GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
 
 No Docker is required.
 
+Terminal 1, web app:
+
 ```powershell
 python .\run_app.py --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
+Terminal 2, worker:
+
+```powershell
+python .\run_worker.py
+```
+
+Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The web app queues a task and the worker processes it from the transactional outbox. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
 
 ## Deployment Configuration
 

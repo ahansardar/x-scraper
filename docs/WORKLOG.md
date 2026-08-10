@@ -222,6 +222,23 @@ Verified:
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests run_app.py`
 - Live `/api/storage` reports SQLite and raw evidence locations.
+
+## 2026-08-10 - Checkpoint 14: Split Worker From Web Request
+
+Implemented:
+
+- Added task `result_json` and `error_json` persistence.
+- Worker stores raw evidence references on completed tasks.
+- Web `POST /api/search-tweets` now queues a task and returns `202` with status/result URLs.
+- Added `GET /api/tasks/{task_id}` and `GET /api/tasks/{task_id}/result`.
+- Added `run_worker.py` for a separate no-Docker worker process.
+- Updated frontend polling to wait for the worker result.
+- Updated README with separate web and worker commands.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
 - Live local server health reports auth readiness from `.env`.
 
 Next:

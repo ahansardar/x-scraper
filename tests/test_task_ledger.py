@@ -51,6 +51,8 @@ class TaskLedgerTests(unittest.TestCase):
             self.assertEqual(reloaded.capability_id, CapabilityId.SEARCH_TWEETS)
             self.assertEqual(reloaded.request_json["capability_id"], "SEARCH_TWEETS")
             self.assertEqual(reloaded.plan_json["release_id"], plan.release_id)
+            self.assertIsNone(reloaded.result_json)
+            self.assertIsNone(reloaded.error_json)
 
     def test_idempotency_key_returns_existing_task(self):
         request, plan = make_request_and_plan()
@@ -119,6 +121,14 @@ class TaskLedgerTests(unittest.TestCase):
             )
 
             self.assertEqual(enqueued.state, TaskState.ENQUEUED)
+            done = ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.ENQUEUED,
+                to_state=TaskState.DONE,
+                result_json={"raw_evidence": {"storage_uri": "x"}},
+            )
+
+            self.assertEqual(done.result_json["raw_evidence"]["storage_uri"], "x")
             with self.assertRaisesRegex(ValueError, "expected state"):
                 ledger.transition_task(
                     task.task_id,

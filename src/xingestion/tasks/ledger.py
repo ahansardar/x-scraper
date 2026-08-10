@@ -31,6 +31,8 @@ class CapabilityTask:
     state: TaskState
     request_json: Mapping[str, object]
     plan_json: Mapping[str, object]
+    result_json: Mapping[str, object] | None
+    error_json: Mapping[str, object] | None
     created_at: str
     updated_at: str
 
@@ -106,10 +108,12 @@ class SQLiteTaskLedger:
                         state,
                         request_json,
                         plan_json,
+                        result_json,
+                        error_json,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
                     """,
                     (
                         task_id,
@@ -231,16 +235,28 @@ class SQLiteTaskLedger:
         *,
         from_state: TaskState,
         to_state: TaskState,
+        result_json: Mapping[str, object] | None = None,
+        error_json: Mapping[str, object] | None = None,
     ) -> CapabilityTask:
         now = _now()
         with closing(self._connect()) as conn:
             cursor = conn.execute(
                 """
                 UPDATE capability_tasks
-                SET state = ?, updated_at = ?
+                SET state = ?,
+                    result_json = COALESCE(?, result_json),
+                    error_json = COALESCE(?, error_json),
+                    updated_at = ?
                 WHERE task_id = ? AND state = ?
                 """,
-                (to_state.value, now, task_id, from_state.value),
+                (
+                    to_state.value,
+                    _json(result_json) if result_json is not None else None,
+                    _json(error_json) if error_json is not None else None,
+                    now,
+                    task_id,
+                    from_state.value,
+                ),
             )
             if cursor.rowcount != 1:
                 raise ValueError(
@@ -270,6 +286,8 @@ class SQLiteTaskLedger:
                 )
                 """
             )
+            _ensure_column(conn, "capability_tasks", "result_json", "TEXT")
+            _ensure_column(conn, "capability_tasks", "error_json", "TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS outbox_events (
@@ -306,6 +324,8 @@ def _task_from_row(row: sqlite3.Row) -> CapabilityTask:
         state=TaskState(row["state"]),
         request_json=json.loads(row["request_json"]),
         plan_json=json.loads(row["plan_json"]),
+        result_json=json.loads(row["result_json"]) if row["result_json"] else None,
+        error_json=json.loads(row["error_json"]) if row["error_json"] else None,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -328,3 +348,17 @@ def _json(value: Mapping[str, object]) -> str:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _ensure_column(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_type: str,
+) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")

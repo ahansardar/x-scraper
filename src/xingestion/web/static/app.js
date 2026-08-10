@@ -76,12 +76,44 @@ form.addEventListener("submit", async (event) => {
       headers: {"content-type": "application/json"},
       body: JSON.stringify(payload)
     });
-    renderOutput(data);
+    summary.innerHTML = `
+      <strong>${data.task.state}</strong>
+      task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
+    `;
     await loadTasks();
+    await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
   }
 });
+
+async function waitForResult(resultUrl) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const response = await fetch(resultUrl);
+    const data = await response.json();
+    if (response.status === 200) {
+      renderOutput(data);
+      await loadTasks();
+      return;
+    }
+    if (response.status >= 500) {
+      summary.textContent = data.error?.message || data.message || "Task failed";
+      await loadTasks();
+      return;
+    }
+    summary.innerHTML = `
+      <strong>${data.task.state}</strong>
+      task ${data.task.task_id.slice(0, 18)} waiting for worker...
+    `;
+    await delay(1500);
+    await loadTasks();
+  }
+  summary.textContent = "Timed out waiting for worker result.";
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 loadHealth().catch((error) => {
   health.textContent = error.message;

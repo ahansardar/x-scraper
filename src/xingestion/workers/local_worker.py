@@ -82,6 +82,10 @@ class LocalWorker:
                 task.task_id,
                 from_state=TaskState.RUNNING,
                 to_state=TaskState.DEAD_LETTER,
+                error_json={
+                    "error_class": getattr(exc, "error_class", exc.__class__.__name__),
+                    "message": str(exc),
+                },
             )
             return WorkerResult(
                 processed=True,
@@ -95,6 +99,13 @@ class LocalWorker:
             task.task_id,
             from_state=TaskState.RUNNING,
             to_state=TaskState.DONE,
+            result_json={
+                "raw_evidence": {
+                    "evidence_id": page.raw_evidence_ref.evidence_id,
+                    "content_sha256": page.raw_evidence_ref.content_sha256,
+                    "storage_uri": page.raw_evidence_ref.storage_uri,
+                }
+            },
         )
         return WorkerResult(
             processed=True,

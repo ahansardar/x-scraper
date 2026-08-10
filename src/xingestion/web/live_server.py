@@ -76,6 +76,12 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json(_storage_dict())
         if parsed.path == "/api/tasks":
             return self._json({"tasks": self._list_tasks()})
+        if parsed.path.startswith("/api/tasks/"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 3:
+                return self._task_detail(parts[2])
+            if len(parts) == 4 and parts[3] == "result":
+                return self._task_result(parts[2])
         return super().do_GET()
 
     def do_POST(self):
@@ -111,44 +117,12 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             plan_json=plan.public_dict(),
         )
 
-        worker_result = _process_until_task_terminal(task.task_id)
-        task = STATE.ledger.get_task(task.task_id) or task
-
-        if worker_result and worker_result.error_class:
-            return self._json(
-                {
-                    "task": _task_dict(task),
-                    "error": worker_result.error_class,
-                    "message": worker_result.message,
-                },
-                status=502,
-            )
-
-        if worker_result and worker_result.raw_evidence_ref:
-            page = _load_page_from_evidence(
-                worker_result.raw_evidence_ref.storage_uri,
-                worker_result.raw_evidence_ref,
-            )
-            result = {
-                "task": _task_dict(task),
-                "plan": plan.public_dict(),
-                "raw_evidence": {
-                    "evidence_id": page.raw_evidence_ref.evidence_id,
-                    "content_sha256": page.raw_evidence_ref.content_sha256,
-                    "storage_uri": page.raw_evidence_ref.storage_uri,
-                },
-                "page": {
-                    "next_cursor": page.next_cursor,
-                    "tweets": [_tweet_dict(tweet) for tweet in page.tweets],
-                },
-            }
-            return self._json(result, status=201)
-
         return self._json(
             {
                 "task": _task_dict(task),
-                "message": (worker_result.message if worker_result else None)
-                or "Task queued or already processed",
+                "message": "Task queued",
+                "status_url": f"/api/tasks/{task.task_id}",
+                "result_url": f"/api/tasks/{task.task_id}/result",
             },
             status=202,
         )
@@ -190,6 +164,44 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             for row in rows
         ]
 
+    def _task_detail(self, task_id):
+        task = STATE.ledger.get_task(task_id)
+        if task is None:
+            return self._json({"message": "Task not found"}, status=404)
+        return self._json({"task": _task_dict(task)})
+
+    def _task_result(self, task_id):
+        task = STATE.ledger.get_task(task_id)
+        if task is None:
+            return self._json({"message": "Task not found"}, status=404)
+        if task.state == TaskState.DEAD_LETTER:
+            return self._json(
+                {"task": _task_dict(task), "error": task.error_json},
+                status=502,
+            )
+        if task.state != TaskState.DONE or not task.result_json:
+            return self._json(
+                {"task": _task_dict(task), "message": "Result not ready"},
+                status=202,
+            )
+
+        raw_evidence = task.result_json["raw_evidence"]
+        page = _load_page_from_evidence(
+            raw_evidence["storage_uri"],
+            _raw_evidence_ref_from_json(raw_evidence),
+        )
+        return self._json(
+            {
+                "task": _task_dict(task),
+                "plan": task.plan_json,
+                "raw_evidence": raw_evidence,
+                "page": {
+                    "next_cursor": page.next_cursor,
+                    "tweets": [_tweet_dict(tweet) for tweet in page.tweets],
+                },
+            }
+        )
+
 
 def _task_dict(task):
     return {
@@ -198,6 +210,8 @@ def _task_dict(task):
         "capability_id": task.capability_id.value,
         "contract_version": task.contract_version,
         "state": task.state.value,
+        "has_result": task.result_json is not None,
+        "has_error": task.error_json is not None,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -227,24 +241,25 @@ def _load_page_from_evidence(storage_uri, raw_evidence_ref):
     return parse_search_tweets_page(payload, raw_evidence_ref=raw_evidence_ref)
 
 
+def _raw_evidence_ref_from_json(raw_evidence):
+    from xrev.evidence import RawEvidenceRef
+
+    return RawEvidenceRef(
+        evidence_id=raw_evidence["evidence_id"],
+        content_sha256=raw_evidence["content_sha256"],
+        media_type="application/json",
+        storage_uri=raw_evidence["storage_uri"],
+        captured_at="",
+        metadata={},
+    )
+
+
 def _storage_dict():
     return {
         "data_dir": str(STATE.config.data_dir),
         "sqlite_path": str(STATE.config.sqlite_path),
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
     }
-
-
-def _process_until_task_terminal(task_id, max_events=10):
-    last_result = None
-    for _ in range(max_events):
-        task = STATE.ledger.get_task(task_id)
-        if task and task.state in (TaskState.DONE, TaskState.DEAD_LETTER):
-            return last_result
-        last_result = STATE.worker.process_one()
-        if not last_result.processed:
-            return last_result
-    return last_result
 
 
 def main(argv=None):
