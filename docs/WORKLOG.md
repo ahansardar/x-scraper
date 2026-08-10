@@ -657,6 +657,26 @@ Next:
 
 - Add queue backpressure limits.
 
+## 2026-08-10 - Checkpoint 37: Queue Backpressure
+
+Implemented:
+
+- Added `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`, defaulting to 100.
+- Added active task counting across `CREATED`, `ENQUEUED`, `RUNNING`, and `RETRY_SCHEDULED`.
+- Capability submissions now return HTTP `429` before task creation when the per-capability active limit is reached.
+- Included the active task limit in storage and metrics responses.
+- Documented backpressure behavior.
+- Added tests for active counting and rejected submissions.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py`
+
+Next:
+
+- Add bulk reprocessing jobs.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

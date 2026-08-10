@@ -38,6 +38,7 @@ class NorthboundApiTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temp_dir:
             live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(max_active_tasks_per_capability=100),
                 planner=CapabilityPlanner(manifest),
                 ledger=SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3"),
             )
@@ -62,6 +63,31 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["status_url"], f"/api/tasks/{payload['task']['task_id']}")
             task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
             self.assertEqual(task.request_json["payload"]["max_pages"], 2)
+
+    def test_generic_capability_respects_backpressure_limit(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(max_active_tasks_per_capability=1),
+                planner=CapabilityPlanner(manifest),
+                ledger=ledger,
+            )
+            handler = FakeHandler()
+            payload = {
+                "capability_id": "SEARCH_TWEETS",
+                "contract_version": 1,
+                "payload": {"query": "india", "page_size": 20},
+            }
+
+            handler._create_capability_task({**payload, "idempotency_key": "bp-1"})
+            rejected = handler._create_capability_task({**payload, "idempotency_key": "bp-2"})
+
+            self.assertEqual(handler.status, 429)
+            self.assertEqual(rejected["message"], "Backpressure limit reached")
+            self.assertEqual(rejected["active_tasks"], 1)
 
     def test_generic_capability_rejects_unknown_capability(self):
         handler = FakeHandler()

@@ -247,6 +247,20 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         return self._queue_capability_request(capability_request, idempotency_key)
 
     def _queue_capability_request(self, capability_request, idempotency_key):
+        active = STATE.ledger.active_task_count(
+            capability_id=capability_request.capability_id
+        )
+        limit = STATE.config.max_active_tasks_per_capability
+        if active >= limit:
+            return self._json(
+                {
+                    "message": "Backpressure limit reached",
+                    "capability_id": capability_request.capability_id.value,
+                    "active_tasks": active,
+                    "limit": limit,
+                },
+                status=429,
+            )
         plan = STATE.planner.plan(capability_request)
         task = STATE.ledger.create_task(
             idempotency_key=idempotency_key,
@@ -489,6 +503,7 @@ def _storage_dict():
         "retention_days": STATE.config.retention_days,
         "admin_token_configured": bool(STATE.config.admin_token),
         "require_migrations": STATE.config.require_migrations,
+        "max_active_tasks_per_capability": STATE.config.max_active_tasks_per_capability,
     }
 
 
@@ -512,6 +527,7 @@ def _metrics_dict():
                 + task_counts["DEAD_LETTER"]
                 + task_counts["CANCELLED"]
             ),
+            "max_active_tasks_per_capability": STATE.config.max_active_tasks_per_capability,
         },
         "outbox": STATE.ledger.outbox_stats(),
         "canonical": canonical_counts,

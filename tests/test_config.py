@@ -24,6 +24,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.default_credential_ref, "env:X_AUTH_TOKEN,X_CT0,X_BEARER")
         self.assertEqual(config.admin_token, "")
         self.assertTrue(config.require_migrations)
+        self.assertEqual(config.max_active_tasks_per_capability, 100)
 
     def test_env_and_args_override_deployment_settings(self):
         old_values = {
@@ -39,6 +40,7 @@ class ConfigTests(unittest.TestCase):
                 "XINGESTION_NETWORK_CONTEXT",
                 "XINGESTION_ADMIN_TOKEN",
                 "XINGESTION_REQUIRE_MIGRATIONS",
+                "XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY",
             )
         }
         try:
@@ -53,6 +55,7 @@ class ConfigTests(unittest.TestCase):
                 os.environ["XINGESTION_NETWORK_CONTEXT"] = "direct:iad"
                 os.environ["XINGESTION_ADMIN_TOKEN"] = "admin-secret"
                 os.environ["XINGESTION_REQUIRE_MIGRATIONS"] = "false"
+                os.environ["XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY"] = "7"
 
                 config = load_app_config(ROOT, ["--port", "9001"])
 
@@ -66,6 +69,7 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(config.default_network_context, "direct:iad")
                 self.assertEqual(config.admin_token, "admin-secret")
                 self.assertFalse(config.require_migrations)
+                self.assertEqual(config.max_active_tasks_per_capability, 7)
         finally:
             for key, value in old_values.items():
                 if value is None:

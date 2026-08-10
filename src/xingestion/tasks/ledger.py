@@ -378,6 +378,35 @@ class SQLiteTaskLedger:
         counts.update({row["state"]: int(row["count"]) for row in rows})
         return counts
 
+    def active_task_count(self, *, capability_id: CapabilityId | None = None) -> int:
+        active_states = (
+            TaskState.CREATED.value,
+            TaskState.ENQUEUED.value,
+            TaskState.RUNNING.value,
+            TaskState.RETRY_SCHEDULED.value,
+        )
+        with closing(self._connect()) as conn:
+            if capability_id is None:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM capability_tasks
+                    WHERE state IN (?, ?, ?, ?)
+                    """,
+                    active_states,
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM capability_tasks
+                    WHERE state IN (?, ?, ?, ?)
+                      AND capability_id = ?
+                    """,
+                    (*active_states, capability_id.value),
+                ).fetchone()
+        return int(row["count"])
+
     def outbox_stats(self) -> dict[str, int | str | None]:
         now = _now()
         with closing(self._connect()) as conn:

@@ -435,6 +435,33 @@ class TaskLedgerTests(unittest.TestCase):
             ledger.claim_next_outbox_event()
             self.assertEqual(ledger.outbox_stats()["unpublished_events"], 0)
 
+    def test_active_task_count_can_filter_by_capability(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="active-count-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+
+            self.assertEqual(
+                ledger.active_task_count(capability_id=CapabilityId.SEARCH_TWEETS),
+                1,
+            )
+            ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DONE,
+                result_json={"raw_evidence": {"storage_uri": "x"}},
+            )
+            self.assertEqual(
+                ledger.active_task_count(capability_id=CapabilityId.SEARCH_TWEETS),
+                0,
+            )
+
     def test_state_transition_requires_expected_current_state(self):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -73,6 +73,8 @@ Content-Type: application/json
 
 The search-specific `POST /api/search-tweets` route remains as a UI compatibility shortcut.
 
+If active task depth for a capability reaches `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`, submissions return HTTP `429` before a task is created.
+
 ## Deployment Configuration
 
 Create `.env` from `.env.example` and set:
@@ -91,6 +93,7 @@ XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
+XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
 ```
 
 Storage locations:
