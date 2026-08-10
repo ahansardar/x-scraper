@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.py[cod]
+
+debug*.json
+debug_search/
+*.log
+
+x_*.csv
