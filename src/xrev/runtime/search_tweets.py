@@ -49,7 +49,7 @@ class TweetRecord:
     like_count: int
     quote_count: int
     bookmark_count: int
-    view_count: str
+    view_count: str | None
     media_urls: tuple[str, ...]
     canonical_url: str
 
@@ -154,38 +154,40 @@ def parse_search_tweets_page(
     *,
     raw_evidence_ref: RawEvidenceRef | None = None,
 ) -> SearchTweetsPage:
-    tweets: list[TweetRecord] = []
-    seen_ids: set[str] = set()
-    _find_tweets(payload, tweets, seen_ids)
+    tweets: dict[str, TweetRecord] = {}
+    _find_tweets(payload, tweets)
     return SearchTweetsPage(
-        tweets=tuple(tweets),
+        tweets=tuple(tweets.values()),
         next_cursor=_find_bottom_cursor(payload),
         raw_evidence_ref=raw_evidence_ref,
     )
 
 
-def _find_tweets(obj: Any, tweets: list[TweetRecord], seen_ids: set[str]) -> None:
+def _find_tweets(obj: Any, tweets: dict[str, TweetRecord]) -> None:
     if isinstance(obj, Mapping):
         if "tweet_results" in obj:
             result = obj.get("tweet_results", {}).get("result", {})
             tweet = _make_tweet(result)
-            if tweet and tweet.tweet_id not in seen_ids:
-                seen_ids.add(tweet.tweet_id)
-                tweets.append(tweet)
+            if tweet:
+                _store_tweet(tweets, tweet)
 
         if obj.get("__typename") in ("Tweet", "TweetWithVisibilityResults"):
             tweet = _make_tweet(obj)
-            if tweet and tweet.tweet_id not in seen_ids:
-                seen_ids.add(tweet.tweet_id)
-                tweets.append(tweet)
+            if tweet:
+                _store_tweet(tweets, tweet)
 
         for value in obj.values():
-            _find_tweets(value, tweets, seen_ids)
+            _find_tweets(value, tweets)
         return
 
     if isinstance(obj, list):
         for item in obj:
-            _find_tweets(item, tweets, seen_ids)
+            _find_tweets(item, tweets)
+
+
+def _store_tweet(tweets: dict[str, TweetRecord], tweet: TweetRecord) -> None:
+    existing = tweets.get(tweet.tweet_id)
+    tweets[tweet.tweet_id] = tweet if existing is None else _merge_tweet(existing, tweet)
 
 
 def _make_tweet(result: Any) -> TweetRecord | None:
@@ -214,8 +216,6 @@ def _make_tweet(result: Any) -> TweetRecord | None:
 
     username = str(user_core.get("screen_name") or user_legacy.get("screen_name") or "")
     name = str(user_core.get("name") or user_legacy.get("name") or "")
-    views = str(result.get("views", {}).get("count", ""))
-
     return TweetRecord(
         tweet_id=tweet_id,
         username=username,
@@ -227,7 +227,7 @@ def _make_tweet(result: Any) -> TweetRecord | None:
         like_count=_int_value(legacy.get("favorite_count")),
         quote_count=_int_value(legacy.get("quote_count")),
         bookmark_count=_int_value(legacy.get("bookmark_count")),
-        view_count=views,
+        view_count=_view_count(result),
         media_urls=_media_urls(legacy),
         canonical_url=(
             f"https://x.com/{username}/status/{tweet_id}"
@@ -235,6 +235,43 @@ def _make_tweet(result: Any) -> TweetRecord | None:
             else ""
         ),
     )
+
+
+def _merge_tweet(existing: TweetRecord, incoming: TweetRecord) -> TweetRecord:
+    return TweetRecord(
+        tweet_id=existing.tweet_id,
+        username=incoming.username or existing.username,
+        name=incoming.name or existing.name,
+        text=incoming.text if len(incoming.text) > len(existing.text) else existing.text,
+        source_created_at=incoming.source_created_at or existing.source_created_at,
+        reply_count=max(existing.reply_count, incoming.reply_count),
+        repost_count=max(existing.repost_count, incoming.repost_count),
+        like_count=max(existing.like_count, incoming.like_count),
+        quote_count=max(existing.quote_count, incoming.quote_count),
+        bookmark_count=max(existing.bookmark_count, incoming.bookmark_count),
+        view_count=_better_view_count(existing.view_count, incoming.view_count),
+        media_urls=incoming.media_urls or existing.media_urls,
+        canonical_url=incoming.canonical_url or existing.canonical_url,
+    )
+
+
+def _view_count(result: Mapping[str, Any]) -> str | None:
+    views = result.get("views")
+    if isinstance(views, Mapping):
+        count = views.get("count")
+        if count not in (None, ""):
+            return str(count)
+    return None
+
+
+def _better_view_count(existing: str | None, incoming: str | None) -> str | None:
+    if existing in (None, ""):
+        return incoming
+    if incoming in (None, ""):
+        return existing
+    if str(existing).isdigit() and str(incoming).isdigit():
+        return str(max(int(existing), int(incoming)))
+    return incoming or existing
 
 
 def _find_bottom_cursor(obj: Any) -> str | None:

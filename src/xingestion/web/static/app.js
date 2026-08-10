@@ -47,10 +47,16 @@ function renderOutput(data) {
         <span>${tweet.like_count} likes</span>
         <span>${tweet.repost_count} reposts</span>
         <span>${tweet.reply_count} replies</span>
-        <span>${tweet.view_count} views</span>
+        <span>${formatViews(tweet.view_count)}</span>
       </div>
     </article>
   `).join("");
+}
+
+function formatViews(value) {
+  return value === null || value === undefined || value === ""
+    ? "views unavailable"
+    : `${value} views`;
 }
 
 form.addEventListener("submit", async (event) => {

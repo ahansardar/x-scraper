@@ -145,6 +145,54 @@ class SearchTweetsRuntimeTests(unittest.TestCase):
         self.assertEqual(tweet.media_urls, ("https://img.example/1.jpg",))
         self.assertEqual(tweet.canonical_url, "https://x.com/alice/status/123")
 
+    def test_duplicate_tweet_entries_merge_richer_engagement_metrics(self):
+        def result(likes, reposts, replies, quotes, views=None):
+            payload = {
+                "__typename": "Tweet",
+                "rest_id": "123",
+                "core": {
+                    "user_results": {
+                        "result": {
+                            "core": {
+                                "screen_name": "alice",
+                                "name": "Alice",
+                            }
+                        }
+                    }
+                },
+                "legacy": {
+                    "id_str": "123",
+                    "full_text": "hello",
+                    "created_at": "Mon Aug 10 12:00:00 +0000 2026",
+                    "favorite_count": likes,
+                    "retweet_count": reposts,
+                    "reply_count": replies,
+                    "quote_count": quotes,
+                    "bookmark_count": 0,
+                },
+                "views": {"state": "Enabled"},
+            }
+            if views is not None:
+                payload["views"] = {"count": str(views), "state": "EnabledWithCount"}
+            return payload
+
+        page = parse_search_tweets_page(
+            {
+                "entries": [
+                    {"tweet_results": {"result": result(0, 0, 0, 0)}},
+                    {"tweet_results": {"result": result(5, 2, 3, 1, 99)}},
+                ]
+            }
+        )
+
+        self.assertEqual(len(page.tweets), 1)
+        tweet = page.tweets[0]
+        self.assertEqual(tweet.like_count, 5)
+        self.assertEqual(tweet.repost_count, 2)
+        self.assertEqual(tweet.reply_count, 3)
+        self.assertEqual(tweet.quote_count, 1)
+        self.assertEqual(tweet.view_count, "99")
+
 
 if __name__ == "__main__":
     unittest.main()

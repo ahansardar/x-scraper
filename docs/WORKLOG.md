@@ -174,6 +174,21 @@ Verified:
 
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests run_app.py`
+
+## 2026-08-10 - Checkpoint 11: Engagement Metric Parsing
+
+Implemented:
+
+- Updated SearchTweets parsing to merge duplicate tweet entries instead of keeping only the first copy.
+- Preserved richer engagement metrics when a later duplicate entry includes likes, reposts, replies, quotes, bookmarks, or views.
+- Changed missing view counts from blank strings to explicit unavailable state in the frontend.
+- Added parser tests for duplicate engagement metric enrichment.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py`
+- Live `SEARCH_TWEETS` API call returned populated likes, reposts, replies, quotes, bookmarks, and views.
 - Live local server health reports auth readiness from `.env`.
 
 Next:
