@@ -16,7 +16,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -28,6 +28,7 @@ No Docker is required.
 Terminal 1, web app:
 
 ```powershell
+python .\run_migrations.py
 python .\run_app.py --host 127.0.0.1 --port 8000
 ```
 

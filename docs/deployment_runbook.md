@@ -25,6 +25,12 @@ Use a persistent disk for `XINGESTION_DATA_DIR`. Do not use the build checkout a
 
 ## Start
 
+Apply migrations first:
+
+```powershell
+python .\run_migrations.py
+```
+
 Terminal 1:
 
 ```powershell
@@ -117,7 +123,7 @@ Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py
 ```
 
 CI runs the same checks on Windows Python 3.11 and 3.12, including frontend and secret-hygiene checks.

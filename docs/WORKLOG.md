@@ -477,3 +477,22 @@ Verified:
 Next:
 
 - Add explicit SQLite migrations and a migration runner.
+
+## 2026-08-10 - Checkpoint 27: SQLite Migration Runner
+
+Implemented:
+
+- Added a versioned SQLite migration runner with `schema_migrations`.
+- Added baseline SQL for task ledger, outbox, canonical data, sessions, and release health tables.
+- Added `run_migrations.py` for no-Docker deployment startup.
+- Updated README, deployment runbook, and CI compile checks.
+- Added tests proving baseline migrations apply once and create expected tables.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py`
+
+Next:
+
+- Add worker lease heartbeat renewal for long-running attempts.
