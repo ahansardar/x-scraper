@@ -19,3 +19,21 @@ Verified:
 Next:
 
 - Extract the current SearchTimeline request builder, parser, and pagination logic from `playground/graphql_search.py` into tested `src/xrev` runtime modules.
+
+## 2026-08-10 - Checkpoint 2: SearchTweets Runtime Extraction
+
+Implemented:
+
+- Added `src/xrev/runtime/search_tweets.py` with typed request, auth, HTTP request, tweet record, and page result objects.
+- Added recipe-driven SearchTimeline request construction using the candidate manifest operation and feature bundle.
+- Added parser and pagination extraction for protocol-normalized tweet records and opaque bottom cursors.
+- Added tests for request construction, pre-network validation, tweet parsing, media extraction, and cursor extraction.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests`
+
+Next:
+
+- Add a raw evidence sink boundary so runtime parsing can refer to durable response evidence before normalization.

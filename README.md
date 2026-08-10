@@ -10,7 +10,7 @@ The original GraphQL scripts and local research artifacts now live under `playgr
 
 ## Current Checkpoint
 
-The first production checkpoint defines immutable protocol revision models and a `SEARCH_TWEETS` capability binding for the observed SearchTimeline GraphQL recipe. It does not perform live network acquisition yet.
+The current checkpoint defines immutable protocol revision models, a `SEARCH_TWEETS` capability binding for the observed SearchTimeline GraphQL recipe, and tested runtime helpers for building SearchTimeline HTTP requests and parsing response pages. It does not perform live network acquisition yet.
 
 ## Verify
 
