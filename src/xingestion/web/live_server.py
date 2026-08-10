@@ -6,6 +6,11 @@ from pathlib import Path
 import sys
 from urllib.parse import urlparse
 
+ROOT = Path(__file__).resolve().parents[3]
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
 from xingestion.capabilities import (
     CapabilityPlanner,
     CapabilityRequest,
@@ -24,7 +29,6 @@ from xrev.runtime import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[3]
 STATIC_ROOT = ROOT / "src" / "xingestion" / "web" / "static"
 DATA_ROOT = ROOT / "data"
 MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
@@ -240,3 +244,7 @@ def main(argv=None):
     finally:
         server.server_close()
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
