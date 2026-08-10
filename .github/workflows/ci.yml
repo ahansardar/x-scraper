@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show Python version
+        shell: pwsh
+        run: python --version
+
+      - name: Run unit tests
+        shell: pwsh
+        run: python -m unittest discover -s tests
+
+      - name: Compile source and tests
+        shell: pwsh
+        run: python -m compileall -q src tests run_app.py
+
+      - name: Static smoke check frontend assets
+        shell: pwsh
+        run: |
+          if (-not (Test-Path .\src\xingestion\web\static\index.html)) {
+            throw "Missing frontend index.html"
+          }
+          if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Run live acquisition" -Quiet)) {
+            throw "Frontend does not expose live acquisition action"
+          }

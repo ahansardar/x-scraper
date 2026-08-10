@@ -16,7 +16,10 @@ The current checkpoint defines immutable protocol revision models, a `SEARCH_TWE
 
 ```powershell
 python -m unittest discover -s tests
+python -m compileall -q src tests run_app.py
 ```
+
+GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
 
 ## Run Local Live App
 

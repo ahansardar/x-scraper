@@ -160,6 +160,20 @@ Verified:
 
 - `python -m unittest discover -s tests`
 - `python -m compileall -q src tests run_app.py`
+
+## 2026-08-10 - Checkpoint 10: CI Testers
+
+Implemented:
+
+- Added `.github/workflows/ci.yml`.
+- CI runs on push, pull request, and manual dispatch.
+- CI uses Windows runners with Python 3.11 and 3.12.
+- CI runs unit tests, compile checks, and a frontend asset smoke check.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py`
 - Live local server health reports auth readiness from `.env`.
 
 Next:
