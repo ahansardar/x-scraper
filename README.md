@@ -1,37 +1,19 @@
-# X GraphQL Scraper
+# X Protocol Ingestion
 
-Local Python scripts for collecting X Explore and SearchTimeline GraphQL responses with an authorized web session.
+This repository is being rebuilt from `FINAL_PRODUCT_SPEC.md` into a production-oriented X protocol ingestion platform.
 
-## Setup
+The original GraphQL scripts and local research artifacts now live under `playground/`. They remain useful as an experimental reference, but new production code should follow the spec's split:
 
-Copy `.env.example` to `.env` and fill in:
+- `src/xrev/`: X protocol research/runtime models and validated protocol releases.
+- `protocol_releases/`: approved or candidate protocol release manifests.
+- `docs/WORKLOG.md`: incremental implementation ledger.
 
-```env
-X_AUTH_TOKEN=
-X_CT0=
-X_BEARER=
-```
+## Current Checkpoint
 
-## Search
+The first production checkpoint defines immutable protocol revision models and a `SEARCH_TWEETS` capability binding for the observed SearchTimeline GraphQL recipe. It does not perform live network acquisition yet.
 
-Edit `DEFAULT_KEYWORDS` in `graphql_search.py`, then run:
+## Verify
 
 ```powershell
-python -u .\graphql_search.py
+python -m unittest discover -s tests
 ```
-
-Or pass keywords directly:
-
-```powershell
-python .\graphql_search.py india "#bengaluru" --max-pages 3
-```
-
-Results are written to `x_search_results.csv`; raw debug payloads are written to `debug_search/`.
-
-## Explore
-
-```powershell
-python -u .\graphql.py
-```
-
-Results are written to `x_explore.csv`.

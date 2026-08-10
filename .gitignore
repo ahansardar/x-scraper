@@ -7,3 +7,4 @@ debug_search/
 *.log
 
 x_*.csv
+playground/artifacts/

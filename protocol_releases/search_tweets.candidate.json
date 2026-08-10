@@ -1,0 +1,102 @@
+{
+  "release_id": "xrev-search-tweets-2026-08-10-candidate-1",
+  "status": "CANDIDATE",
+  "bindings": [
+    {
+      "capability_id": "SEARCH_TWEETS",
+      "contract_version": 1,
+      "recipe": {
+        "revision_id": "recipe.search_tweets.web_graphql_searchtimeline.2026-08-10",
+        "status": "CANDIDATE",
+        "evidence_maturity": "OBSERVED",
+        "validation_freshness": "AGING",
+        "operational_health": "ACTIVE",
+        "operation": {
+          "revision_id": "operation.searchtimeline.PusO6nN.2026-08-09",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "operation_name": "SearchTimeline",
+          "operation_id": "PusO6nN_nUSAsfJktZJd9w",
+          "method": "POST",
+          "url_template": "https://x.com/i/api/graphql/{operation_id}/SearchTimeline"
+        },
+        "parser": {
+          "revision_id": "parser.search_tweets.flat_tweet_v1.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "INFERRED",
+          "validation_freshness": "NEVER_VALIDATED",
+          "operational_health": "UNKNOWN",
+          "parser_name": "search_tweets_flat_tweet_v1",
+          "output_contract": "protocol-normalized tweet records with opaque raw evidence refs"
+        },
+        "pagination": {
+          "revision_id": "pagination.searchtimeline.bottom_cursor_v1.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "INFERRED",
+          "validation_freshness": "NEVER_VALIDATED",
+          "operational_health": "UNKNOWN",
+          "strategy_name": "bottom_cursor",
+          "cursor_semantics": "Extract cursorType=Bottom and treat cursor as opaque"
+        },
+        "auth_profile": {
+          "revision_id": "auth.web_oauth2_session_cookie_csrf.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "auth_class": "AUTHORIZED_WEB_SESSION",
+          "required_material": ["auth_token", "ct0", "bearer_token"]
+        },
+        "transaction_profile": {
+          "revision_id": "transaction.searchtimeline.browser_headers_v1.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "profile_name": "browser_json_post",
+          "required_headers": [
+            "authorization",
+            "x-csrf-token",
+            "x-twitter-active-user",
+            "x-twitter-auth-type",
+            "x-twitter-client-language"
+          ]
+        },
+        "feature_bundle": {
+          "revision_id": "features.searchtimeline.playground_snapshot.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "features": {
+            "responsive_web_graphql_timeline_navigation_enabled": true,
+            "view_counts_everywhere_api_enabled": true,
+            "longform_notetweets_consumption_enabled": true,
+            "responsive_web_edit_tweet_api_enabled": true
+          },
+          "field_toggles": {
+            "withAuxiliaryUserLabels": false,
+            "withArticlePlainText": false,
+            "withArticleRichContentState": false,
+            "withPayments": false
+          }
+        },
+        "client_profile": {
+          "revision_id": "client.web_chrome_windows_reference.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "profile_name": "web_chrome_windows_reference",
+          "constraints": {
+            "platform": "web",
+            "browser_family": "chromium",
+            "language": "en"
+          }
+        }
+      }
+    }
+  ]
+}
