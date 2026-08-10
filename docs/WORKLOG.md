@@ -337,3 +337,23 @@ Verified:
 Next:
 
 - Add canonical tweet and engagement observation persistence.
+
+## 2026-08-10 - Checkpoint 20: Canonical Tweet Persistence
+
+Implemented:
+
+- Added canonical SQLite tables for tweet identity and engagement observations.
+- Added `CanonicalStore` to upsert tweet entities and append metric observations.
+- Worker now persists canonical output after raw evidence is stored and parsed.
+- Added `GET /api/canonical/tweets` for canonical counts and latest observations.
+- Documented canonical table locations and API inspection route.
+- Added tests for canonical ingestion, repeat observations, and worker integration.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add operational metrics for tasks, outbox, canonical records, and worker health.

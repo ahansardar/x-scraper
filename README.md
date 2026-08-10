@@ -66,6 +66,17 @@ GET /api/storage
 GET /api/health
 ```
 
+Canonical output is stored in the same SQLite database:
+
+- `canonical_tweets`: one row per platform tweet ID.
+- `engagement_observations`: append-only metric observations per acquisition.
+
+Inspect the latest canonical counts and observations at:
+
+```text
+GET /api/canonical/tweets
+```
+
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 
 Retention cleanup is available from the Operations panel and:

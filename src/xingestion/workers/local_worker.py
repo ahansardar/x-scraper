@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.canonical import CanonicalStore
 from xrev.evidence import RawEvidenceRef, RawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import (
@@ -36,6 +37,7 @@ class LocalWorker:
         auth: WebSessionAuth,
         transport: OneAttemptTransport,
         raw_evidence_sink: RawEvidenceSink,
+        canonical_store: CanonicalStore | None = None,
         owner: str | None = None,
         lease_seconds: int = 300,
     ) -> None:
@@ -44,6 +46,7 @@ class LocalWorker:
         self.auth = auth
         self.transport = transport
         self.raw_evidence_sink = raw_evidence_sink
+        self.canonical_store = canonical_store
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
 
@@ -97,6 +100,14 @@ class LocalWorker:
                 state=task.state,
                 error_class=getattr(exc, "error_class", exc.__class__.__name__),
                 message=str(exc),
+            )
+
+        if self.canonical_store is not None:
+            self.canonical_store.ingest_search_tweets_page(
+                page,
+                task_id=task.task_id,
+                release_id=self.manifest.release_id,
+                recipe_revision_id=task.plan_json["recipe_revision_id"],
             )
 
         task = self.ledger.transition_task(

@@ -12,6 +12,7 @@ from xingestion.capabilities import (
     SearchTweetsInput,
 )
 from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.canonical import CanonicalStore
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
@@ -114,6 +115,42 @@ class LocalWorkerTests(unittest.TestCase):
                 result.raw_evidence_ref.evidence_id,
             )
             self.assertIsNone(worker.process_one().task_id)
+
+    def test_worker_persists_canonical_tweets_on_success(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            store = CanonicalStore(db_path)
+            task = ledger.create_task(
+                idempotency_key="canonical-worker-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                canonical_store=store,
+            )
+
+            worker.process_one()
+
+            self.assertEqual(store.counts()["canonical_tweets"], 1)
+            self.assertEqual(store.counts()["engagement_observations"], 1)
+            self.assertEqual(store.get_tweet("1").username, "alice")
+            self.assertEqual(ledger.get_task(task.task_id).state, TaskState.DONE)
 
     def test_worker_schedules_retry_for_retryable_protocol_error(self):
         manifest = load_manifest()

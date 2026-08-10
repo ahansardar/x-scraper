@@ -16,6 +16,7 @@ from xingestion.capabilities import (
     CapabilityRequest,
     SearchTweetsInput,
 )
+from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
@@ -40,6 +41,7 @@ class LiveAppState:
         self.manifest = ProtocolReleaseManifest.from_file(MANIFEST_PATH)
         self.planner = CapabilityPlanner(self.manifest)
         self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
+        self.canonical_store = CanonicalStore(self.config.sqlite_path)
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
         self.auth = web_session_auth_from_env()
@@ -49,6 +51,7 @@ class LiveAppState:
             auth=self.auth,
             transport=self.transport,
             raw_evidence_sink=self.evidence_sink,
+            canonical_store=self.canonical_store,
         )
 
 
@@ -84,6 +87,16 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                             dry_run=True,
                         )
                     ),
+                }
+            )
+        if parsed.path == "/api/canonical/tweets":
+            return self._json(
+                {
+                    "counts": STATE.canonical_store.counts(),
+                    "latest_engagements": [
+                        _engagement_dict(item)
+                        for item in STATE.canonical_store.latest_engagements()
+                    ],
                 }
             )
         if parsed.path == "/api/tasks":
@@ -339,6 +352,21 @@ def _retention_dict(result):
         "matched_tasks": result.matched_tasks,
         "deleted_tasks": result.deleted_tasks,
         "dry_run": result.dry_run,
+    }
+
+
+def _engagement_dict(item):
+    return {
+        "observation_id": item.observation_id,
+        "tweet_id": item.tweet_id,
+        "task_id": item.task_id,
+        "captured_at": item.captured_at,
+        "reply_count": item.reply_count,
+        "repost_count": item.repost_count,
+        "like_count": item.like_count,
+        "quote_count": item.quote_count,
+        "bookmark_count": item.bookmark_count,
+        "view_count": item.view_count,
     }
 
 

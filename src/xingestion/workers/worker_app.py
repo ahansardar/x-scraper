@@ -5,6 +5,7 @@ import sys
 import time
 
 from xingestion.config import load_app_config
+from xingestion.canonical import CanonicalStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
@@ -29,6 +30,7 @@ def main(argv=None):
         auth=web_session_auth_from_env(),
         transport=UrllibJsonTransport(),
         raw_evidence_sink=FileRawEvidenceSink(config.raw_evidence_dir),
+        canonical_store=CanonicalStore(config.sqlite_path),
     )
 
     once = "--once" in argv
