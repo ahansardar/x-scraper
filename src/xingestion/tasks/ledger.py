@@ -40,6 +40,7 @@ class CapabilityTask:
     lease_token: str | None
     lease_expires_at: str | None
     delivery_generation: int
+    replay_origin_task_id: str | None
     created_at: str
     updated_at: str
 
@@ -124,10 +125,11 @@ class SQLiteTaskLedger:
                         lease_token,
                         lease_expires_at,
                         delivery_generation,
+                        replay_origin_task_id,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 3, NULL, NULL, NULL, NULL, 0, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 3, NULL, NULL, NULL, NULL, 0, NULL, ?, ?)
                     """,
                     (
                         task_id,
@@ -172,6 +174,85 @@ class SQLiteTaskLedger:
         task = self.get_task(task_id)
         if task is None:
             raise RuntimeError("created task could not be reloaded")
+        return task
+
+    def replay_task(self, origin_task_id: str) -> CapabilityTask:
+        origin = self.get_task(origin_task_id)
+        if origin is None:
+            raise ValueError(f"Task {origin_task_id} not found")
+        if origin.state != TaskState.DEAD_LETTER:
+            raise ValueError("Only DEAD_LETTER tasks can be replayed")
+
+        now = _now()
+        task_id = f"task-{uuid4().hex}"
+        event_id = f"outbox-{uuid4().hex}"
+        idempotency_key = f"replay:{origin.task_id}:{uuid4().hex}"
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN")
+            conn.execute(
+                """
+                INSERT INTO capability_tasks (
+                    task_id,
+                    idempotency_key,
+                    capability_id,
+                    contract_version,
+                    state,
+                    request_json,
+                    plan_json,
+                    result_json,
+                    error_json,
+                    attempt_count,
+                    max_attempts,
+                    next_attempt_at,
+                    lease_owner,
+                    lease_token,
+                    lease_expires_at,
+                    delivery_generation,
+                    replay_origin_task_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, NULL, NULL, NULL, NULL, 0, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    idempotency_key,
+                    origin.capability_id.value,
+                    origin.contract_version,
+                    TaskState.CREATED.value,
+                    _json(origin.request_json),
+                    _json(origin.plan_json),
+                    origin.max_attempts,
+                    origin.task_id,
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO outbox_events (
+                    event_id,
+                    task_id,
+                    event_type,
+                    payload_json,
+                    created_at,
+                    published_at
+                )
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    event_id,
+                    task_id,
+                    "CAPABILITY_TASK_REPLAY_CREATED",
+                    _json({"task_id": task_id, "origin_task_id": origin.task_id}),
+                    now,
+                ),
+            )
+            conn.commit()
+
+        task = self.get_task(task_id)
+        if task is None:
+            raise RuntimeError("replay task could not be reloaded")
         return task
 
     def claim_next_outbox_event(self) -> OutboxEvent | None:
@@ -490,6 +571,7 @@ class SQLiteTaskLedger:
             _ensure_column(conn, "capability_tasks", "lease_token", "TEXT")
             _ensure_column(conn, "capability_tasks", "lease_expires_at", "TEXT")
             _ensure_column(conn, "capability_tasks", "delivery_generation", "INTEGER NOT NULL DEFAULT 0")
+            _ensure_column(conn, "capability_tasks", "replay_origin_task_id", "TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS outbox_events (
@@ -535,6 +617,7 @@ def _task_from_row(row: sqlite3.Row) -> CapabilityTask:
         lease_token=row["lease_token"],
         lease_expires_at=row["lease_expires_at"],
         delivery_generation=int(row["delivery_generation"]),
+        replay_origin_task_id=row["replay_origin_task_id"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

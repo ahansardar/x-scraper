@@ -28,6 +28,7 @@ async function loadTasks() {
       <td>${task.task_id.slice(0, 18)}</td>
       <td>${task.capability_id}</td>
       <td><span class="state">${task.state}</span></td>
+      <td>${task.state === "DEAD_LETTER" ? `<button class="small-button" data-replay-task="${task.task_id}">Replay</button>` : ""}</td>
     </tr>
   `).join("");
 }
@@ -84,6 +85,31 @@ form.addEventListener("submit", async (event) => {
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
+  }
+});
+
+tasks.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-replay-task]");
+  if (!button) {
+    return;
+  }
+
+  button.disabled = true;
+  summary.textContent = "Queuing replay task...";
+  tweets.innerHTML = "";
+  try {
+    const data = await getJson(`/api/tasks/${button.dataset.replayTask}/replay`, {
+      method: "POST"
+    });
+    summary.innerHTML = `
+      <strong>${data.task.state}</strong>
+      replay task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
+    `;
+    await loadTasks();
+    await waitForResult(data.result_url);
+  } catch (error) {
+    summary.textContent = error.message;
+    await loadTasks();
   }
 });
 

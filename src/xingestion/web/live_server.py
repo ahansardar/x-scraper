@@ -86,6 +86,11 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/tasks/"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 4 and parts[3] == "replay":
+                return self._replay_task(parts[2])
+
         if parsed.path != "/api/search-tweets":
             self.send_error(404)
             return
@@ -127,6 +132,23 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             status=202,
         )
 
+    def _replay_task(self, task_id):
+        try:
+            task = STATE.ledger.replay_task(task_id)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 409
+            return self._json({"message": str(exc)}, status=status)
+
+        return self._json(
+            {
+                "task": _task_dict(task),
+                "message": "Replay task queued",
+                "status_url": f"/api/tasks/{task.task_id}",
+                "result_url": f"/api/tasks/{task.task_id}/result",
+            },
+            status=201,
+        )
+
     def _read_json(self):
         length = int(self.headers.get("content-length", "0"))
         if length == 0:
@@ -158,6 +180,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 "idempotency_key": row["idempotency_key"],
                 "capability_id": row["capability_id"],
                 "state": row["state"],
+                "replay_origin_task_id": row["replay_origin_task_id"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
             }
@@ -218,6 +241,7 @@ def _task_dict(task):
         "lease_owner": task.lease_owner,
         "lease_expires_at": task.lease_expires_at,
         "delivery_generation": task.delivery_generation,
+        "replay_origin_task_id": task.replay_origin_task_id,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }

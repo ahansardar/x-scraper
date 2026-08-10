@@ -152,6 +152,18 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.small-button {
+  width: auto;
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 120px;

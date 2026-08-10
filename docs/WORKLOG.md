@@ -277,4 +277,24 @@ Verified:
 
 Next:
 
-- Add transactional outbox support beside task creation so publish intent is durable before introducing worker dispatch.
+- Add an operator replay path for dead-letter tasks.
+
+## 2026-08-10 - Checkpoint 17: Dead-Letter Replay
+
+Implemented:
+
+- Added durable replay lineage with `replay_origin_task_id` on capability tasks.
+- Added `SQLiteTaskLedger.replay_task(...)` that only redrives `DEAD_LETTER` tasks.
+- Replay creates a fresh task and transactional outbox event without mutating the failed origin task.
+- Added `POST /api/tasks/{task_id}/replay` for deployment/operator use.
+- Added frontend replay controls in the task ledger for failed tasks.
+- Added tests for replay guardrails, lineage, outbox creation, and worker processing.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py`
+
+Next:
+
+- Add task cancellation and retention controls for long-running deployments.

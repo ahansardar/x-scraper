@@ -226,6 +226,53 @@ class TaskLedgerTests(unittest.TestCase):
             self.assertEqual(event.event_type, "CAPABILITY_TASK_LEASE_EXPIRED")
             self.assertEqual(event.task_id, task.task_id)
 
+    def test_replay_dead_letter_task_creates_new_queued_origin(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="dead-letter-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            dead = ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={"message": "auth failed"},
+            )
+
+            replay = ledger.replay_task(dead.task_id)
+            origin = ledger.get_task(dead.task_id)
+            events = ledger.list_outbox_events_for_task(replay.task_id)
+
+            self.assertEqual(origin.state, TaskState.DEAD_LETTER)
+            self.assertEqual(replay.state, TaskState.CREATED)
+            self.assertEqual(replay.replay_origin_task_id, dead.task_id)
+            self.assertEqual(replay.request_json, dead.request_json)
+            self.assertEqual(replay.plan_json, dead.plan_json)
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0].event_type, "CAPABILITY_TASK_REPLAY_CREATED")
+            self.assertEqual(events[0].payload_json["task_id"], replay.task_id)
+            self.assertEqual(events[0].payload_json["origin_task_id"], dead.task_id)
+
+    def test_replay_rejects_non_dead_letter_task(self):
+        request, plan = make_request_and_plan()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="not-dead-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+
+            with self.assertRaisesRegex(ValueError, "Only DEAD_LETTER"):
+                ledger.replay_task(task.task_id)
+
     def test_state_transition_requires_expected_current_state(self):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:

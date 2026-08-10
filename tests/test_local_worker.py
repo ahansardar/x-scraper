@@ -165,6 +165,50 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(done.attempt_count, 2)
             self.assertEqual(transport.calls, 2)
 
+    def test_worker_processes_replayed_dead_letter_task(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            origin = ledger.create_task(
+                idempotency_key="worker-replay-origin",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.claim_next_outbox_event()
+            ledger.transition_task(
+                origin.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={"message": "previous failure"},
+            )
+            replay = ledger.replay_task(origin.task_id)
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+            )
+
+            result = worker.process_one()
+            replay_after = ledger.get_task(replay.task_id)
+            origin_after = ledger.get_task(origin.task_id)
+
+            self.assertTrue(result.processed)
+            self.assertEqual(result.task_id, replay.task_id)
+            self.assertEqual(replay_after.state, TaskState.DONE)
+            self.assertEqual(replay_after.replay_origin_task_id, origin.task_id)
+            self.assertEqual(origin_after.state, TaskState.DEAD_LETTER)
+
 
 if __name__ == "__main__":
     unittest.main()
