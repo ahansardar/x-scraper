@@ -3,8 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from xrev.evidence import RawEvidenceRef
+from xrev.evidence import RawEvidenceRef, RawEvidenceSink
 from xrev.protocol import AcquisitionRecipeRevision
+from xrev.runtime.transport import (
+    OneAttemptTransport,
+    ProtocolHttpRequest,
+    response_to_protocol_error,
+)
 
 
 @dataclass(frozen=True)
@@ -33,14 +38,6 @@ class SearchTweetsRequest:
 
 
 @dataclass(frozen=True)
-class ProtocolHttpRequest:
-    method: str
-    url: str
-    headers: Mapping[str, str]
-    json_body: Mapping[str, Any]
-
-
-@dataclass(frozen=True)
 class TweetRecord:
     tweet_id: str
     username: str
@@ -62,6 +59,36 @@ class SearchTweetsPage:
     tweets: tuple[TweetRecord, ...]
     next_cursor: str | None
     raw_evidence_ref: RawEvidenceRef | None = None
+
+
+def acquire_search_tweets_page(
+    recipe: AcquisitionRecipeRevision,
+    auth: WebSessionAuth,
+    request: SearchTweetsRequest,
+    *,
+    transport: OneAttemptTransport,
+    raw_evidence_sink: RawEvidenceSink,
+) -> SearchTweetsPage:
+    http_request = build_search_timeline_request(recipe, auth, request)
+    response = transport.send(http_request)
+    error = response_to_protocol_error(response)
+    if error:
+        raise error
+
+    evidence_ref = raw_evidence_sink.store_json(
+        response.json_body,
+        metadata={
+            "capability_id": "SEARCH_TWEETS",
+            "recipe_revision_id": recipe.revision_id,
+            "operation_revision_id": recipe.operation.revision_id,
+            "parser_revision_id": recipe.parser.revision_id,
+            "pagination_revision_id": recipe.pagination.revision_id,
+        },
+    )
+    return parse_search_tweets_page(
+        response.json_body,
+        raw_evidence_ref=evidence_ref,
+    )
 
 
 def build_search_timeline_request(

@@ -55,3 +55,21 @@ Verified:
 Next:
 
 - Add a one-attempt transport boundary that executes a prepared protocol HTTP request and persists raw evidence before parsing.
+
+## 2026-08-10 - Checkpoint 4: One-Attempt Acquisition Boundary
+
+Implemented:
+
+- Added `src/xrev/runtime/transport.py` with a one-attempt transport protocol, typed HTTP response, typed protocol errors, and retry disposition metadata.
+- Added `acquire_search_tweets_page(...)` to build the pinned protocol request, call transport exactly once, store raw evidence on success, and parse with the resulting evidence ref.
+- Added typed error mapping for auth/session rejection, stale operation IDs, rate limits, upstream server failures, and unexpected statuses.
+- Added tests proving success uses one transport call, persists evidence before returning parsed output, and does not hide internal retries for HTTP errors.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests`
+
+Next:
+
+- Add a production-facing capability request/planner shell that maps `SEARCH_TWEETS` capability requests to the pinned candidate recipe without exposing GraphQL internals.
