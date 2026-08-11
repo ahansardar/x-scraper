@@ -38,7 +38,11 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py
+
+      - name: Validate protocol parser fixtures
+        shell: pwsh
+        run: python .\run_protocol_validation.py --fixtures-only --json
 
       - name: Static smoke check frontend assets
         shell: pwsh
@@ -97,6 +101,15 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/api/outbox/process" -Quiet)) {
             throw "Frontend does not call outbox process endpoint"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Protocol Validation" -Quiet)) {
+            throw "Frontend does not expose protocol validation"
+          }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/api/protocol-validation" -Quiet)) {
+            throw "Frontend does not load protocol validation"
+          }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/api/protocol-validation/run" -Quiet)) {
+            throw "Frontend does not save protocol validation reports"
+          }
 
       - name: Check deployment runbook
         shell: pwsh
@@ -145,4 +158,7 @@ jobs:
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_outbox.py" -Quiet)) {
             throw "Deployment runbook must document outbox recovery"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_protocol_validation.py" -Quiet)) {
+            throw "Deployment runbook must document protocol validation"
           }

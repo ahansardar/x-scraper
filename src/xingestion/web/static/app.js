@@ -11,6 +11,11 @@ const refreshOutbox = document.querySelector("#refreshOutbox");
 const processOutbox = document.querySelector("#processOutbox");
 const startupSummary = document.querySelector("#startupSummary");
 const startupChecks = document.querySelector("#startupChecks");
+const validationSummary = document.querySelector("#validationSummary");
+const validationResults = document.querySelector("#validationResults");
+const validationReportsSummary = document.querySelector("#validationReportsSummary");
+const validationReports = document.querySelector("#validationReports");
+const runProtocolValidation = document.querySelector("#runProtocolValidation");
 const metrics = document.querySelector("#metrics");
 const sessions = document.querySelector("#sessions");
 const taskActionsBody = document.querySelector("#taskActions");
@@ -150,6 +155,53 @@ async function loadStartup() {
       <span class="${severityClass(check.status === "FAIL" ? "HIGH" : check.status === "WARN" ? "MEDIUM" : "LOW")}">${check.status}</span>
       <code>${check.message}</code>
     </div>
+  `).join("");
+}
+
+async function loadProtocolValidation() {
+  const data = await getJson("/api/protocol-validation");
+  const validation = data.validation;
+  validationSummary.innerHTML = `
+    <strong>${validation.ok ? "PASS" : "FAIL"}</strong>
+    ${validation.ok_sources}/${validation.checked_sources} sources passed parser revision
+    <code>${validation.parser_revision_id}</code>.
+  `;
+  if (!validation.results.length) {
+    validationResults.innerHTML = `<tr><td colspan="5">No validation sources found.</td></tr>`;
+    return;
+  }
+  validationResults.innerHTML = validation.results.map((result) => `
+    <tr>
+      <td><code>${shortPath(result.source)}</code><br>${result.source_type}</td>
+      <td><span class="${severityClass(result.ok ? "LOW" : "HIGH")}">${result.ok ? "PASS" : "FAIL"}</span></td>
+      <td>${result.tweet_count}</td>
+      <td>${result.bottom_cursor_present ? "yes" : "no"}</td>
+      <td>
+        <code>${result.structural_fingerprint}</code>
+        ${result.warnings.length ? `<br>${result.warnings.join("; ")}` : ""}
+        ${result.error ? `<br>${result.error}` : ""}
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function loadProtocolValidationReports() {
+  const data = await getJson("/api/protocol-validation/reports");
+  validationReportsSummary.innerHTML = `
+    <strong>${data.reports.length}</strong>
+    saved validation reports in <code>${data.report_dir}</code>.
+  `;
+  if (!data.reports.length) {
+    validationReports.innerHTML = `<tr><td colspan="4">No validation reports saved yet.</td></tr>`;
+    return;
+  }
+  validationReports.innerHTML = data.reports.map((report) => `
+    <tr>
+      <td><code>${report.name}</code></td>
+      <td><span class="${severityClass(report.ok ? "LOW" : "HIGH")}">${report.ok ? "PASS" : "FAIL"}</span></td>
+      <td>${report.checked_sources - report.failed_sources}/${report.checked_sources}</td>
+      <td>${formatDateTime(report.generated_at)}</td>
+    </tr>
   `).join("");
 }
 
@@ -340,6 +392,14 @@ function formatDuration(value) {
     return `${Math.floor(value / 60)}m ${value % 60}s`;
   }
   return `${Math.floor(value / 3600)}h ${Math.floor((value % 3600) / 60)}m`;
+}
+
+function shortPath(value) {
+  if (!value) {
+    return "";
+  }
+  const parts = value.split(/[\\/]/);
+  return parts.slice(-2).join("/");
 }
 
 form.addEventListener("submit", async (event) => {
@@ -632,6 +692,27 @@ processOutbox.addEventListener("click", async () => {
   }
 });
 
+runProtocolValidation.addEventListener("click", async () => {
+  runProtocolValidation.disabled = true;
+  validationSummary.textContent = "Running parser validation and saving report...";
+  try {
+    const data = await getJson("/api/protocol-validation/run", {
+      method: "POST",
+      headers: adminHeaders()
+    });
+    validationSummary.innerHTML = `
+      Saved validation report to <code>${data.saved_path}</code>.
+      Status <strong>${data.validation.ok ? "PASS" : "FAIL"}</strong>.
+    `;
+    await loadProtocolValidation();
+    await loadProtocolValidationReports();
+  } catch (error) {
+    validationSummary.textContent = error.message;
+  } finally {
+    runProtocolValidation.disabled = false;
+  }
+});
+
 async function waitForResult(resultUrl) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(resultUrl);
@@ -691,6 +772,14 @@ loadOutbox().catch((error) => {
 });
 loadStartup().catch((error) => {
   startupSummary.textContent = error.message;
+});
+loadProtocolValidation().catch((error) => {
+  validationSummary.textContent = error.message;
+  validationResults.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+});
+loadProtocolValidationReports().catch((error) => {
+  validationReportsSummary.textContent = error.message;
+  validationReports.innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`;
 });
 loadMetrics().catch((error) => {
   metrics.innerHTML = `<div><strong>error</strong><span>${error.message}</span></div>`;

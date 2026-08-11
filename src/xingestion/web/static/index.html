@@ -101,6 +101,39 @@
         <div id="startupChecks" class="check-list"></div>
       </section>
 
+      <section class="panel validation-panel">
+        <div class="section-title">
+          <span class="mark success"></span>
+          <h2>Protocol Validation</h2>
+        </div>
+        <div id="validationSummary" class="summary">Loading parser validation...</div>
+        <button id="runProtocolValidation" class="secondary" type="button">Save validation report</button>
+        <table>
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Status</th>
+              <th>Tweets</th>
+              <th>Cursor</th>
+              <th>Fingerprint</th>
+            </tr>
+          </thead>
+          <tbody id="validationResults"></tbody>
+        </table>
+        <div id="validationReportsSummary" class="summary">Loading validation report history...</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Status</th>
+              <th>Sources</th>
+              <th>Generated</th>
+            </tr>
+          </thead>
+          <tbody id="validationReports"></tbody>
+        </table>
+      </section>
+
       <section class="panel session-panel">
         <div class="section-title">
           <span class="mark accent"></span>

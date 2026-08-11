@@ -29,6 +29,11 @@ from xingestion.migrations import MigrationRunner
 from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.preflight import DeploymentPreflight
+from xingestion.protocol_validation import (
+    build_protocol_validation_report,
+    list_protocol_validation_reports,
+    write_protocol_validation_report,
+)
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
@@ -140,6 +145,19 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json(_storage_dict())
         if parsed.path == "/api/startup":
             return self._json(_startup_dict())
+        if parsed.path == "/api/protocol-validation":
+            return self._json({"validation": _protocol_validation_dict()})
+        if parsed.path == "/api/protocol-validation/reports":
+            reports = list_protocol_validation_reports(
+                STATE.config.data_dir / "protocol_validation",
+                limit=25,
+            )
+            return self._json(
+                {
+                    "report_dir": str(STATE.config.data_dir / "protocol_validation"),
+                    "reports": [report.public_dict() for report in reports],
+                }
+            )
         if parsed.path == "/api/sessions":
             return self._json({"sessions": [_session_dict(s) for s in STATE.session_store.list_sessions()]})
         if parsed.path == "/api/retention":
@@ -255,6 +273,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._process_outbox(self._read_json())
+        if parsed.path == "/api/protocol-validation/run":
+            if not self._require_admin():
+                return
+            return self._run_protocol_validation()
         if parsed.path == "/api/releases/current/quarantine":
             if not self._require_admin():
                 return
@@ -423,6 +445,25 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         except ValueError as exc:
             return self._json({"message": str(exc)}, status=400)
         return self._json({"outbox_process": result.public_dict()}, status=200)
+
+    def _run_protocol_validation(self):
+        report = build_protocol_validation_report(
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+            parser_revision_id=STATE.manifest.bindings[0].recipe.parser.revision_id,
+            limit=10,
+            include_fixtures=True,
+        )
+        path = write_protocol_validation_report(
+            report,
+            report_dir=STATE.config.data_dir / "protocol_validation",
+        )
+        return self._json(
+            {
+                "validation": report.public_dict(),
+                "saved_path": str(path),
+            },
+            status=201,
+        )
 
     def _support_export_detail(self, name):
         try:
@@ -741,6 +782,16 @@ def _startup_dict():
             for check in result.checks
         ],
     }
+
+
+def _protocol_validation_dict():
+    report = build_protocol_validation_report(
+        raw_evidence_dir=STATE.config.raw_evidence_dir,
+        parser_revision_id=STATE.manifest.bindings[0].recipe.parser.revision_id,
+        limit=10,
+        include_fixtures=True,
+    )
+    return report.public_dict()
 
 
 def _metrics_dict():

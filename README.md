@@ -158,6 +158,17 @@ python .\run_outbox.py --process --limit 5 --json
 
 `--process` uses the same local worker execution path as `run_worker.py`. It does not delete or force-publish queued events outside worker handling.
 
+Validate the pinned `SEARCH_TWEETS` parser against checked-in protocol fixtures and local raw evidence:
+
+```powershell
+python .\run_protocol_validation.py --json
+python .\run_protocol_validation.py --fixtures-only --json
+python .\run_protocol_validation.py --raw-only --json
+python .\run_protocol_validation.py --raw-only --write --json
+```
+
+The report includes parsed tweet counts, engagement coverage, cursor presence, and structural/typename fingerprints for drift comparison. Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`.
+
 Protocol release health is operator-controlled:
 
 ```text
@@ -283,6 +294,9 @@ Inspect and process the transactional outbox through HTTP:
 ```text
 GET /api/outbox
 POST /api/outbox/process
+GET /api/protocol-validation
+GET /api/protocol-validation/reports
+POST /api/protocol-validation/run
 ```
 
 The Outbox Recovery panel mirrors these endpoints. Processing is bounded by request limit and uses the live worker path, including session leasing, release quarantine checks, telemetry, canonical persistence, retry scheduling, and continuation queueing.

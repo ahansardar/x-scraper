@@ -234,6 +234,24 @@ POST /api/outbox/process
 
 The `POST` route requires `x-admin-token`. Processing does not delete rows or manually force acknowledgements; it claims events via the ledger and executes `LocalWorker.process_one()`, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
 
+Validate the pinned `SEARCH_TWEETS` parser before and after protocol changes:
+
+```powershell
+python .\run_protocol_validation.py --fixtures-only --json
+python .\run_protocol_validation.py --raw-only --json
+python .\run_protocol_validation.py --raw-only --write --json
+```
+
+The first command checks committed GraphQL regression fixtures. The second checks local captured payloads under `XINGESTION_DATA_DIR\raw_evidence`. The report includes parsed tweet counts, engagement metric coverage, bottom-cursor presence, and stable structural/typename fingerprints to compare when X changes the response shape. The web console mirrors the combined view at:
+
+```text
+GET /api/protocol-validation
+GET /api/protocol-validation/reports
+POST /api/protocol-validation/run
+```
+
+Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route requires `x-admin-token`.
+
 Bulk reprocess completed tasks for a release:
 
 ```text

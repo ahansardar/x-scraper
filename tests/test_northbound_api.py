@@ -355,6 +355,57 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["stats"]["unpublished_events"], 1)
             self.assertEqual(payload["events"][0]["task_id"], task.task_id)
 
+    def test_protocol_validation_route_returns_fixture_report(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            raw_dir = Path(temp_dir) / "raw"
+            raw_dir.mkdir()
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(raw_evidence_dir=raw_dir),
+                manifest=manifest,
+            )
+            handler = FakeHandler()
+            handler.path = "/api/protocol-validation"
+
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertTrue(payload["validation"]["ok"])
+            self.assertGreaterEqual(payload["validation"]["checked_sources"], 1)
+            self.assertEqual(payload["validation"]["results"][0]["source_type"], "fixture")
+
+    def test_protocol_validation_run_route_saves_report(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw_dir = root / "raw"
+            raw_dir.mkdir()
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    admin_token="expected-token",
+                    data_dir=root / "data",
+                    raw_evidence_dir=raw_dir,
+                ),
+                manifest=manifest,
+            )
+            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+
+            payload = handler._run_protocol_validation()
+
+            self.assertEqual(handler.status, 201)
+            self.assertTrue(payload["validation"]["ok"])
+            self.assertTrue(Path(payload["saved_path"]).exists())
+
+            handler.path = "/api/protocol-validation/reports"
+            listing = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(len(listing["reports"]), 1)
+
     def test_outbox_process_route_requires_worker_and_admin(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

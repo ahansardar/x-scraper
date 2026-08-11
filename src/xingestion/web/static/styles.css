@@ -132,6 +132,7 @@ h2 {
 .ops-panel,
 .outbox-panel,
 .startup-panel,
+.validation-panel,
 .support-panel {
   display: grid;
   gap: 12px;
@@ -365,6 +366,7 @@ th {
   .ops-panel,
   .outbox-panel,
   .startup-panel,
+  .validation-panel,
   .session-panel,
   .metrics-panel,
   .attention-panel,

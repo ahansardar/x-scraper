@@ -1,0 +1,115 @@
+{
+  "data": {
+    "search_by_raw_query": {
+      "search_timeline": {
+        "timeline": {
+          "instructions": [
+            {
+              "type": "TimelineAddEntries",
+              "entries": [
+                {
+                  "entryId": "tweet-1001",
+                  "content": {
+                    "entryType": "TimelineTimelineItem",
+                    "itemContent": {
+                      "itemType": "TimelineTweet",
+                      "tweet_results": {
+                        "result": {
+                          "__typename": "Tweet",
+                          "rest_id": "1001",
+                          "core": {
+                            "user_results": {
+                              "result": {
+                                "__typename": "User",
+                                "core": {
+                                  "screen_name": "protocol_user",
+                                  "name": "Protocol User"
+                                }
+                              }
+                            }
+                          },
+                          "legacy": {
+                            "id_str": "1001",
+                            "full_text": "GraphQL parser validation tweet",
+                            "created_at": "Mon Aug 10 12:00:00 +0000 2026",
+                            "reply_count": 7,
+                            "retweet_count": 11,
+                            "favorite_count": 29,
+                            "quote_count": 3,
+                            "bookmark_count": 5,
+                            "extended_entities": {
+                              "media": [
+                                {
+                                  "media_url_https": "https://pbs.twimg.com/media/sample.jpg"
+                                }
+                              ]
+                            }
+                          },
+                          "views": {
+                            "count": "4300",
+                            "state": "EnabledWithCount"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "entryId": "tweet-1002",
+                  "content": {
+                    "entryType": "TimelineTimelineItem",
+                    "itemContent": {
+                      "itemType": "TimelineTweet",
+                      "tweet_results": {
+                        "result": {
+                          "__typename": "TweetWithVisibilityResults",
+                          "tweet": {
+                            "__typename": "Tweet",
+                            "rest_id": "1002",
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "legacy": {
+                                    "screen_name": "fallback_user",
+                                    "name": "Fallback User"
+                                  }
+                                }
+                              }
+                            },
+                            "legacy": {
+                              "id_str": "1002",
+                              "full_text": "Visibility wrapper validation tweet",
+                              "created_at": "Mon Aug 10 12:01:00 +0000 2026",
+                              "reply_count": 1,
+                              "retweet_count": 2,
+                              "favorite_count": 8,
+                              "quote_count": 0,
+                              "bookmark_count": 1
+                            },
+                            "views": {
+                              "count": "120",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "entryId": "cursor-bottom-1",
+                  "content": {
+                    "entryType": "TimelineTimelineCursor",
+                    "cursorType": "Bottom",
+                    "value": "cursor-next-page"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

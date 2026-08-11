@@ -377,13 +377,12 @@ Do not claim:
 
 The accurate claim is:
 
-> This repository is a no-Docker, production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. It has durable local tasks, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, startup readiness checks, a real frontend, deployment runbook, and passing CI. It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
+> This repository is a no-Docker, production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. It has durable local tasks, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports, startup readiness checks, a real frontend, deployment runbook, and passing CI. It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
 
 ## Next Recommended Work
 
 1. Decide whether the next infrastructure step is:
    - continue no-Docker local SQLite hardening, or
    - begin migration toward PostgreSQL and Redis Streams as specified.
-2. Complete deeper `SEARCH_TWEETS` protocol validation: parser fixtures, pagination tests, drift fingerprints, and explicit validation-run records.
-3. Add a proper secret backend abstraction while keeping `.env` as local development fallback.
-4. Add more capabilities only after the `SEARCH_TWEETS` vertical slice has validation tightened.
+2. Add a proper secret backend abstraction while keeping `.env` as local development fallback.
+3. Add more capabilities only after the `SEARCH_TWEETS` vertical slice has validation tightened.

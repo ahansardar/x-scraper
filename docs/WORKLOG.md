@@ -1294,6 +1294,31 @@ Next:
 
 - Add deeper `SEARCH_TWEETS` parser validation fixtures and drift fingerprints.
 
+## 2026-08-12 - Checkpoint 66: SearchTweets Parser Validation
+
+Implemented:
+
+- Added a checked-in SearchTimeline GraphQL regression fixture for parser-contract validation.
+- Added `xingestion.protocol_validation` to parse fixtures and local raw evidence, report tweet counts, engagement coverage, bottom cursor presence, structural fingerprints, and typename fingerprints.
+- Added `run_protocol_validation.py` with fixture-only, raw-only, and combined modes.
+- Added `GET /api/protocol-validation` and a Protocol Validation panel in the frontend.
+- Added saved validation reports under `XINGESTION_DATA_DIR\protocol_validation`.
+- Added admin-gated `POST /api/protocol-validation/run` and `GET /api/protocol-validation/reports`.
+- Added unit coverage for parser validation reports and the web route.
+- Extended CI to compile the validation CLI, run fixture validation, and smoke-check the frontend/runbook surfaces.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py`
+- `python .\run_protocol_validation.py --fixtures-only --json` passed the checked-in SearchTimeline fixture with 2 parsed tweets, complete engagement metrics, and a bottom cursor.
+- `python .\run_protocol_validation.py --raw-only --write --json` passed 10 local raw evidence files with 0 missing engagement warnings and wrote a report to `data\protocol_validation`.
+- Temporary live API smoke on `127.0.0.1:8013` returned validation OK, saved a validation report through `POST /api/protocol-validation/run`, and listed saved reports through `GET /api/protocol-validation/reports`.
+
+Next:
+
+- Add a proper secret backend abstraction while keeping `.env` as the local development fallback.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
