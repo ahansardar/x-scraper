@@ -1,6 +1,8 @@
 import json
+import os
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -11,7 +13,12 @@ from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, Search
 from xingestion.config import AppConfig
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionStore
-from xingestion.support_export import build_failed_task_export, write_failed_task_export
+from xingestion.support_export import (
+    apply_support_export_retention,
+    build_failed_task_export,
+    list_support_exports,
+    write_failed_task_export,
+)
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
@@ -106,6 +113,48 @@ class SupportExportTests(unittest.TestCase):
                     session_store=SessionStore(db_path),
                     telemetry_store=ProtocolTelemetryStore(db_path),
                 )
+
+    def test_list_and_prune_support_exports(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _config(root)
+            config.data_dir.mkdir(parents=True, exist_ok=True)
+            ledger = SQLiteTaskLedger(config.sqlite_path)
+            failed = _failed_task(ledger, manifest)
+            export_dir = config.data_dir / "support_exports"
+            old_path = export_dir / "failed-task-old.json"
+            new_path = export_dir / "failed-task-new.json"
+            write_failed_task_export(
+                task_id=failed.task_id,
+                config=config,
+                manifest=manifest,
+                output_path=old_path,
+            )
+            write_failed_task_export(
+                task_id=failed.task_id,
+                config=config,
+                manifest=manifest,
+                output_path=new_path,
+            )
+            old_mtime = (datetime.now(UTC) - timedelta(days=3)).timestamp()
+            os.utime(old_path, (old_mtime, old_mtime))
+
+            summaries = list_support_exports(config)
+
+            self.assertEqual({item.name for item in summaries}, {"failed-task-old.json", "failed-task-new.json"})
+            self.assertTrue(all(item.redacted for item in summaries))
+            dry_run = apply_support_export_retention(config, days=1, dry_run=True)
+            self.assertEqual(dry_run.matched_exports, 1)
+            self.assertEqual(dry_run.deleted_exports, 0)
+            self.assertTrue(old_path.exists())
+
+            result = apply_support_export_retention(config, days=1, dry_run=False)
+
+            self.assertEqual(result.matched_exports, 1)
+            self.assertEqual(result.deleted_exports, 1)
+            self.assertFalse(old_path.exists())
+            self.assertTrue(new_path.exists())
 
 
 def _failed_task(ledger: SQLiteTaskLedger, manifest: ProtocolReleaseManifest):

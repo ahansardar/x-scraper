@@ -30,7 +30,11 @@ from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
-from xingestion.support_export import write_failed_task_export
+from xingestion.support_export import (
+    apply_support_export_retention,
+    list_support_exports,
+    write_failed_task_export,
+)
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
@@ -159,6 +163,21 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/task-actions":
             actions = list_operator_task_actions(STATE.config.sqlite_path, limit=25)
             return self._json({"actions": [_task_action_dict(action) for action in actions]})
+        if parsed.path == "/api/support-exports":
+            exports = list_support_exports(STATE.config, limit=25)
+            retention = apply_support_export_retention(
+                STATE.config,
+                days=STATE.config.retention_days,
+                dry_run=True,
+            )
+            return self._json(
+                {
+                    "export_dir": str(STATE.config.data_dir / "support_exports"),
+                    "retention_days": STATE.config.retention_days,
+                    "exports": [item.public_dict() for item in exports],
+                    "dry_run": retention.public_dict(),
+                }
+            )
         if parsed.path.startswith("/api/tasks/"):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 3:
@@ -209,6 +228,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._run_retention()
+        if parsed.path == "/api/support-exports/retention":
+            if not self._require_admin():
+                return
+            return self._run_support_export_retention()
         if parsed.path == "/api/releases/current/quarantine":
             if not self._require_admin():
                 return
@@ -357,6 +380,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             dry_run=False,
         )
         return self._json({"retention": _retention_dict(result)}, status=200)
+
+    def _run_support_export_retention(self):
+        result = apply_support_export_retention(
+            STATE.config,
+            days=STATE.config.retention_days,
+            dry_run=False,
+        )
+        return self._json({"retention": result.public_dict()}, status=200)
 
     def _set_release_health(self, health, reason):
         release = STATE.release_store.set_health(

@@ -186,6 +186,15 @@ python .\run_failed_task_export.py <task_id>
 
 The package is written to `XINGESTION_DATA_DIR\support_exports` by default. It includes runtime error classification, release/session/telemetry context, and raw evidence references, but not raw X secrets or raw evidence bodies. The Needs Attention panel exposes this export for failed tasks and shows the saved path plus redaction metadata.
 
+List and retain generated support exports:
+
+```text
+GET /api/support-exports
+POST /api/support-exports/retention
+```
+
+The Support Exports panel uses the same endpoints. Retention uses `XINGESTION_RETENTION_DAYS` and deletes only `failed-task-*.json` files inside `XINGESTION_DATA_DIR\support_exports`.
+
 List failed and retryable tasks with recommended next actions:
 
 ```powershell

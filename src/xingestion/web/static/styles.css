@@ -93,6 +93,7 @@ h2 {
 .session-panel,
 .metrics-panel,
 .attention-panel,
+.support-panel,
 .output-panel {
   grid-column: 2;
 }
@@ -127,7 +128,8 @@ h2 {
   background: #a83232;
 }
 
-.ops-panel {
+.ops-panel,
+.support-panel {
   display: grid;
   gap: 12px;
 }
@@ -333,6 +335,7 @@ th {
   .session-panel,
   .metrics-panel,
   .attention-panel,
+  .support-panel,
   .output-panel {
     display: block;
   }

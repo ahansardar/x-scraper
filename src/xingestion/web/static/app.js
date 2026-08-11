@@ -8,6 +8,9 @@ const runRetention = document.querySelector("#runRetention");
 const metrics = document.querySelector("#metrics");
 const sessions = document.querySelector("#sessions");
 const taskActionsBody = document.querySelector("#taskActions");
+const supportExportsSummary = document.querySelector("#supportExportsSummary");
+const supportExportsBody = document.querySelector("#supportExports");
+const runSupportExportRetention = document.querySelector("#runSupportExportRetention");
 let adminToken = "";
 
 async function getJson(url, options) {
@@ -70,6 +73,27 @@ async function loadTaskActions() {
       <td>${action.attempt_count} / ${action.max_attempts}</td>
       <td>${action.operator_action}</td>
       <td>${taskActionControls(action)}</td>
+    </tr>
+  `).join("");
+}
+
+async function loadSupportExports() {
+  const data = await getJson("/api/support-exports");
+  supportExportsSummary.innerHTML = `
+    <strong>${data.exports.length}</strong>
+    recent support exports in <code>${data.export_dir}</code>.
+    Cleanup currently matches <strong>${data.dry_run.matched_exports}</strong> files older than ${data.retention_days} days.
+  `;
+  if (!data.exports.length) {
+    supportExportsBody.innerHTML = `<tr><td colspan="4">No support exports written yet.</td></tr>`;
+    return;
+  }
+  supportExportsBody.innerHTML = data.exports.map((item) => `
+    <tr>
+      <td><code>${item.name}</code></td>
+      <td>${item.task_id ? item.task_id.slice(0, 18) : ""}</td>
+      <td><span class="${severityClass(item.severity)}">${item.severity || "UNKNOWN"}</span></td>
+      <td>${formatDateTime(item.modified_at)}</td>
     </tr>
   `).join("");
 }
@@ -238,6 +262,13 @@ function formatViews(value) {
     : `${value} views`;
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return "";
+  }
+  return value.replace("T", " ").replace("+00:00", " UTC");
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(form);
@@ -285,6 +316,7 @@ async function handleTaskControl(event) {
         headers: adminHeaders()
       });
       renderSupportExport(data);
+      await loadSupportExports();
     } catch (error) {
       summary.textContent = error.message;
     }
@@ -409,6 +441,25 @@ runRetention.addEventListener("click", async () => {
   }
 });
 
+runSupportExportRetention.addEventListener("click", async () => {
+  runSupportExportRetention.disabled = true;
+  try {
+    const data = await getJson("/api/support-exports/retention", {
+      method: "POST",
+      headers: adminHeaders()
+    });
+    supportExportsSummary.innerHTML = `
+      Deleted <strong>${data.retention.deleted_exports}</strong> support exports
+      older than <code>${data.retention.cutoff}</code>.
+    `;
+    await loadSupportExports();
+  } catch (error) {
+    supportExportsSummary.textContent = error.message;
+  } finally {
+    runSupportExportRetention.disabled = false;
+  }
+});
+
 async function waitForResult(resultUrl) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(resultUrl);
@@ -454,6 +505,9 @@ loadTasks().catch((error) => {
 });
 loadTaskActions().catch((error) => {
   taskActionsBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+});
+loadSupportExports().catch((error) => {
+  supportExportsSummary.textContent = error.message;
 });
 loadRetention().catch((error) => {
   retention.textContent = error.message;

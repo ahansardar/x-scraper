@@ -211,6 +211,7 @@ Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in
 - `POST /api/tasks/{task_id}/reprocess`
 - `POST /api/tasks/{task_id}/investigate`
 - `POST /api/tasks/{task_id}/export`
+- `POST /api/support-exports/retention`
 - `POST /api/reprocess/jobs`
 - `POST /api/sessions/{session_id}/restore`
 - `POST /api/sessions/{session_id}/disable`
@@ -236,6 +237,15 @@ python .\run_failed_task_export.py <task_id>
 ```
 
 Exports are written to `XINGESTION_DATA_DIR\support_exports\failed-task-*.json` by default. They include task state, runtime-error classification, release/session/telemetry context, and raw evidence references only. The web export response returns the saved path, support summary, and redaction metadata.
+
+The web console lists generated support packages in the Support Exports panel and via:
+
+```text
+GET /api/support-exports
+POST /api/support-exports/retention
+```
+
+Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under `XINGESTION_DATA_DIR\support_exports`, and leaves task ledger rows untouched.
 
 List failed and retryable tasks with recommended operator actions:
 

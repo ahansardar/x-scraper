@@ -333,6 +333,7 @@ class NorthboundApiTests(unittest.TestCase):
                 config=SimpleNamespace(
                     data_dir=root / "data",
                     sqlite_path=db_path,
+                    retention_days=30,
                 ),
                 manifest=manifest,
             )
@@ -344,6 +345,14 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["export"]["task_id"], failed.task_id)
             self.assertEqual(payload["export"]["support_summary"]["severity"], "CRITICAL")
             self.assertTrue(Path(payload["export"]["path"]).exists())
+
+            handler.path = "/api/support-exports"
+            listing = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(listing["exports"][0]["task_id"], failed.task_id)
+            self.assertEqual(listing["exports"][0]["severity"], "CRITICAL")
+            self.assertIn("support_exports", listing["export_dir"])
 
     def test_release_risk_dict_returns_recommendation(self):
         manifest = ProtocolReleaseManifest.from_file(

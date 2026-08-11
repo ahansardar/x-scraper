@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 
@@ -19,6 +19,60 @@ from xrev.protocol import ProtocolReleaseManifest
 class FailedTaskExportResult:
     path: Path
     package: dict[str, object]
+
+
+@dataclass(frozen=True)
+class SupportExportSummary:
+    path: Path
+    name: str
+    size_bytes: int
+    modified_at: str
+    package_type: str
+    task_id: str | None
+    state: str | None
+    generated_at: str | None
+    error_class: str | None
+    severity: str | None
+    redacted: bool
+    readable: bool
+    parse_error: str | None = None
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "path": str(self.path),
+            "name": self.name,
+            "size_bytes": self.size_bytes,
+            "modified_at": self.modified_at,
+            "package_type": self.package_type,
+            "task_id": self.task_id,
+            "state": self.state,
+            "generated_at": self.generated_at,
+            "error_class": self.error_class,
+            "severity": self.severity,
+            "redacted": self.redacted,
+            "readable": self.readable,
+            "parse_error": self.parse_error,
+        }
+
+
+@dataclass(frozen=True)
+class SupportExportRetentionResult:
+    export_dir: Path
+    cutoff: str
+    matched_exports: int
+    deleted_exports: int
+    dry_run: bool
+    exports: tuple[SupportExportSummary, ...]
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "export_dir": str(self.export_dir),
+            "cutoff": self.cutoff,
+            "matched_exports": self.matched_exports,
+            "deleted_exports": self.deleted_exports,
+            "dry_run": self.dry_run,
+            "exports": [item.public_dict() for item in self.exports],
+        }
 
 
 def write_failed_task_export(
@@ -44,6 +98,64 @@ def write_failed_task_export(
         encoding="utf-8",
     )
     return FailedTaskExportResult(path=path, package=package)
+
+
+def list_support_exports(
+    config: AppConfig,
+    *,
+    limit: int = 25,
+) -> list[SupportExportSummary]:
+    export_dir = support_export_dir(config)
+    if not export_dir.exists():
+        return []
+    summaries = [_summarize_export(path) for path in export_dir.glob("failed-task-*.json")]
+    summaries.sort(key=lambda item: item.modified_at, reverse=True)
+    return summaries[:limit]
+
+
+def apply_support_export_retention(
+    config: AppConfig,
+    *,
+    days: int,
+    dry_run: bool,
+) -> SupportExportRetentionResult:
+    if days < 1:
+        raise ValueError("support export retention days must be at least 1")
+    export_dir = support_export_dir(config)
+    cutoff_dt = datetime.now(UTC) - timedelta(days=days)
+    cutoff = cutoff_dt.isoformat()
+    if not export_dir.exists():
+        return SupportExportRetentionResult(
+            export_dir=export_dir,
+            cutoff=cutoff,
+            matched_exports=0,
+            deleted_exports=0,
+            dry_run=dry_run,
+            exports=(),
+        )
+
+    matched: list[SupportExportSummary] = []
+    deleted = 0
+    for path in export_dir.glob("failed-task-*.json"):
+        stat = path.stat()
+        modified_at = datetime.fromtimestamp(stat.st_mtime, UTC)
+        if modified_at >= cutoff_dt:
+            continue
+        summary = _summarize_export(path)
+        matched.append(summary)
+        if not dry_run:
+            path.unlink()
+            deleted += 1
+
+    matched.sort(key=lambda item: item.modified_at)
+    return SupportExportRetentionResult(
+        export_dir=export_dir,
+        cutoff=cutoff,
+        matched_exports=len(matched),
+        deleted_exports=deleted,
+        dry_run=dry_run,
+        exports=tuple(matched),
+    )
 
 
 def build_failed_task_export(
@@ -99,7 +211,69 @@ def build_failed_task_export(
 def _default_output_path(config: AppConfig, task_id: str) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     safe_task_id = _safe_name(task_id)
-    return config.data_dir / "support_exports" / f"failed-task-{safe_task_id}-{stamp}.json"
+    return support_export_dir(config) / f"failed-task-{safe_task_id}-{stamp}.json"
+
+
+def support_export_dir(config: AppConfig) -> Path:
+    return config.data_dir / "support_exports"
+
+
+def _summarize_export(path: Path) -> SupportExportSummary:
+    stat = path.stat()
+    modified_at = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat()
+    base = {
+        "path": path,
+        "name": path.name,
+        "size_bytes": stat.st_size,
+        "modified_at": modified_at,
+    }
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return SupportExportSummary(
+            **base,
+            package_type="UNKNOWN",
+            task_id=None,
+            state=None,
+            generated_at=None,
+            error_class=None,
+            severity=None,
+            redacted=False,
+            readable=False,
+            parse_error=str(exc),
+        )
+    if not isinstance(payload, dict):
+        return SupportExportSummary(
+            **base,
+            package_type="UNKNOWN",
+            task_id=None,
+            state=None,
+            generated_at=None,
+            error_class=None,
+            severity=None,
+            redacted=False,
+            readable=False,
+            parse_error="support export root is not an object",
+        )
+
+    summary = payload.get("support_summary")
+    redaction = payload.get("redaction")
+    return SupportExportSummary(
+        **base,
+        package_type=str(payload.get("package_type") or "UNKNOWN"),
+        task_id=payload.get("task_id"),
+        state=payload.get("state"),
+        generated_at=payload.get("generated_at"),
+        error_class=summary.get("error_class") if isinstance(summary, dict) else None,
+        severity=summary.get("severity") if isinstance(summary, dict) else None,
+        redacted=(
+            isinstance(redaction, dict)
+            and redaction.get("raw_x_secrets_included") is False
+            and redaction.get("raw_evidence_body_included") is False
+        ),
+        readable=True,
+        parse_error=None,
+    )
 
 
 def _safe_name(value: str) -> str:

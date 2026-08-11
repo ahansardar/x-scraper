@@ -1016,6 +1016,34 @@ Next:
 
 - Add support export retention/listing so operators can see generated support packages.
 
+## 2026-08-11 - Checkpoint 53: Support Export Listing And Retention
+
+Implemented:
+
+- Added support export summaries for `failed-task-*.json` files under `XINGESTION_DATA_DIR\support_exports`.
+- Added safe support export retention that deletes only old failed-task export JSON files in that directory.
+- Added `GET /api/support-exports` for recent export listing and dry-run cleanup counts.
+- Added protected `POST /api/support-exports/retention` for deployment cleanup.
+- Added a Support Exports frontend panel with real export rows and cleanup action.
+- Added helper, API, and static frontend tests.
+- Hardened CI static checks for support export frontend and runbook coverage.
+- Updated README and deployment runbook.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py`
+- `python .\run_migrations.py`
+- Started `python .\run_app.py --host 127.0.0.1 --port 8000` with `XINGESTION_ADMIN_TOKEN` set for local verification.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/support-exports`
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/app.js` confirmed `/api/support-exports`, `loadSupportExports`, and `runSupportExportRetention`.
+- Served frontend probe confirmed `Support Exports` is present.
+- `Invoke-WebRequest -UseBasicParsing -Method POST -Headers @{"x-admin-token"="local-test-token"} http://127.0.0.1:8000/api/support-exports/retention`
+
+Next:
+
+- Add an operator download/read endpoint for a selected support export without exposing arbitrary filesystem paths.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
