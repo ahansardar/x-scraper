@@ -916,6 +916,30 @@ Next:
 
 - Add an operator-facing failed-task drilldown export command for support handoff.
 
+## 2026-08-11 - Checkpoint 49: Failed Task Support Export
+
+Implemented:
+
+- Added `run_failed_task_export.py` for direct local failed-task support exports.
+- Added `src/xingestion/support_export.py` to package task state, runtime error classification, release/session/telemetry context, and raw evidence references.
+- Support exports write to `XINGESTION_DATA_DIR\support_exports\failed-task-*.json` by default.
+- Reused the existing protocol drift investigation package inside a support-handoff wrapper.
+- Excluded raw X secrets, credential references, and raw evidence bodies from exported packages.
+- Added tests for export persistence, redaction, classification summary, telemetry inclusion, and non-failed task rejection.
+- Updated README, deployment runbook, and CI compile/doc checks.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py`
+- Created a synthetic local `DEAD_LETTER` task in ignored `data/tasks.sqlite3` for export verification.
+- `python .\run_failed_task_export.py task-4b5d86965dcc4aea841509bab0e3ae93`
+- `Select-String -Path data\support_exports\failed-task-task-4b5d86965dcc4aea841509bab0e3ae93-20260811T172515Z.json -Pattern 'FAILED_TASK_SUPPORT_EXPORT|support_summary|runtime_error|operator_action|credential_ref|secret:x|X_AUTH_TOKEN|X_CT0|X_BEARER'`
+
+Next:
+
+- Add operator command to list failed/retryable tasks with recommended actions.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

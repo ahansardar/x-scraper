@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py
 
       - name: Static smoke check frontend assets
         shell: pwsh
@@ -97,4 +97,7 @@ jobs:
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "XINGESTION_LOG_DIR" -Quiet)) {
             throw "Deployment runbook must document logging configuration"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_failed_task_export.py" -Quiet)) {
+            throw "Deployment runbook must document failed task export"
           }
