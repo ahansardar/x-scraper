@@ -7,6 +7,7 @@ The original GraphQL scripts and local research artifacts now live under `playgr
 - `src/xrev/`: X protocol research/runtime models and validated protocol releases.
 - `protocol_releases/`: approved or candidate protocol release manifests.
 - `docs/WORKLOG.md`: incremental implementation ledger.
+- `docs/CURRENT_STAGE.md`: current implementation stage versus `FINAL_PRODUCT_SPEC.md`.
 
 ## Current Checkpoint
 
