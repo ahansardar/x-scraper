@@ -185,7 +185,7 @@ def validate_search_tweets_payload(
             source_type=source_type,
             ok=bool(page.tweets) and not warnings,
             tweet_count=len(page.tweets),
-            bottom_cursor_present=page.next_cursor is not None,
+            bottom_cursor_present=page.cursor_present,
             engagement_complete_count=sum(
                 1 for tweet in page.tweets if _engagement_complete(tweet)
             ),
