@@ -377,7 +377,7 @@ Do not claim:
 
 The accurate claim is:
 
-> This repository is a no-Docker, production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. It has durable local tasks, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports, secret-provider abstraction with file-backed deployment support, startup readiness checks, a real frontend, deployment runbook, and passing CI. It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
+> This repository is a no-Docker, production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. It has durable local tasks, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports, secret-provider abstraction with file-backed deployment support, session registry import, per-session credential resolution, startup readiness checks, a real frontend, deployment runbook, and passing CI. It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
 
 ## Next Recommended Work
 

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
@@ -7,7 +8,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xingestion.sessions import SessionHealth, SessionStore
+from xingestion.sessions import SessionHealth, SessionStore, import_session_registry, load_session_registry
 
 
 class SessionStoreTests(unittest.TestCase):
@@ -139,6 +140,45 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(succeeded.failure_count, 1)
             self.assertIsNotNone(succeeded.last_success_at)
             self.assertIsNone(succeeded.last_error_class)
+
+    def test_imports_session_registry_without_exposing_references(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            registry = root / "sessions.json"
+            registry.write_text(
+                json.dumps(
+                    {
+                        "sessions": [
+                            {
+                                "session_id": "session-a",
+                                "account_label": "account-a",
+                                "credential_ref": "file:session-a",
+                                "network_context": "direct:iad",
+                            },
+                            {
+                                "session_id": "session-b",
+                                "account_label": "account-b",
+                                "credential_ref": "file:session-b",
+                                "network_context": "direct:sfo",
+                                "health": "DISABLED",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            store = SessionStore(root / "sessions.sqlite3")
+
+            entries = load_session_registry(registry)
+            result = import_session_registry(store=store, path=registry)
+
+            self.assertEqual(len(entries), 2)
+            self.assertEqual(result.imported, 2)
+            self.assertEqual(store.get_session("session-a").network_context, "direct:iad")
+            self.assertEqual(store.get_session("session-b").health, SessionHealth.DISABLED)
+            raw = json.dumps(result.public_dict())
+            self.assertNotIn("file:session-a", raw)
+            self.assertIn("reference_scheme", raw)
 
 
 if __name__ == "__main__":

@@ -99,6 +99,7 @@ XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
 XINGESTION_SECRET_PROVIDER=env
 XINGESTION_SECRET_DIR=
+XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
@@ -123,6 +124,29 @@ Secret providers:
 - `XINGESTION_SECRET_PROVIDER=file` resolves `file:<session-name>` from `XINGESTION_SECRET_DIR\<session-name>.json`. The JSON object must contain `auth_token`, `ct0`, and `bearer_token`.
 
 Do not commit secret files. Mount `XINGESTION_SECRET_DIR` from host-managed storage in deployment.
+
+For multi-session deployments, set `XINGESTION_SESSION_REGISTRY` to a JSON file outside git:
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": "session-a",
+      "account_label": "authorized-account-a",
+      "credential_ref": "file:session-a",
+      "network_context": "direct:iad",
+      "health": "HEALTHY"
+    }
+  ]
+}
+```
+
+Import/list session metadata without printing secret references:
+
+```powershell
+python .\run_sessions.py --import-registry F:\x-scraper-secrets\sessions.json --json
+python .\run_sessions.py --json
+```
 - Production/deployment override: set `XINGESTION_DATA_DIR` to a persistent disk path.
 
 The live app also exposes storage paths at:
@@ -193,11 +217,14 @@ Session metadata is stored without raw secrets in `session_artifacts`. The defau
 
 ```text
 GET /api/sessions
+POST /api/sessions/import
 POST /api/sessions/{session_id}/restore
 POST /api/sessions/{session_id}/disable
 ```
 
 Workers acquire a healthy session lease before each acquisition attempt and release it after the attempt. If no healthy session is available, the task is moved to `RETRY_SCHEDULED` without making an X request.
+
+When a session is leased, the worker resolves that session's own credential reference through the configured secret provider. If the reference cannot resolve complete web-session auth, only that session is marked `AUTH_EXPIRED` and the task is scheduled for retry.
 
 Session-scoped protocol errors update session health automatically. Auth/session rejection marks a session `AUTH_EXPIRED`; rate limits mark it `DEGRADED` with a durable `cooldown_until` timestamp. Workers skip cooled-down sessions until the timestamp expires, then allow that degraded session back into rotation for another attempt. A successful cooled-down attempt restores that session to `HEALTHY`.
 

@@ -64,6 +64,27 @@ class FakeTransport:
         )
 
 
+class CapturingTransport(FakeTransport):
+    def __init__(self):
+        self.authorization = None
+        self.cookie = None
+
+    def send(self, request):
+        self.authorization = request.headers["authorization"]
+        self.cookie = request.headers["cookie"]
+        return super().send(request)
+
+
+class MappingSecretProvider:
+    provider_name = "mapping"
+
+    def __init__(self, refs):
+        self.refs = refs
+
+    def resolve_web_session_auth(self, credential_ref):
+        return self.refs[credential_ref]
+
+
 class CursorTransport(FakeTransport):
     def send(self, request):
         response = super().send(request)
@@ -140,6 +161,107 @@ class LocalWorkerTests(unittest.TestCase):
                 result.raw_evidence_ref.evidence_id,
             )
             self.assertIsNone(worker.process_one().task_id)
+
+    def test_worker_resolves_auth_from_leased_session_reference(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            session_store = SessionStore(db_path)
+            session_store.upsert_session(
+                session_id="session-a",
+                account_label="account",
+                credential_ref="file:session-a",
+            )
+            task = ledger.create_task(
+                idempotency_key="worker-session-secret",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            transport = CapturingTransport()
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("default-auth", "default-csrf", "default-bearer"),
+                secret_provider=MappingSecretProvider(
+                    {
+                        "file:session-a": WebSessionAuth(
+                            "sa",
+                            "sc",
+                            "sb",
+                        )
+                    }
+                ),
+                transport=transport,
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=session_store,
+            )
+
+            result = worker.process_one()
+
+            self.assertEqual(result.state, TaskState.DONE)
+            self.assertEqual(result.session_id, "session-a")
+            self.assertEqual(transport.authorization, "Bearer sb")
+            self.assertIn("auth_" + "token=sa", transport.cookie)
+            self.assertIn("ct" + "0=sc", transport.cookie)
+            self.assertEqual(ledger.get_task(task.task_id).state, TaskState.DONE)
+
+    def test_worker_marks_session_auth_expired_when_reference_is_incomplete(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            session_store = SessionStore(db_path)
+            session_store.upsert_session(
+                session_id="session-a",
+                account_label="account",
+                credential_ref="file:session-a",
+            )
+            task = ledger.create_task(
+                idempotency_key="worker-session-secret-missing",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            transport = CapturingTransport()
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("default-auth", "default-csrf", "default-bearer"),
+                secret_provider=MappingSecretProvider(
+                    {"file:session-a": WebSessionAuth("", "", "")}
+                ),
+                transport=transport,
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=session_store,
+            )
+
+            result = worker.process_one()
+            session = session_store.get_session("session-a")
+
+            self.assertEqual(result.state, TaskState.RETRY_SCHEDULED)
+            self.assertEqual(result.error_class, "AUTH_OR_SESSION_REJECTED")
+            self.assertEqual(session.health, SessionHealth.AUTH_EXPIRED)
+            self.assertIsNone(session.lease_token)
+            self.assertIsNone(transport.authorization)
+            self.assertEqual(ledger.get_task(task.task_id).state, TaskState.RETRY_SCHEDULED)
 
     def test_worker_persists_canonical_tweets_on_success(self):
         manifest = load_manifest()

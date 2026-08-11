@@ -227,6 +227,43 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["session"]["health"], "DISABLED")
             self.assertIsNone(acquired)
 
+    def test_import_sessions_route_loads_registry_without_reference_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            registry = root / "sessions.json"
+            registry.write_text(
+                json.dumps(
+                    {
+                        "sessions": [
+                            {
+                                "session_id": "session-a",
+                                "account_label": "account-a",
+                                "credential_ref": "file:session-a",
+                                "network_context": "direct:iad",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            store = SessionStore(root / "tasks.sqlite3")
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    admin_token="expected-token",
+                    session_registry_path=registry,
+                ),
+                session_store=store,
+            )
+            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+
+            payload = handler._import_sessions()
+
+            raw = json.dumps(payload)
+            self.assertEqual(handler.status, 201)
+            self.assertEqual(payload["session_import"]["imported"], 1)
+            self.assertEqual(store.get_session("session-a").network_context, "direct:iad")
+            self.assertNotIn("file:session-a", raw)
+
     def test_investigate_task_returns_package(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

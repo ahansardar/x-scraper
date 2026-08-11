@@ -21,6 +21,7 @@ class AppConfig:
     admin_token: str
     secret_provider: str
     secret_dir: Path
+    session_registry_path: Path | None
     require_migrations: bool
     max_active_tasks_per_capability: int
 
@@ -42,6 +43,7 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
     admin_token = os.getenv("XINGESTION_ADMIN_TOKEN", "")
     secret_provider = os.getenv("XINGESTION_SECRET_PROVIDER", "env").strip().lower()
     secret_dir = _path_from_env("XINGESTION_SECRET_DIR", data_dir / "secrets")
+    session_registry_path = _optional_path_from_env("XINGESTION_SESSION_REGISTRY")
     require_migrations = os.getenv("XINGESTION_REQUIRE_MIGRATIONS", "true").lower() not in {
         "0",
         "false",
@@ -66,6 +68,7 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
         admin_token=admin_token,
         secret_provider=secret_provider,
         secret_dir=secret_dir,
+        session_registry_path=session_registry_path,
         require_migrations=require_migrations,
         max_active_tasks_per_capability=max_active_tasks_per_capability,
     )
@@ -74,6 +77,11 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
 def _path_from_env(name: str, default: Path) -> Path:
     raw = os.getenv(name, "").strip()
     return Path(raw).expanduser().resolve() if raw else default.resolve()
+
+
+def _optional_path_from_env(name: str) -> Path | None:
+    raw = os.getenv(name, "").strip()
+    return Path(raw).expanduser().resolve() if raw else None
 
 
 def _value_from_args(argv: list[str], name: str) -> str | None:

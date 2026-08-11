@@ -1347,6 +1347,34 @@ Next:
 
 - Add more capability scaffolding only after the `SEARCH_TWEETS` vertical slice remains stable under the new secret abstraction.
 
+## 2026-08-12 - Checkpoint 68: Session Registry and Per-Session Auth
+
+Implemented:
+
+- Added `XINGESTION_SESSION_REGISTRY` for deployment-mounted session inventory files.
+- Added `xingestion.sessions.registry` for safe JSON session registry loading and import.
+- Added `run_sessions.py` to import/list session metadata without printing credential reference values.
+- Added startup imports for web and worker when `XINGESTION_SESSION_REGISTRY` is configured.
+- Added admin-gated `POST /api/sessions/import` and a frontend Sessions import control.
+- Updated the worker to resolve web-session auth from the leased session's own credential reference through the configured secret provider.
+- Added failure handling so incomplete per-session auth marks only that session `AUTH_EXPIRED`, releases its lease, and schedules the task for retry without making an X request.
+- Documented the registry JSON shape and no-secret import behavior in README and the deployment runbook.
+- Extended CI smoke checks for session registry docs and UI import.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py`
+- `python .\run_sessions.py --import-registry F:\x-scraper\data\session-cli-check\sessions.json --json` imported one file-backed session and returned only safe reference metadata.
+- `python .\run_sessions.py --json` listed imported session metadata without `credential_ref` values.
+- Temporary live API smoke on `127.0.0.1:8016` imported one configured registry session through `POST /api/sessions/import`, listed two sessions through `GET /api/sessions`, and confirmed the JSON did not contain `credential_ref`.
+- `python .\run_preflight.py` passed migrations, storage, startup directories, secret backend, auth, sessions, and release checks with two available sessions.
+- `python .\run_protocol_validation.py --fixtures-only --json` passed the checked-in SearchTimeline parser fixture.
+
+Next:
+
+- Add network allocation policy metadata and worker selection controls when moving beyond the local `network_context` label.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

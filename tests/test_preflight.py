@@ -244,6 +244,7 @@ def _config(root: Path) -> AppConfig:
         admin_token="token",
         secret_provider="env",
         secret_dir=root / "data" / "secrets",
+        session_registry_path=None,
         require_migrations=True,
         max_active_tasks_per_capability=100,
     )

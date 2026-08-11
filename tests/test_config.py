@@ -25,6 +25,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.admin_token, "")
         self.assertEqual(config.secret_provider, "env")
         self.assertEqual(config.secret_dir, (ROOT / "data" / "secrets").resolve())
+        self.assertIsNone(config.session_registry_path)
         self.assertTrue(config.require_migrations)
         self.assertEqual(config.max_active_tasks_per_capability, 100)
 
@@ -43,6 +44,7 @@ class ConfigTests(unittest.TestCase):
                 "XINGESTION_ADMIN_TOKEN",
                 "XINGESTION_SECRET_PROVIDER",
                 "XINGESTION_SECRET_DIR",
+                "XINGESTION_SESSION_REGISTRY",
                 "XINGESTION_REQUIRE_MIGRATIONS",
                 "XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY",
             )
@@ -60,6 +62,7 @@ class ConfigTests(unittest.TestCase):
                 os.environ["XINGESTION_ADMIN_TOKEN"] = "admin-secret"
                 os.environ["XINGESTION_SECRET_PROVIDER"] = "file"
                 os.environ["XINGESTION_SECRET_DIR"] = str(Path(temp_dir) / "mounted-secrets")
+                os.environ["XINGESTION_SESSION_REGISTRY"] = str(Path(temp_dir) / "sessions.json")
                 os.environ["XINGESTION_REQUIRE_MIGRATIONS"] = "false"
                 os.environ["XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY"] = "7"
 
@@ -76,6 +79,7 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(config.admin_token, "admin-secret")
                 self.assertEqual(config.secret_provider, "file")
                 self.assertEqual(config.secret_dir, (Path(temp_dir) / "mounted-secrets").resolve())
+                self.assertEqual(config.session_registry_path, (Path(temp_dir) / "sessions.json").resolve())
                 self.assertFalse(config.require_migrations)
                 self.assertEqual(config.max_active_tasks_per_capability, 7)
         finally:

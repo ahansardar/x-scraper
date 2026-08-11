@@ -34,10 +34,14 @@ from xingestion.protocol_validation import (
     list_protocol_validation_reports,
     write_protocol_validation_report,
 )
-from xingestion.sessions import SessionHealth, SessionStore
+from xingestion.sessions import SessionHealth, SessionStore, import_session_registry
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
-from xingestion.secrets import resolve_web_session_auth, secret_provider_status
+from xingestion.secrets import (
+    build_secret_provider,
+    resolve_web_session_auth,
+    secret_provider_status,
+)
 from xingestion.support_export import (
     apply_support_export_retention,
     list_support_exports,
@@ -84,6 +88,7 @@ class LiveAppState:
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
         self.auth = resolve_web_session_auth(self.config)
+        self.secret_provider = build_secret_provider(self.config)
         self.session_store = SessionStore(self.config.sqlite_path)
         self.telemetry_store = ProtocolTelemetryStore(self.config.sqlite_path)
         self.reprocess_jobs = ReprocessJobStore(self.config.sqlite_path)
@@ -98,6 +103,11 @@ class LiveAppState:
                 else SessionHealth.AUTH_EXPIRED
             ),
         )
+        if self.config.session_registry_path is not None:
+            import_session_registry(
+                store=self.session_store,
+                path=self.config.session_registry_path,
+            )
         self.worker = LocalWorker(
             ledger=self.ledger,
             manifest=self.manifest,
@@ -108,6 +118,7 @@ class LiveAppState:
             release_store=self.release_store,
             session_store=self.session_store,
             telemetry_store=self.telemetry_store,
+            secret_provider=self.secret_provider,
         )
 
 
@@ -269,6 +280,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._run_support_export_retention()
+        if parsed.path == "/api/sessions/import":
+            if not self._require_admin():
+                return
+            return self._import_sessions()
         if parsed.path == "/api/outbox/process":
             if not self._require_admin():
                 return
@@ -530,6 +545,21 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             status=200,
         )
 
+    def _import_sessions(self):
+        if STATE.config.session_registry_path is None:
+            return self._json(
+                {"message": "XINGESTION_SESSION_REGISTRY is not configured"},
+                status=400,
+            )
+        try:
+            result = import_session_registry(
+                store=STATE.session_store,
+                path=STATE.config.session_registry_path,
+            )
+        except (OSError, ValueError) as exc:
+            return self._json({"message": str(exc)}, status=400)
+        return self._json({"session_import": result.public_dict()}, status=201)
+
     def _reprocess_task(self, task_id):
         try:
             result = reprocess_task_evidence(
@@ -761,6 +791,12 @@ def _storage_dict():
         "admin_token_configured": bool(STATE.config.admin_token),
         "secret_provider": STATE.config.secret_provider,
         "secret_backend": secret_provider_status(STATE.config).public_dict(),
+        "session_registry_configured": STATE.config.session_registry_path is not None,
+        "session_registry_path": (
+            str(STATE.config.session_registry_path)
+            if STATE.config.session_registry_path is not None
+            else None
+        ),
         "require_migrations": STATE.config.require_migrations,
         "max_active_tasks_per_capability": STATE.config.max_active_tasks_per_capability,
     }

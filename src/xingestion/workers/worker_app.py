@@ -9,8 +9,8 @@ from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
 from xingestion.logging_config import configure_logging
 from xingestion.releases import ReleaseStore
-from xingestion.secrets import resolve_web_session_auth
-from xingestion.sessions import SessionHealth, SessionStore
+from xingestion.secrets import build_secret_provider, resolve_web_session_auth
+from xingestion.sessions import SessionHealth, SessionStore, import_session_registry
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
@@ -26,6 +26,7 @@ LOGGER = logging.getLogger("xingestion.worker")
 
 def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
     auth = resolve_web_session_auth(config)
+    secret_provider = build_secret_provider(config)
     session_store = SessionStore(config.sqlite_path)
     session_store.upsert_session(
         session_id=config.default_session_id,
@@ -34,6 +35,8 @@ def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
         network_context=config.default_network_context,
         health=SessionHealth.HEALTHY if not auth.missing_fields() else SessionHealth.AUTH_EXPIRED,
     )
+    if config.session_registry_path is not None:
+        import_session_registry(store=session_store, path=config.session_registry_path)
     return LocalWorker(
         release_store=ReleaseStore(config.sqlite_path),
         ledger=SQLiteTaskLedger(config.sqlite_path),
@@ -44,6 +47,7 @@ def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
         canonical_store=CanonicalStore(config.sqlite_path),
         session_store=session_store,
         telemetry_store=ProtocolTelemetryStore(config.sqlite_path),
+        secret_provider=secret_provider,
     )
 
 

@@ -18,6 +18,7 @@ const validationReports = document.querySelector("#validationReports");
 const runProtocolValidation = document.querySelector("#runProtocolValidation");
 const metrics = document.querySelector("#metrics");
 const sessions = document.querySelector("#sessions");
+const importSessions = document.querySelector("#importSessions");
 const taskActionsBody = document.querySelector("#taskActions");
 const supportExportsSummary = document.querySelector("#supportExportsSummary");
 const supportExportsBody = document.querySelector("#supportExports");
@@ -602,6 +603,27 @@ sessions.addEventListener("click", async (event) => {
     await loadTaskActions();
     await loadSessions();
     await loadMetrics();
+  }
+});
+
+importSessions.addEventListener("click", async () => {
+  importSessions.disabled = true;
+  summary.textContent = "Importing session registry...";
+  try {
+    const data = await getJson("/api/sessions/import", {
+      method: "POST",
+      headers: adminHeaders()
+    });
+    summary.innerHTML = `
+      Imported <strong>${data.session_import.imported}</strong>
+      sessions from registry.
+    `;
+    await loadSessions();
+    await loadMetrics();
+  } catch (error) {
+    summary.textContent = error.message;
+  } finally {
+    importSessions.disabled = false;
   }
 });
 

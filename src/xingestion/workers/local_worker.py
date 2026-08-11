@@ -9,6 +9,7 @@ from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.errors import RuntimeErrorEnvelope, classify_error, classify_exception
 from xingestion.releases import ReleaseStore
+from xingestion.secrets import SecretProvider
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.telemetry import ProtocolTelemetryStore
@@ -54,6 +55,7 @@ class LocalWorker:
         release_store: ReleaseStore | None = None,
         session_store: SessionStore | None = None,
         telemetry_store: ProtocolTelemetryStore | None = None,
+        secret_provider: SecretProvider | None = None,
         owner: str | None = None,
         lease_seconds: int = 300,
     ) -> None:
@@ -66,6 +68,7 @@ class LocalWorker:
         self.release_store = release_store
         self.session_store = session_store
         self.telemetry_store = telemetry_store
+        self.secret_provider = secret_provider
         self.planner = CapabilityPlanner(self.manifest)
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
@@ -170,6 +173,63 @@ class LocalWorker:
                     message=envelope.message,
                 )
 
+        auth = self.auth
+        if session is not None and self.secret_provider is not None:
+            try:
+                auth = self.secret_provider.resolve_web_session_auth(session.credential_ref)
+                missing = auth.missing_fields()
+                if missing:
+                    raise ValueError(
+                        f"session credential reference is missing fields={','.join(missing)}"
+                    )
+            except ValueError as exc:
+                envelope = classify_error(
+                    "AUTH_OR_SESSION_REJECTED",
+                    message=str(exc),
+                    scope_hint="SESSION",
+                )
+                if self.session_store is not None:
+                    self.session_store.update_health(
+                        session.session_id,
+                        health=SessionHealth.AUTH_EXPIRED,
+                        reason="credential_resolution_failed",
+                    )
+                    self.session_store.record_attempt_failure(
+                        session.session_id,
+                        error_class=envelope.error_class,
+                        error_message=envelope.message,
+                    )
+                scheduled = self.ledger.transition_task(
+                    task.task_id,
+                    from_state=TaskState.ENQUEUED,
+                    to_state=TaskState.RETRY_SCHEDULED,
+                    error_json={
+                        "error_class": envelope.error_class,
+                        "message": envelope.message,
+                        "runtime_error": envelope.public_dict(),
+                    },
+                    next_attempt_at=(datetime.now(UTC) + timedelta(seconds=60)).isoformat(),
+                )
+                LOGGER.warning(
+                    "worker credential resolution failed task=%s session=%s %s",
+                    scheduled.task_id,
+                    session.session_id,
+                    envelope.log_fields(),
+                )
+                if session.lease_token and self.session_store is not None:
+                    self.session_store.release_session(
+                        session.session_id,
+                        session.lease_token,
+                    )
+                return WorkerResult(
+                    processed=True,
+                    task_id=scheduled.task_id,
+                    state=scheduled.state,
+                    error_class=envelope.error_class,
+                    message=envelope.message,
+                    session_id=session.session_id,
+                )
+
         lease_expires_at = (
             datetime.now(UTC) + timedelta(seconds=self.lease_seconds)
         ).isoformat()
@@ -186,7 +246,7 @@ class LocalWorker:
             lease_renewals += 1
             if session is not None and self.session_store is not None:
                 session = self.session_store.record_attempt_started(session.session_id)
-            page = self._execute_task(task)
+            page = self._execute_task(task, auth=auth)
             if session is not None and self.session_store is not None:
                 session = self.session_store.record_attempt_success(session.session_id)
             task = self._renew_lease(task)
@@ -361,7 +421,7 @@ class LocalWorker:
             lease_expires_at=lease_expires_at,
         )
 
-    def _execute_task(self, task):
+    def _execute_task(self, task, *, auth: WebSessionAuth | None = None):
         if task.capability_id != CapabilityId.SEARCH_TWEETS:
             raise ValueError(f"Unsupported capability {task.capability_id.value}")
 
@@ -369,7 +429,7 @@ class LocalWorker:
         payload = task.request_json["payload"]
         return acquire_search_tweets_page(
             recipe=recipe,
-            auth=self.auth,
+            auth=auth or self.auth,
             request=SearchTweetsRequest(
                 query=str(payload["query"]),
                 product=str(payload.get("product", "Top")),

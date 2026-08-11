@@ -19,6 +19,7 @@ XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
 XINGESTION_SECRET_PROVIDER=env
 XINGESTION_SECRET_DIR=
+XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
@@ -50,6 +51,50 @@ Then create `F:\x-scraper-secrets\session-a.json` outside git:
 ```
 
 Preflight exposes only provider status and missing field names. It does not print token values.
+
+For multiple authorized sessions, create a registry file outside git:
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": "session-a",
+      "account_label": "authorized-account-a",
+      "credential_ref": "file:session-a",
+      "network_context": "direct:iad",
+      "health": "HEALTHY"
+    },
+    {
+      "session_id": "session-b",
+      "account_label": "authorized-account-b",
+      "credential_ref": "file:session-b",
+      "network_context": "direct:sfo",
+      "health": "DISABLED"
+    }
+  ]
+}
+```
+
+Point the app at it:
+
+```env
+XINGESTION_SESSION_REGISTRY=F:\x-scraper-secrets\sessions.json
+```
+
+Import or inspect the session inventory:
+
+```powershell
+python .\run_sessions.py --import-registry F:\x-scraper-secrets\sessions.json --json
+python .\run_sessions.py --json
+```
+
+The web console can run the same configured import through:
+
+```text
+POST /api/sessions/import
+```
+
+The `POST` route requires `x-admin-token`. Import output shows session IDs, account labels, network contexts, health, and reference schemes; it does not return `credential_ref` values.
 
 ## Start
 
