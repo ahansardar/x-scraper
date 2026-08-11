@@ -1448,3 +1448,33 @@ Verified:
 Next:
 
 - Add worker-level route health statistics and route-aware supervisor thresholds before adding managed proxy/VPN provisioning.
+
+## 2026-08-12 - Checkpoint 71: Route Health Statistics
+
+Implemented:
+
+- Added route-level telemetry summaries grouped by `network_context`.
+- Added `GET /api/network-health` with safe success/failure counts, failure rate, distinct session count, latest attempt timestamps, and route-specific error classes.
+- Included network route health in no-Docker health reports.
+- Added route-aware supervisor checks with configurable `--required-network-context`, `--max-network-failure-rate`, and `--min-network-attempts`.
+- Added a Network Health panel to the existing frontend console.
+- Updated README, deployment runbook, and process supervision docs for the new deployment checks.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_telemetry_store.py"` passed 2 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 21 tests.
+- `python -m unittest discover -s tests -p "test_health_report.py"` passed 2 tests.
+- `python -m unittest discover -s tests -p "test_supervision.py"` passed 8 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `python -m unittest discover -s tests` passed 140 tests.
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py`
+- `python .\run_preflight.py` passed migrations, storage, startup directories, secret backend, auth, sessions, and release checks; API probe remained a local-run warning because no base URL was supplied.
+- `python .\run_startup_check.py` passed startup directory checks.
+- `python .\run_health_report.py` wrote a passing report.
+- `python .\run_protocol_validation.py --fixtures-only --json` passed the checked-in SearchTimeline parser fixture.
+- Temporary live server on `127.0.0.1:8021` returned JSON from `/api/network-health`, served `/` and `/app.js` with the Network Health UI, and passed `run_supervisor_check.py --base-url http://127.0.0.1:8021 --required-network-context direct --min-network-attempts 1` with the expected first-run network warning.
+
+Next:
+
+- Add route-aware release-risk recommendations and operator-facing remediation guidance before managed proxy/VPN provisioning.

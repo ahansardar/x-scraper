@@ -16,6 +16,19 @@ class TelemetrySummary:
 
 
 @dataclass(frozen=True)
+class NetworkTelemetrySummary:
+    network_context: str
+    total_attempts: int
+    successes: int
+    failures: int
+    failure_rate: float
+    distinct_sessions: int
+    last_attempt_at: str | None
+    last_success_at: str | None
+    errors_by_class: dict[str, int]
+
+
+@dataclass(frozen=True)
 class ProtocolAttempt:
     attempt_id: int
     task_id: str
@@ -124,6 +137,60 @@ class ProtocolTelemetryStore:
                 for row in error_rows
             },
         )
+
+    def network_summary(self) -> tuple[NetworkTelemetrySummary, ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(network_context, 'unassigned') AS network_context,
+                    COUNT(*) AS total_attempts,
+                    SUM(CASE WHEN state = 'SUCCESS' THEN 1 ELSE 0 END) AS successes,
+                    SUM(CASE WHEN state = 'FAILURE' THEN 1 ELSE 0 END) AS failures,
+                    COUNT(DISTINCT session_id) AS distinct_sessions,
+                    MAX(created_at) AS last_attempt_at,
+                    MAX(CASE WHEN state = 'SUCCESS' THEN created_at ELSE NULL END) AS last_success_at
+                FROM protocol_attempts
+                GROUP BY COALESCE(network_context, 'unassigned')
+                ORDER BY failures DESC, total_attempts DESC, network_context ASC
+                """
+            ).fetchall()
+            error_rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(network_context, 'unassigned') AS network_context,
+                    error_class,
+                    COUNT(*) AS count
+                FROM protocol_attempts
+                WHERE error_class IS NOT NULL
+                GROUP BY COALESCE(network_context, 'unassigned'), error_class
+                ORDER BY network_context ASC, count DESC, error_class ASC
+                """
+            ).fetchall()
+
+        errors_by_network: dict[str, dict[str, int]] = {}
+        for row in error_rows:
+            network_context = row["network_context"]
+            errors_by_network.setdefault(network_context, {})[row["error_class"]] = int(row["count"])
+
+        summaries: list[NetworkTelemetrySummary] = []
+        for row in rows:
+            total_attempts = int(row["total_attempts"])
+            failures = int(row["failures"] or 0)
+            summaries.append(
+                NetworkTelemetrySummary(
+                    network_context=row["network_context"],
+                    total_attempts=total_attempts,
+                    successes=int(row["successes"] or 0),
+                    failures=failures,
+                    failure_rate=(failures / total_attempts) if total_attempts else 0.0,
+                    distinct_sessions=int(row["distinct_sessions"] or 0),
+                    last_attempt_at=row["last_attempt_at"],
+                    last_success_at=row["last_success_at"],
+                    errors_by_class=errors_by_network.get(row["network_context"], {}),
+                )
+            )
+        return tuple(summaries)
 
     def list_for_task(self, task_id: str) -> tuple[ProtocolAttempt, ...]:
         with closing(self._connect()) as conn:

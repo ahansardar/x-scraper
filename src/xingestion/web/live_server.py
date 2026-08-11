@@ -149,6 +149,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json({"migrations": _migration_status_dict(STATE.migration_runner.status())})
         if parsed.path == "/api/telemetry":
             return self._json({"telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary())})
+        if parsed.path == "/api/network-health":
+            return self._json(_network_health_dict())
         if parsed.path == "/api/releases/current":
             return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
         if parsed.path == "/api/releases/current/risk":
@@ -893,6 +895,31 @@ def _telemetry_summary_dict(summary):
         "successes": summary.successes,
         "failures": summary.failures,
         "errors_by_class": summary.errors_by_class,
+    }
+
+
+def _network_health_dict():
+    routes = [
+        _network_route_dict(route)
+        for route in STATE.telemetry_store.network_summary()
+    ]
+    return {
+        "worker_network_context": STATE.config.worker_network_context or None,
+        "routes": routes,
+    }
+
+
+def _network_route_dict(route):
+    return {
+        "network_context": route.network_context,
+        "total_attempts": route.total_attempts,
+        "successes": route.successes,
+        "failures": route.failures,
+        "failure_rate": route.failure_rate,
+        "distinct_sessions": route.distinct_sessions,
+        "last_attempt_at": route.last_attempt_at,
+        "last_success_at": route.last_success_at,
+        "errors_by_class": dict(route.errors_by_class),
     }
 
 

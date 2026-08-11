@@ -19,6 +19,8 @@ const runProtocolValidation = document.querySelector("#runProtocolValidation");
 const metrics = document.querySelector("#metrics");
 const sessions = document.querySelector("#sessions");
 const importSessions = document.querySelector("#importSessions");
+const networkHealthSummary = document.querySelector("#networkHealthSummary");
+const networkHealth = document.querySelector("#networkHealth");
 const taskActionsBody = document.querySelector("#taskActions");
 const supportExportsSummary = document.querySelector("#supportExportsSummary");
 const supportExportsBody = document.querySelector("#supportExports");
@@ -236,6 +238,29 @@ async function loadSessions() {
   `).join("");
 }
 
+async function loadNetworkHealth() {
+  const data = await getJson("/api/network-health");
+  const workerRoute = data.worker_network_context || "any";
+  networkHealthSummary.innerHTML = `
+    Worker route <strong>${workerRoute}</strong>.
+    <strong>${data.routes.length}</strong> routes have recorded protocol attempts.
+  `;
+  if (!data.routes.length) {
+    networkHealth.innerHTML = `<tr><td colspan="6">No protocol attempts recorded yet.</td></tr>`;
+    return;
+  }
+  networkHealth.innerHTML = data.routes.map((route) => `
+    <tr>
+      <td>${route.network_context}</td>
+      <td>${route.successes} / ${route.failures} / ${route.total_attempts}</td>
+      <td><span class="${networkRateClass(route.failure_rate)}">${formatPercent(route.failure_rate)}</span></td>
+      <td>${route.distinct_sessions}</td>
+      <td>${formatDateTime(route.last_attempt_at)}</td>
+      <td>${formatErrors(route.errors_by_class)}</td>
+    </tr>
+  `).join("");
+}
+
 function taskActions(task) {
   if (task.state === "DEAD_LETTER") {
     return `
@@ -315,6 +340,28 @@ function formatNetworkPolicy(policy, fallback) {
   }
   const details = [policy.route, policy.region].filter(Boolean).join(" / ");
   return details ? `${policy.kind}: ${details}` : policy.kind;
+}
+
+function networkRateClass(value) {
+  if (value >= 0.8) {
+    return "state bad";
+  }
+  if (value >= 0.5) {
+    return "state warn";
+  }
+  return "state";
+}
+
+function formatPercent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
+function formatErrors(errors) {
+  const entries = Object.entries(errors || {});
+  if (!entries.length) {
+    return "";
+  }
+  return entries.map(([name, count]) => `${name}: ${count}`).join("; ");
 }
 
 function renderOutput(data) {
@@ -438,6 +485,7 @@ form.addEventListener("submit", async (event) => {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
@@ -468,6 +516,7 @@ async function handleTaskControl(event) {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
     return;
   }
 
@@ -487,6 +536,7 @@ async function handleTaskControl(event) {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
     return;
   }
 
@@ -505,6 +555,7 @@ async function handleTaskControl(event) {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
     return;
   }
 
@@ -523,6 +574,7 @@ async function handleTaskControl(event) {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
@@ -530,6 +582,7 @@ async function handleTaskControl(event) {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
   }
 }
 
@@ -607,11 +660,13 @@ sessions.addEventListener("click", async (event) => {
     await loadTaskActions();
     await loadSessions();
     await loadMetrics();
+    await loadNetworkHealth();
   } catch (error) {
     summary.textContent = error.message;
     await loadTaskActions();
     await loadSessions();
     await loadMetrics();
+    await loadNetworkHealth();
   }
 });
 
@@ -629,6 +684,7 @@ importSessions.addEventListener("click", async () => {
     `;
     await loadSessions();
     await loadMetrics();
+    await loadNetworkHealth();
   } catch (error) {
     summary.textContent = error.message;
   } finally {
@@ -651,6 +707,7 @@ runRetention.addEventListener("click", async () => {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
   } catch (error) {
     retention.textContent = error.message;
   } finally {
@@ -774,6 +831,7 @@ async function waitForResult(resultUrl) {
     await loadTaskActions();
     await loadMetrics();
     await loadSessions();
+    await loadNetworkHealth();
   }
   summary.textContent = "Timed out waiting for worker result.";
 }
@@ -818,4 +876,8 @@ loadMetrics().catch((error) => {
 });
 loadSessions().catch((error) => {
   sessions.innerHTML = `<tr><td colspan="7">${error.message}</td></tr>`;
+});
+loadNetworkHealth().catch((error) => {
+  networkHealthSummary.textContent = error.message;
+  networkHealth.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
 });

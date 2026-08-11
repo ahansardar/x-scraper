@@ -120,6 +120,63 @@ class SupervisionTests(unittest.TestCase):
         self.assertEqual(processes.status, "FAIL")
         self.assertIn("run_worker.py", processes.message)
 
+    def test_supervisor_check_requires_matching_network_session(self):
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(_ready_payloads()),
+            root=ROOT,
+            required_network_context="proxy:pool-a",
+        )
+
+        result = checker.run()
+
+        network = next(check for check in result.checks if check.name == "network")
+        self.assertFalse(result.ok)
+        self.assertEqual(network.status, "FAIL")
+        self.assertIn("proxy:pool-a", network.message)
+
+    def test_supervisor_check_fails_unhealthy_route_after_threshold(self):
+        payloads = _ready_payloads()
+        payloads["/api/network-health"]["routes"] = [
+            {
+                "network_context": "direct",
+                "total_attempts": 10,
+                "successes": 1,
+                "failures": 9,
+                "failure_rate": 0.9,
+                "distinct_sessions": 1,
+                "errors_by_class": {"RATE_LIMITED": 9},
+            }
+        ]
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+            max_network_failure_rate=0.8,
+            min_network_attempts=5,
+        )
+
+        result = checker.run()
+
+        network = next(check for check in result.checks if check.name == "network")
+        self.assertFalse(result.ok)
+        self.assertEqual(network.status, "FAIL")
+        self.assertIn("failure_rate=0.90", network.message)
+
+    def test_supervisor_check_warns_when_required_route_has_no_attempts(self):
+        payloads = _ready_payloads()
+        payloads["/api/sessions"]["sessions"][0]["network_context"] = "proxy:pool-a:iad"
+        payloads["/api/network-health"]["routes"] = []
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+            required_network_context="proxy:pool-a",
+        )
+
+        result = checker.run()
+
+        network = next(check for check in result.checks if check.name == "network")
+        self.assertTrue(result.ok)
+        self.assertEqual(network.status, "WARN")
+
 
 def _ready_payloads():
     return {
@@ -164,6 +221,23 @@ def _ready_payloads():
                 {
                     "session_id": "session-1",
                     "health": "HEALTHY",
+                    "network_context": "direct",
+                }
+            ],
+        },
+        "/api/network-health": {
+            "worker_network_context": None,
+            "routes": [
+                {
+                    "network_context": "direct",
+                    "total_attempts": 2,
+                    "successes": 2,
+                    "failures": 0,
+                    "failure_rate": 0.0,
+                    "distinct_sessions": 1,
+                    "last_attempt_at": "2026-08-11T00:00:00+00:00",
+                    "last_success_at": "2026-08-11T00:00:00+00:00",
+                    "errors_by_class": {},
                 }
             ],
         },
