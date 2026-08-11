@@ -27,6 +27,21 @@ const supportExportsBody = document.querySelector("#supportExports");
 const runSupportExportRetention = document.querySelector("#runSupportExportRetention");
 let adminToken = "";
 
+function escapeHtml(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return text.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  })[character]);
+}
+
+function shortId(value, length = 18) {
+  return escapeHtml(String(value || "").slice(0, length));
+}
+
 async function getJson(url, options) {
   const response = await fetch(url, options);
   const data = await parseJsonResponse(response, url);
@@ -65,9 +80,8 @@ async function loadTasks() {
   const data = await getJson("/api/tasks");
   tasks.innerHTML = data.tasks.map((task) => `
     <tr>
-      <td>${task.task_id.slice(0, 18)}</td>
-      <td>${task.capability_id}</td>
-      <td><span class="state">${task.state}</span></td>
+      <td><code>${shortId(task.task_id)}</code><br><span class="muted-cell">${escapeHtml(task.capability_id)}</span></td>
+      <td><span class="${taskStateClass(task.state)}">${escapeHtml(task.state)}</span></td>
       <td>${taskActions(task)}</td>
     </tr>
   `).join("");
@@ -81,11 +95,11 @@ async function loadTaskActions() {
   }
   taskActionsBody.innerHTML = data.actions.map((action) => `
     <tr>
-      <td>${action.task_id.slice(0, 18)}</td>
-      <td><span class="${taskStateClass(action.state)}">${action.state}</span></td>
-      <td><span class="${severityClass(action.severity)}">${action.severity}</span></td>
+      <td><code>${shortId(action.task_id)}</code></td>
+      <td><span class="${taskStateClass(action.state)}">${escapeHtml(action.state)}</span></td>
+      <td><span class="${severityClass(action.severity)}">${escapeHtml(action.severity)}</span></td>
       <td>${action.attempt_count} / ${action.max_attempts}</td>
-      <td>${action.operator_action}</td>
+      <td>${escapeHtml(action.operator_action)}</td>
       <td>${taskActionControls(action)}</td>
     </tr>
   `).join("");
@@ -95,7 +109,7 @@ async function loadSupportExports() {
   const data = await getJson("/api/support-exports");
   supportExportsSummary.innerHTML = `
     <strong>${data.exports.length}</strong>
-    recent support exports in <code>${data.export_dir}</code>.
+    recent support exports in <code>${escapeHtml(data.export_dir)}</code>.
     Cleanup currently matches <strong>${data.dry_run.matched_exports}</strong> files older than ${data.retention_days} days.
   `;
   if (!data.exports.length) {
@@ -104,13 +118,13 @@ async function loadSupportExports() {
   }
   supportExportsBody.innerHTML = data.exports.map((item) => `
     <tr>
-      <td><code>${item.name}</code></td>
-      <td>${item.task_id ? item.task_id.slice(0, 18) : ""}</td>
-      <td><span class="${severityClass(item.severity)}">${item.severity || "UNKNOWN"}</span></td>
+      <td><code>${escapeHtml(item.name)}</code></td>
+      <td>${item.task_id ? shortId(item.task_id) : ""}</td>
+      <td><span class="${severityClass(item.severity)}">${escapeHtml(item.severity || "UNKNOWN")}</span></td>
       <td>${formatDateTime(item.modified_at)}</td>
       <td>
-        <button class="small-button secondary" data-view-support-export="${item.name}">View</button>
-        <button class="small-button secondary" data-download-support-export="${item.name}">Download</button>
+        <button class="small-button secondary" data-view-support-export="${escapeHtml(item.name)}">View</button>
+        <button class="small-button secondary" data-download-support-export="${escapeHtml(item.name)}">Download</button>
       </td>
     </tr>
   `).join("");
@@ -138,11 +152,11 @@ async function loadOutbox() {
   }
   outboxEvents.innerHTML = data.events.map((event) => `
     <tr>
-      <td>${event.event_id.slice(0, 18)}</td>
-      <td>${event.task_id.slice(0, 18)}</td>
-      <td><span class="${taskStateClass(event.task_state)}">${event.task_state}</span></td>
+      <td><code>${shortId(event.event_id)}</code></td>
+      <td><code>${shortId(event.task_id)}</code></td>
+      <td><span class="${taskStateClass(event.task_state)}">${escapeHtml(event.task_state)}</span></td>
       <td>${formatDuration(event.age_seconds)}</td>
-      <td>${event.event_type}</td>
+      <td>${escapeHtml(event.event_type)}</td>
     </tr>
   `).join("");
 }
@@ -154,9 +168,9 @@ async function loadStartup() {
     : "Startup checks need operator attention.";
   startupChecks.innerHTML = data.checks.map((check) => `
     <div class="check-row">
-      <strong>${check.name}</strong>
-      <span class="${severityClass(check.status === "FAIL" ? "HIGH" : check.status === "WARN" ? "MEDIUM" : "LOW")}">${check.status}</span>
-      <code>${check.message}</code>
+      <strong>${escapeHtml(check.name)}</strong>
+      <span class="${severityClass(check.status === "FAIL" ? "HIGH" : check.status === "WARN" ? "MEDIUM" : "LOW")}">${escapeHtml(check.status)}</span>
+      <code>${escapeHtml(check.message)}</code>
     </div>
   `).join("");
 }
@@ -167,7 +181,7 @@ async function loadProtocolValidation() {
   validationSummary.innerHTML = `
     <strong>${validation.ok ? "PASS" : "FAIL"}</strong>
     ${validation.ok_sources}/${validation.checked_sources} sources passed parser revision
-    <code>${validation.parser_revision_id}</code>.
+    <code>${escapeHtml(validation.parser_revision_id)}</code>.
   `;
   if (!validation.results.length) {
     validationResults.innerHTML = `<tr><td colspan="5">No validation sources found.</td></tr>`;
@@ -175,14 +189,14 @@ async function loadProtocolValidation() {
   }
   validationResults.innerHTML = validation.results.map((result) => `
     <tr>
-      <td><code>${shortPath(result.source)}</code><br>${result.source_type}</td>
+      <td><code>${escapeHtml(shortPath(result.source))}</code><br>${escapeHtml(result.source_type)}</td>
       <td><span class="${severityClass(result.ok ? "LOW" : "HIGH")}">${result.ok ? "PASS" : "FAIL"}</span></td>
       <td>${result.tweet_count}</td>
       <td>${result.bottom_cursor_present ? "yes" : "no"}</td>
       <td>
-        <code>${result.structural_fingerprint}</code>
-        ${result.warnings.length ? `<br>${result.warnings.join("; ")}` : ""}
-        ${result.error ? `<br>${result.error}` : ""}
+        <code>${escapeHtml(result.structural_fingerprint)}</code>
+        ${result.warnings.length ? `<br>${escapeHtml(result.warnings.join("; "))}` : ""}
+        ${result.error ? `<br>${escapeHtml(result.error)}` : ""}
       </td>
     </tr>
   `).join("");
@@ -192,7 +206,7 @@ async function loadProtocolValidationReports() {
   const data = await getJson("/api/protocol-validation/reports");
   validationReportsSummary.innerHTML = `
     <strong>${data.reports.length}</strong>
-    saved validation reports in <code>${data.report_dir}</code>.
+    saved validation reports in <code>${escapeHtml(data.report_dir)}</code>.
   `;
   if (!data.reports.length) {
     validationReports.innerHTML = `<tr><td colspan="4">No validation reports saved yet.</td></tr>`;
@@ -200,7 +214,7 @@ async function loadProtocolValidationReports() {
   }
   validationReports.innerHTML = data.reports.map((report) => `
     <tr>
-      <td><code>${report.name}</code></td>
+      <td><code>${escapeHtml(report.name)}</code></td>
       <td><span class="${severityClass(report.ok ? "LOW" : "HIGH")}">${report.ok ? "PASS" : "FAIL"}</span></td>
       <td>${report.checked_sources - report.failed_sources}/${report.checked_sources}</td>
       <td>${formatDateTime(report.generated_at)}</td>
@@ -217,9 +231,9 @@ async function loadMetrics() {
     <div><strong>${data.canonical.canonical_tweets}</strong><span>canonical tweets</span></div>
     <div><strong>${data.canonical.engagement_observations}</strong><span>engagement observations</span></div>
     <div><strong>${data.sessions.cooling_down}</strong><span>sessions cooling</span></div>
-    <div><strong>${data.release_risk.action}</strong><span>release risk</span></div>
+    <div><strong>${escapeHtml(data.release_risk.action)}</strong><span>release risk</span></div>
     <div><strong>${data.auth_ready ? "ready" : "missing"}</strong><span>auth state</span></div>
-    <div><strong>${data.storage.secret_backend.configured ? data.storage.secret_backend.provider : "check"}</strong><span>secret backend</span></div>
+    <div><strong>${data.storage.secret_backend.configured ? escapeHtml(data.storage.secret_backend.provider) : "check"}</strong><span>secret backend</span></div>
   `;
 }
 
@@ -227,12 +241,12 @@ async function loadSessions() {
   const data = await getJson("/api/sessions");
   sessions.innerHTML = data.sessions.map((session) => `
     <tr>
-      <td>${session.session_id}</td>
-      <td><span class="${sessionStateClass(session.health)}">${session.health}</span></td>
-      <td>${formatNetworkPolicy(session.network_policy, session.network_context)}</td>
+      <td><code>${escapeHtml(session.session_id)}</code></td>
+      <td><span class="${sessionStateClass(session.health)}">${escapeHtml(session.health)}</span></td>
+      <td>${escapeHtml(formatNetworkPolicy(session.network_policy, session.network_context))}</td>
       <td>${session.attempt_count} / ${session.success_count} / ${session.failure_count}</td>
-      <td>${session.cooldown_until || ""}</td>
-      <td>${formatSessionError(session)}</td>
+      <td>${escapeHtml(session.cooldown_until || "")}</td>
+      <td>${escapeHtml(formatSessionError(session))}</td>
       <td>${sessionActions(session)}</td>
     </tr>
   `).join("");
@@ -242,7 +256,7 @@ async function loadNetworkHealth() {
   const data = await getJson("/api/network-health");
   const workerRoute = data.worker_network_context || "any";
   networkHealthSummary.innerHTML = `
-    Worker route <strong>${workerRoute}</strong>.
+    Worker route <strong>${escapeHtml(workerRoute)}</strong>.
     <strong>${data.routes.length}</strong> routes have recorded protocol attempts.
   `;
   if (!data.routes.length) {
@@ -251,12 +265,12 @@ async function loadNetworkHealth() {
   }
   networkHealth.innerHTML = data.routes.map((route) => `
     <tr>
-      <td>${route.network_context}</td>
+      <td><code>${escapeHtml(route.network_context)}</code></td>
       <td>${route.successes} / ${route.failures} / ${route.total_attempts}</td>
       <td><span class="${networkRateClass(route.failure_rate)}">${formatPercent(route.failure_rate)}</span></td>
       <td>${route.distinct_sessions}</td>
       <td>${formatDateTime(route.last_attempt_at)}</td>
-      <td>${formatErrors(route.errors_by_class)}</td>
+      <td>${escapeHtml(formatErrors(route.errors_by_class))}</td>
       <td>${formatRouteRecommendation(route.recommendation)}</td>
     </tr>
   `).join("");
@@ -265,12 +279,12 @@ async function loadNetworkHealth() {
 function taskActions(task) {
   if (task.state === "DEAD_LETTER") {
     return `
-      <button class="small-button" data-replay-task="${task.task_id}">Replay</button>
-      <button class="small-button secondary" data-investigate-task="${task.task_id}">Investigate</button>
+      <button class="small-button" data-replay-task="${escapeHtml(task.task_id)}">Replay</button>
+      <button class="small-button secondary" data-investigate-task="${escapeHtml(task.task_id)}">Investigate</button>
     `;
   }
   if (["CREATED", "ENQUEUED", "RETRY_SCHEDULED"].includes(task.state)) {
-    return `<button class="small-button secondary" data-cancel-task="${task.task_id}">Cancel</button>`;
+    return `<button class="small-button secondary" data-cancel-task="${escapeHtml(task.task_id)}">Cancel</button>`;
   }
   return "";
 }
@@ -278,14 +292,14 @@ function taskActions(task) {
 function taskActionControls(action) {
   const controls = [];
   if (action.replayable) {
-    controls.push(`<button class="small-button" data-replay-task="${action.task_id}">Replay</button>`);
+    controls.push(`<button class="small-button" data-replay-task="${escapeHtml(action.task_id)}">Replay</button>`);
   }
   if (action.cancellable) {
-    controls.push(`<button class="small-button secondary" data-cancel-task="${action.task_id}">Cancel</button>`);
+    controls.push(`<button class="small-button secondary" data-cancel-task="${escapeHtml(action.task_id)}">Cancel</button>`);
   }
   if (action.exportable) {
-    controls.push(`<button class="small-button secondary" data-investigate-task="${action.task_id}">Investigate</button>`);
-    controls.push(`<button class="small-button secondary" data-export-task="${action.task_id}">Export</button>`);
+    controls.push(`<button class="small-button secondary" data-investigate-task="${escapeHtml(action.task_id)}">Investigate</button>`);
+    controls.push(`<button class="small-button secondary" data-export-task="${escapeHtml(action.task_id)}">Export</button>`);
   }
   return controls.join(" ");
 }
@@ -312,9 +326,9 @@ function severityClass(severity) {
 
 function sessionActions(session) {
   if (session.health !== "HEALTHY") {
-    return `<button class="small-button" data-restore-session="${session.session_id}">Restore</button>`;
+    return `<button class="small-button" data-restore-session="${escapeHtml(session.session_id)}">Restore</button>`;
   }
-  return `<button class="small-button secondary" data-disable-session="${session.session_id}">Disable</button>`;
+  return `<button class="small-button secondary" data-disable-session="${escapeHtml(session.session_id)}">Disable</button>`;
 }
 
 function sessionStateClass(health) {
@@ -370,26 +384,26 @@ function formatRouteRecommendation(recommendation) {
     return `<span class="state">monitor</span>`;
   }
   return `
-    <span class="${severityClass(recommendation.severity)}">${recommendation.action}</span>
-    <br>${recommendation.operator_action}
+    <span class="${severityClass(recommendation.severity)}">${escapeHtml(recommendation.action)}</span>
+    <br>${escapeHtml(recommendation.operator_action)}
   `;
 }
 
 function renderOutput(data) {
   summary.innerHTML = `
-    <strong>${data.task.state}</strong>
-    task ${data.task.task_id.slice(0, 18)} stored raw evidence
-    <code>${data.raw_evidence.content_sha256.slice(0, 16)}</code>
+    <strong>${escapeHtml(data.task.state)}</strong>
+    task ${shortId(data.task.task_id)} stored raw evidence
+    <code>${shortId(data.raw_evidence.content_sha256, 16)}</code>
     and parsed ${data.page.tweets.length} records.
   `;
   tweets.innerHTML = data.page.tweets.map((tweet) => `
     <article class="tweet">
-      <strong>${tweet.name} @${tweet.username}</strong>
-      <p>${tweet.text}</p>
+      <strong>${escapeHtml(tweet.name)} @${escapeHtml(tweet.username)}</strong>
+      <p>${escapeHtml(tweet.text)}</p>
       <div class="metrics">
-        <span>${tweet.like_count} likes</span>
-        <span>${tweet.repost_count} reposts</span>
-        <span>${tweet.reply_count} replies</span>
+        <span>${escapeHtml(tweet.like_count)} likes</span>
+        <span>${escapeHtml(tweet.repost_count)} reposts</span>
+        <span>${escapeHtml(tweet.reply_count)} replies</span>
         <span>${formatViews(tweet.view_count)}</span>
       </div>
     </article>
@@ -399,8 +413,8 @@ function renderOutput(data) {
 function renderInvestigation(data) {
   const investigation = data.investigation;
   summary.innerHTML = `
-    <strong>${investigation.task.state}</strong>
-    investigation package for task ${investigation.task.task_id.slice(0, 18)}
+    <strong>${escapeHtml(investigation.task.state)}</strong>
+    investigation package for task ${shortId(investigation.task.task_id)}
     with ${investigation.diagnosis.telemetry_attempts} telemetry attempts.
   `;
   tweets.innerHTML = "";
@@ -413,9 +427,9 @@ function renderInvestigation(data) {
 function renderSupportExport(data) {
   const item = data.export;
   summary.innerHTML = `
-    <strong>${item.state}</strong>
-    support export for task ${item.task_id.slice(0, 18)}
-    saved to <code>${item.path}</code>.
+    <strong>${escapeHtml(item.state)}</strong>
+    support export for task ${shortId(item.task_id)}
+    saved to <code>${escapeHtml(item.path)}</code>.
   `;
   tweets.innerHTML = "";
   const packageView = document.createElement("pre");
@@ -427,8 +441,8 @@ function renderSupportExport(data) {
 function renderSupportExportDetail(data) {
   const item = data.export;
   summary.innerHTML = `
-    <strong>${item.summary.package_type}</strong>
-    ${item.summary.name} for task ${item.summary.task_id ? item.summary.task_id.slice(0, 18) : "unknown"}.
+    <strong>${escapeHtml(item.summary.package_type)}</strong>
+    ${escapeHtml(item.summary.name)} for task ${item.summary.task_id ? shortId(item.summary.task_id) : "unknown"}.
   `;
   tweets.innerHTML = "";
   const packageView = document.createElement("pre");
@@ -440,14 +454,14 @@ function renderSupportExportDetail(data) {
 function formatViews(value) {
   return value === null || value === undefined || value === ""
     ? "views unavailable"
-    : `${value} views`;
+    : `${escapeHtml(value)} views`;
 }
 
 function formatDateTime(value) {
   if (!value) {
     return "";
   }
-  return value.replace("T", " ").replace("+00:00", " UTC");
+  return escapeHtml(value.replace("T", " ").replace("+00:00", " UTC"));
 }
 
 function formatDuration(value) {
@@ -489,8 +503,8 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify(payload)
     });
     summary.innerHTML = `
-      <strong>${data.task.state}</strong>
-      task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
+      <strong>${escapeHtml(data.task.state)}</strong>
+      task ${shortId(data.task.task_id)} queued. Waiting for worker...
     `;
     await loadTasks();
     await loadTaskActions();
@@ -558,7 +572,7 @@ async function handleTaskControl(event) {
         method: "POST",
         headers: adminHeaders()
       });
-      summary.innerHTML = `<strong>${data.task.state}</strong> task ${data.task.task_id.slice(0, 18)} cancelled.`;
+      summary.innerHTML = `<strong>${escapeHtml(data.task.state)}</strong> task ${shortId(data.task.task_id)} cancelled.`;
     } catch (error) {
       summary.textContent = error.message;
     }
@@ -578,8 +592,8 @@ async function handleTaskControl(event) {
       headers: adminHeaders()
     });
     summary.innerHTML = `
-      <strong>${data.task.state}</strong>
-      replay task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
+      <strong>${escapeHtml(data.task.state)}</strong>
+      replay task ${shortId(data.task.task_id)} queued. Waiting for worker...
     `;
     await loadTasks();
     await loadTaskActions();
@@ -612,7 +626,7 @@ supportExportsBody.addEventListener("click", async (event) => {
     tweets.innerHTML = "";
     try {
       await downloadSupportExport(button.dataset.downloadSupportExport);
-      summary.innerHTML = `Support export <code>${button.dataset.downloadSupportExport}</code> downloaded.`;
+      summary.innerHTML = `Support export <code>${escapeHtml(button.dataset.downloadSupportExport)}</code> downloaded.`;
     } catch (error) {
       summary.textContent = error.message;
     } finally {
@@ -667,7 +681,7 @@ sessions.addEventListener("click", async (event) => {
       method: "POST",
       headers: adminHeaders()
     });
-    summary.innerHTML = `<strong>${data.session.health}</strong> session ${data.session.session_id} updated.`;
+    summary.innerHTML = `<strong>${escapeHtml(data.session.health)}</strong> session ${escapeHtml(data.session.session_id)} updated.`;
     await loadTaskActions();
     await loadSessions();
     await loadMetrics();
@@ -689,9 +703,9 @@ importSessions.addEventListener("click", async () => {
       method: "POST",
       headers: adminHeaders()
     });
-    summary.innerHTML = `
-      Imported <strong>${data.session_import.imported}</strong>
-      sessions from registry.
+      summary.innerHTML = `
+        Imported <strong>${data.session_import.imported}</strong>
+        sessions from registry.
     `;
     await loadSessions();
     await loadMetrics();
@@ -712,7 +726,7 @@ runRetention.addEventListener("click", async () => {
     });
     retention.innerHTML = `
       Deleted <strong>${data.retention.deleted_tasks}</strong> terminal tasks
-      older than <code>${data.retention.cutoff}</code>.
+      older than <code>${escapeHtml(data.retention.cutoff)}</code>.
     `;
     await loadTasks();
     await loadTaskActions();
@@ -735,7 +749,7 @@ runSupportExportRetention.addEventListener("click", async () => {
     });
     supportExportsSummary.innerHTML = `
       Deleted <strong>${data.retention.deleted_exports}</strong> support exports
-      older than <code>${data.retention.cutoff}</code>.
+      older than <code>${escapeHtml(data.retention.cutoff)}</code>.
     `;
     await loadSupportExports();
   } catch (error) {
@@ -801,7 +815,7 @@ runProtocolValidation.addEventListener("click", async () => {
       headers: adminHeaders()
     });
     validationSummary.innerHTML = `
-      Saved validation report to <code>${data.saved_path}</code>.
+      Saved validation report to <code>${escapeHtml(data.saved_path)}</code>.
       Status <strong>${data.validation.ok ? "PASS" : "FAIL"}</strong>.
     `;
     await loadProtocolValidation();
@@ -834,8 +848,8 @@ async function waitForResult(resultUrl) {
       return;
     }
     summary.innerHTML = `
-      <strong>${data.task.state}</strong>
-      task ${data.task.task_id.slice(0, 18)} waiting for worker...
+      <strong>${escapeHtml(data.task.state)}</strong>
+      task ${shortId(data.task.task_id)} waiting for worker...
     `;
     await delay(1500);
     await loadTasks();
@@ -855,40 +869,40 @@ loadHealth().catch((error) => {
   health.textContent = error.message;
 });
 loadTasks().catch((error) => {
-  tasks.innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`;
+  tasks.innerHTML = `<tr><td colspan="3">${escapeHtml(error.message)}</td></tr>`;
 });
 loadTaskActions().catch((error) => {
-  taskActionsBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+  taskActionsBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
 });
 loadSupportExports().catch((error) => {
   supportExportsSummary.textContent = error.message;
-  supportExportsBody.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+  supportExportsBody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
 });
 loadRetention().catch((error) => {
   retention.textContent = error.message;
 });
 loadOutbox().catch((error) => {
   outboxSummary.textContent = error.message;
-  outboxEvents.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+  outboxEvents.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
 });
 loadStartup().catch((error) => {
   startupSummary.textContent = error.message;
 });
 loadProtocolValidation().catch((error) => {
   validationSummary.textContent = error.message;
-  validationResults.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+  validationResults.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
 });
 loadProtocolValidationReports().catch((error) => {
   validationReportsSummary.textContent = error.message;
-  validationReports.innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`;
+  validationReports.innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
 });
 loadMetrics().catch((error) => {
-  metrics.innerHTML = `<div><strong>error</strong><span>${error.message}</span></div>`;
+  metrics.innerHTML = `<div><strong>error</strong><span>${escapeHtml(error.message)}</span></div>`;
 });
 loadSessions().catch((error) => {
-  sessions.innerHTML = `<tr><td colspan="7">${error.message}</td></tr>`;
+  sessions.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;
 });
 loadNetworkHealth().catch((error) => {
   networkHealthSummary.textContent = error.message;
-  networkHealth.innerHTML = `<tr><td colspan="7">${error.message}</td></tr>`;
+  networkHealth.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;
 });

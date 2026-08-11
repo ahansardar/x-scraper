@@ -1510,3 +1510,26 @@ Verified:
 Next:
 
 - Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
+
+## 2026-08-12 - Checkpoint 73: Frontend Control Room Organization
+
+Implemented:
+
+- Reorganized the static frontend into a production operator console with a command rail, live evidence area, metrics strip, readiness panels, operator queue, session/network panels, and lifecycle/export controls.
+- Kept the console no-Docker and static-file deployable while preserving the existing endpoint bindings and DOM ids used by the live API wiring.
+- Added responsive layout rules for desktop, tablet, and mobile views with scroll-safe tables and stable controls.
+- Added frontend HTML escaping for live API fields including tweet content, user fields, session errors, export names, paths, route recommendations, and fallback error rows.
+- Preserved the no-mock frontend contract and the existing live acquisition workflow.
+
+Verified:
+
+- `node --check src\xingestion\web\static\app.js`
+- `python -m unittest discover -s tests -p test_frontend_copy.py` passed 3 tests.
+- `python -m unittest discover -s tests` passed 146 tests.
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py`
+- Live server on `127.0.0.1:8023` served the reorganized shell, the new `console-shell` CSS, and the escaped frontend JavaScript.
+- Live API probes returned JSON 200 from `/api/health`, `/api/metrics`, `/api/network-health`, and `/api/tasks`.
+
+Next:
+
+- Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
