@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.config import AppConfig
+from xingestion import preflight as preflight_module
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight
 from xingestion.sessions import SessionHealth, SessionStore
@@ -192,6 +193,38 @@ class PreflightTests(unittest.TestCase):
             statuses = {check.name: check.status for check in result.checks}
             self.assertTrue(result.ok)
             self.assertEqual(statuses["api"], "PASS")
+
+    def test_startup_directory_check_reports_probe_failure(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _config(root)
+            runner = MigrationRunner(
+                config.sqlite_path,
+                ROOT / "src" / "xingestion" / "migrations" / "sql",
+            )
+            original_probe = preflight_module._probe_writable_directory
+
+            def failing_probe(path):
+                if path.name == "support_exports":
+                    raise OSError("support export directory is read-only")
+                original_probe(path)
+
+            preflight_module._probe_writable_directory = failing_probe
+            try:
+                result = DeploymentPreflight(
+                    config=config,
+                    migration_runner=runner,
+                    manifest=manifest,
+                    auth=WebSessionAuth("auth", "csrf", "bearer"),
+                ).run()
+            finally:
+                preflight_module._probe_writable_directory = original_probe
+
+            startup = next(check for check in result.checks if check.name == "startup_directories")
+            self.assertFalse(result.ok)
+            self.assertEqual(startup.status, "FAIL")
+            self.assertIn("support export directory is read-only", startup.message)
 
 
 def _config(root: Path) -> AppConfig:
