@@ -1511,6 +1511,28 @@ Next:
 
 - Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
 
+## 2026-08-12 - Checkpoint 74: Frontend Fitment Correction
+
+Implemented:
+
+- Removed cramped two-column operational bands that forced wide tables into half-width panels.
+- Removed sticky table headers inside nested scroll containers to prevent visual stacking and overlap.
+- Kept dense task acquisition controls and task ledger side-by-side only on wide screens.
+- Made heavy operational tables full-width on desktop and horizontally scrollable only inside their panel on small screens.
+- Added a mobile-specific task ledger layout so retry/replay/investigate controls wrap inside the panel instead of clipping.
+
+Verified:
+
+- `node --check src\xingestion\web\static\app.js`
+- `python -m unittest discover -s tests -p test_frontend_copy.py` passed 3 tests.
+- `python -m unittest discover -s tests` passed 146 tests.
+- Live CSS from `http://127.0.0.1:8023/styles.css` includes the corrected mobile command-rail and workspace table rules.
+- Chrome headless loaded desktop and mobile captures before the last mobile-only retry, confirming the main layout no longer overlaps; final served CSS was checked directly after the mobile task-ledger correction.
+
+Next:
+
+- Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
+
 ## 2026-08-12 - Checkpoint 73: Frontend Control Room Organization
 
 Implemented:
