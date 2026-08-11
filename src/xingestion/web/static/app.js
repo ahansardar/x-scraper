@@ -94,7 +94,10 @@ async function loadSupportExports() {
       <td>${item.task_id ? item.task_id.slice(0, 18) : ""}</td>
       <td><span class="${severityClass(item.severity)}">${item.severity || "UNKNOWN"}</span></td>
       <td>${formatDateTime(item.modified_at)}</td>
-      <td><button class="small-button secondary" data-view-support-export="${item.name}">View</button></td>
+      <td>
+        <button class="small-button secondary" data-view-support-export="${item.name}">View</button>
+        <button class="small-button secondary" data-download-support-export="${item.name}">Download</button>
+      </td>
     </tr>
   `).join("");
 }
@@ -407,12 +410,26 @@ tasks.addEventListener("click", handleTaskControl);
 taskActionsBody.addEventListener("click", handleTaskControl);
 
 supportExportsBody.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-view-support-export]");
+  const button = event.target.closest("[data-view-support-export], [data-download-support-export]");
   if (!button) {
     return;
   }
 
   button.disabled = true;
+  if (button.dataset.downloadSupportExport) {
+    summary.textContent = "Preparing support export download...";
+    tweets.innerHTML = "";
+    try {
+      await downloadSupportExport(button.dataset.downloadSupportExport);
+      summary.innerHTML = `Support export <code>${button.dataset.downloadSupportExport}</code> downloaded.`;
+    } catch (error) {
+      summary.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
   summary.textContent = "Loading support export...";
   tweets.innerHTML = "";
   try {
@@ -424,6 +441,25 @@ supportExportsBody.addEventListener("click", async (event) => {
     button.disabled = false;
   }
 });
+
+async function downloadSupportExport(name) {
+  const response = await fetch(`/api/support-exports/${encodeURIComponent(name)}/download`, {
+    headers: adminHeaders()
+  });
+  if (!response.ok) {
+    const data = await parseJsonResponse(response, `/api/support-exports/${name}/download`);
+    throw new Error(data.message || response.statusText);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 sessions.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-restore-session], [data-disable-session]");

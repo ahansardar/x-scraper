@@ -18,6 +18,7 @@ from xingestion.support_export import (
     build_failed_task_export,
     list_support_exports,
     read_support_export,
+    support_export_file,
     write_failed_task_export,
 )
 from xingestion.tasks import SQLiteTaskLedger, TaskState
@@ -176,6 +177,7 @@ class SupportExportTests(unittest.TestCase):
 
             self.assertEqual(read["summary"]["name"], "failed-task-safe.json")
             self.assertEqual(read["package"]["task_id"], failed.task_id)
+            self.assertEqual(support_export_file(config, result.path.name), result.path)
             with self.assertRaisesRegex(ValueError, "file name"):
                 read_support_export(config, "..\\secrets.json")
             with self.assertRaisesRegex(ValueError, "failed-task"):

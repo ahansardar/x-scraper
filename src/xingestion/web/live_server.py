@@ -34,6 +34,7 @@ from xingestion.support_export import (
     apply_support_export_retention,
     list_support_exports,
     read_support_export,
+    support_export_file,
     write_failed_task_export,
 )
 from xingestion.telemetry import ProtocolTelemetryStore
@@ -181,6 +182,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             )
         if parsed.path.startswith("/api/support-exports/"):
             parts = parsed.path.strip("/").split("/")
+            if len(parts) == 4 and parts[3] == "download":
+                if not self._require_admin():
+                    return
+                return self._download_support_export(unquote(parts[2]))
             if len(parts) == 3:
                 return self._support_export_detail(unquote(parts[2]))
         if parsed.path.startswith("/api/tasks/"):
@@ -401,6 +406,21 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             status = 404 if "not found" in str(exc).lower() else 400
             return self._json({"message": str(exc)}, status=status)
         return self._json({"export": export}, status=200)
+
+    def _download_support_export(self, name):
+        try:
+            path = support_export_file(STATE.config, name)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return self._json({"message": str(exc)}, status=status)
+
+        content = path.read_bytes()
+        self.send_response(200)
+        self.send_header("content-type", "application/json; charset=utf-8")
+        self.send_header("content-length", str(len(content)))
+        self.send_header("content-disposition", f'attachment; filename="{path.name}"')
+        self.end_headers()
+        self.wfile.write(content)
 
     def _set_release_health(self, health, reason):
         release = STATE.release_store.set_health(

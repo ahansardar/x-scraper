@@ -114,17 +114,23 @@ def list_support_exports(
 
 
 def read_support_export(config: AppConfig, name: str) -> dict[str, object]:
+    path = support_export_file(config, name)
+    summary = _summarize_export(path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "summary": summary.public_dict(),
+        "package": payload,
+    }
+
+
+def support_export_file(config: AppConfig, name: str) -> Path:
     path = _support_export_path(config, name)
     if not path.exists():
         raise ValueError(f"Support export {name} not found")
     summary = _summarize_export(path)
     if not summary.readable:
         raise ValueError(f"Support export {name} is not readable JSON")
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return {
-        "summary": summary.public_dict(),
-        "package": payload,
-    }
+    return path
 
 
 def apply_support_export_retention(

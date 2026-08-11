@@ -211,6 +211,7 @@ Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in
 - `POST /api/tasks/{task_id}/reprocess`
 - `POST /api/tasks/{task_id}/investigate`
 - `POST /api/tasks/{task_id}/export`
+- `GET /api/support-exports/{file_name}/download`
 - `POST /api/support-exports/retention`
 - `POST /api/reprocess/jobs`
 - `POST /api/sessions/{session_id}/restore`
@@ -243,10 +244,11 @@ The web console lists generated support packages in the Support Exports panel an
 ```text
 GET /api/support-exports
 GET /api/support-exports/{file_name}
+GET /api/support-exports/{file_name}/download
 POST /api/support-exports/retention
 ```
 
-Support export reads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; callers do not pass arbitrary filesystem paths. Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under that directory, and leaves task ledger rows untouched.
+Support export reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; callers do not pass arbitrary filesystem paths. Downloads require `x-admin-token` and return `Content-Disposition: attachment`. Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under that directory, and leaves task ledger rows untouched.
 
 List failed and retryable tasks with recommended operator actions:
 

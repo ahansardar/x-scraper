@@ -82,6 +82,9 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "data-view-support-export" -Quiet)) {
             throw "Frontend does not expose support export detail view"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "data-download-support-export" -Quiet)) {
+            throw "Frontend does not expose support export download"
+          }
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "release risk" -Quiet)) {
             throw "Frontend does not expose release risk recommendations"
           }

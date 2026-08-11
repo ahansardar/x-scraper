@@ -191,10 +191,11 @@ List and retain generated support exports:
 ```text
 GET /api/support-exports
 GET /api/support-exports/{file_name}
+GET /api/support-exports/{file_name}/download
 POST /api/support-exports/retention
 ```
 
-The Support Exports panel uses the same endpoints. Detail reads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; they do not accept arbitrary paths. Retention uses `XINGESTION_RETENTION_DAYS` and deletes only `failed-task-*.json` files inside that directory.
+The Support Exports panel uses the same endpoints. Detail reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; they do not accept arbitrary paths. Downloads require `x-admin-token` and return attachment headers. Retention uses `XINGESTION_RETENTION_DAYS` and deletes only `failed-task-*.json` files inside that directory.
 
 List failed and retryable tasks with recommended next actions:
 

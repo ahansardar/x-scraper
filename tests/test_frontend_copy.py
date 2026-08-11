@@ -65,6 +65,9 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("data-view-support-export", js)
         self.assertIn("renderSupportExportDetail", js)
         self.assertIn("encodeURIComponent", js)
+        self.assertIn("data-download-support-export", js)
+        self.assertIn("/download", js)
+        self.assertIn("downloadSupportExport", js)
 
 
 if __name__ == "__main__":

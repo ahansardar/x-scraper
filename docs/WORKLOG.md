@@ -1073,6 +1073,36 @@ Next:
 
 - Add authenticated support export download with attachment headers for handoff outside the console.
 
+## 2026-08-11 - Checkpoint 55: Authenticated Support Export Download
+
+Implemented:
+
+- Added protected `GET /api/support-exports/{file_name}/download`.
+- Download uses the same basename-only `failed-task-*.json` validation as detail reads.
+- Returned `Content-Disposition: attachment` with the safe export filename.
+- Added a Download action in the Support Exports frontend panel.
+- Frontend download uses `fetch` with the existing admin-token prompt and saves the returned blob.
+- Added helper, API, and static frontend tests for download behavior.
+- Hardened CI static checks for the download action.
+- Updated README and deployment runbook.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py`
+- `python .\run_migrations.py`
+- Started `python .\run_app.py --host 127.0.0.1 --port 8000` with `XINGESTION_ADMIN_TOKEN` set for local verification.
+- `Invoke-WebRequest -UseBasicParsing -Headers @{"x-admin-token"="local-test-token"} http://127.0.0.1:8000/api/support-exports/<file_name>/download` returned HTTP 200.
+- Download response included `Content-Type: application/json; charset=utf-8`.
+- Download response included `Content-Disposition: attachment; filename="<file_name>"`.
+- Download body parsed as `FAILED_TASK_SUPPORT_EXPORT`.
+- Same download URL without `x-admin-token` returned HTTP 401.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/app.js` confirmed `data-download-support-export`, `downloadSupportExport`, and `/download`.
+
+Next:
+
+- Add deployment startup checks for writable data, log, report, raw evidence, and support export directories.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

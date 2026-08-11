@@ -1,4 +1,5 @@
 import json
+from io import BytesIO
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,11 +22,22 @@ class FakeHandler(live_server.LiveAppHandler):
     def __init__(self):
         self.status = None
         self.payload = None
+        self.headers_sent = {}
+        self.wfile = BytesIO()
 
     def _json(self, payload, *, status=200):
         self.status = status
         self.payload = payload
         return payload
+
+    def send_response(self, status):
+        self.status = status
+
+    def send_header(self, name, value):
+        self.headers_sent[name.lower()] = value
+
+    def end_headers(self):
+        pass
 
 
 class HeaderBackedHandler(FakeHandler):
@@ -361,6 +373,19 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 200)
             self.assertEqual(detail["export"]["summary"]["name"], name)
             self.assertEqual(detail["export"]["package"]["task_id"], failed.task_id)
+
+            handler._download_support_export(name)
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(handler.headers_sent["content-type"], "application/json; charset=utf-8")
+            self.assertEqual(
+                handler.headers_sent["content-disposition"],
+                f'attachment; filename="{name}"',
+            )
+            self.assertEqual(
+                handler.wfile.getvalue(),
+                Path(payload["export"]["path"]).read_bytes(),
+            )
 
             handler.path = "/api/support-exports/..%5Csecrets.json"
             handler.do_GET()
