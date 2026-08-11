@@ -89,3 +89,12 @@ jobs:
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_supervisor_check.py" -Quiet)) {
             throw "Deployment runbook must document supervisor check"
           }
+          if (-not (Test-Path .\docs\logging.md)) {
+            throw "Missing logging guide"
+          }
+          if (-not (Select-String -Path .\docs\logging.md -Pattern "XINGESTION_LOG_DIR" -Quiet)) {
+            throw "Logging guide must document log directory configuration"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "XINGESTION_LOG_DIR" -Quiet)) {
+            throw "Deployment runbook must document logging configuration"
+          }

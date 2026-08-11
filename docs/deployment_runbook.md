@@ -21,6 +21,10 @@ XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
+XINGESTION_LOG_DIR=
+XINGESTION_LOG_LEVEL=INFO
+XINGESTION_LOG_MAX_BYTES=5242880
+XINGESTION_LOG_BACKUP_COUNT=5
 ```
 
 Use a persistent disk for `XINGESTION_DATA_DIR`. Do not use the build checkout as production storage.
@@ -82,6 +86,7 @@ The app stores:
 - raw evidence: `XINGESTION_DATA_DIR\raw_evidence`
 - canonical tweets and observations: `tasks.sqlite3`
 - health report exports: `XINGESTION_DATA_DIR\reports\health-report-*.json`
+- rotating logs: `XINGESTION_DATA_DIR\logs`
 
 Session records expose `health`, lease metadata, `cooldown_until`, attempt counters, last attempt/success times, and the latest error class/message. HTTP 429 protocol responses cool down only the leased session, so other healthy sessions can continue processing while the limited account waits. Once the cooldown expires, a successful retry restores that session to `HEALTHY`.
 
@@ -209,3 +214,4 @@ python .\run_health_report.py --base-url http://127.0.0.1:8000
 CI runs the same checks on Windows Python 3.11 and 3.12, including frontend and secret-hygiene checks.
 
 See [process_supervision.md](process_supervision.md) for Windows Task Scheduler/NSSM examples and restart verification.
+See [logging.md](logging.md) for rotating log file configuration.

@@ -12,6 +12,8 @@ from xingestion.supervision import (
     UrlApiClient,
     WindowsProcessProbe,
 )
+from xingestion.config import load_app_config
+from xingestion.logging_config import configure_logging
 from xrev.runtime import load_env_file
 
 
@@ -19,6 +21,8 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     load_env_file(ROOT / ".env")
     args = _parser().parse_args(argv)
+    config = load_app_config(ROOT, argv)
+    configure_logging(config=config, component="supervisor-check", console=False)
     checker = DeploymentSupervisorCheck(
         api_client=UrlApiClient(
             base_url=args.base_url,

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 import sys
 import time
 
 from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
+from xingestion.logging_config import configure_logging
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.telemetry import ProtocolTelemetryStore
@@ -18,12 +20,14 @@ from xrev.runtime import UrllibJsonTransport, load_env_file, web_session_auth_fr
 
 ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
+LOGGER = logging.getLogger("xingestion.worker")
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     load_env_file(ROOT / ".env")
     config = load_app_config(ROOT, argv)
+    logging_settings = configure_logging(config=config, component="worker")
     config.data_dir.mkdir(parents=True, exist_ok=True)
     config.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
 
@@ -53,16 +57,27 @@ def main(argv=None):
     sleep_seconds = _float_arg(argv, "--sleep", 2.0)
     print(f"X ingestion worker using SQLite: {config.sqlite_path}")
     print(f"Raw evidence directory: {config.raw_evidence_dir}")
+    print(f"Log file: {logging_settings.log_file}")
+    LOGGER.info(
+        "worker starting sqlite=%s raw_evidence=%s once=%s sleep_seconds=%s",
+        config.sqlite_path,
+        config.raw_evidence_dir,
+        once,
+        sleep_seconds,
+    )
 
     while True:
         result = worker.process_one()
         if result.processed:
-            print(
+            message = (
                 f"processed task={result.task_id} state={result.state} "
                 f"error={result.error_class or ''}"
             )
+            print(message)
+            LOGGER.info(message)
         elif once:
             print("no pending outbox events")
+            LOGGER.info("no pending outbox events")
             return 0
 
         if once:

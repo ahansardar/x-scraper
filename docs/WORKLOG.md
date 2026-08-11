@@ -867,6 +867,31 @@ Next:
 
 - Add production log configuration and rotated log guidance for web, worker, and operator commands.
 
+## 2026-08-11 - Checkpoint 47: Production Rotating Logs
+
+Implemented:
+
+- Added `src/xingestion/logging_config.py` with standard-library rotating file logging.
+- Added `XINGESTION_LOG_DIR`, `XINGESTION_LOG_LEVEL`, `XINGESTION_LOG_MAX_BYTES`, and `XINGESTION_LOG_BACKUP_COUNT`.
+- Initialized logging for web, worker, migrations, preflight, health report, and supervisor check commands.
+- Web and worker now print the active log file path at startup and write lifecycle/process events to component logs.
+- Added `docs/logging.md` and linked it from README, deployment runbook, and process supervision docs.
+- Added unit tests for default log paths, env overrides, and file writes.
+- Updated CI documentation checks to require logging guidance.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py`
+- `python .\run_migrations.py`
+- `python .\run_preflight.py`
+- `python .\run_worker.py --once`
+- `Get-ChildItem data\logs`
+
+Next:
+
+- Add structured runtime error classification for web/worker logs and health reports.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

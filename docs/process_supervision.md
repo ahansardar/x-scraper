@@ -17,6 +17,7 @@ Use a host process manager such as Windows Task Scheduler, NSSM, WinSW, or your 
 - environment file: `.env` beside `run_app.py`
 - persistent storage: `XINGESTION_DATA_DIR`
 - stdout/stderr capture to a host-managed log location
+- app log files: `XINGESTION_LOG_DIR` or `XINGESTION_DATA_DIR\logs`
 
 ## Windows Task Scheduler
 
@@ -57,6 +58,7 @@ nssm set xingestion-worker AppRestartDelay 5000
 ```
 
 Set machine-level environment variables or make sure `.env` is readable from `F:\x-scraper`.
+Use `XINGESTION_LOG_DIR` when process stdout/stderr logs and application rotating logs should live in the same host-managed log root.
 
 ## Post-Start Verification
 

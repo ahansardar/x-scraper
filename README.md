@@ -98,6 +98,10 @@ XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
+XINGESTION_LOG_DIR=
+XINGESTION_LOG_LEVEL=INFO
+XINGESTION_LOG_MAX_BYTES=5242880
+XINGESTION_LOG_BACKUP_COUNT=5
 ```
 
 Storage locations:
@@ -105,6 +109,7 @@ Storage locations:
 - Default task ledger: `./data/tasks.sqlite3`
 - Default raw evidence: `./data/raw_evidence/`
 - Default health reports: `./data/reports/`
+- Default logs: `./data/logs/`
 - Production/deployment override: set `XINGESTION_DATA_DIR` to a persistent disk path.
 
 The live app also exposes storage paths at:
@@ -191,6 +196,8 @@ python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-proce
 ```
 
 See [docs/process_supervision.md](docs/process_supervision.md) for Windows Task Scheduler/NSSM setup and restart checks.
+
+Logs use rotating file handlers. Leave `XINGESTION_LOG_DIR` blank to write under `XINGESTION_DATA_DIR\logs`, or set it to a host-managed persistent log directory. See [docs/logging.md](docs/logging.md).
 
 Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in the `x-admin-token` header:
 

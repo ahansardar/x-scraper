@@ -3,6 +3,7 @@ from __future__ import annotations
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from hmac import compare_digest
 import json
+import logging
 from pathlib import Path
 import sys
 from urllib.parse import urlparse
@@ -23,6 +24,7 @@ from xingestion.investigation import (
     build_protocol_drift_package,
     build_release_risk_recommendation,
 )
+from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
@@ -41,6 +43,7 @@ from xrev.runtime import (
 
 STATIC_ROOT = ROOT / "src" / "xingestion" / "web" / "static"
 MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
+LOGGER = logging.getLogger("xingestion.web")
 
 
 class LiveAppState:
@@ -750,19 +753,30 @@ def main(argv=None):
     global STATE
     load_env_file(ROOT / ".env")
     config = load_app_config(ROOT, argv)
+    logging_settings = configure_logging(config=config, component="web")
     STATE = LiveAppState(config)
 
     server = ThreadingHTTPServer((config.host, config.port), LiveAppHandler)
     print(f"X ingestion live app running at http://{config.host}:{config.port}")
     print(f"SQLite task ledger: {config.sqlite_path}")
     print(f"Raw evidence directory: {config.raw_evidence_dir}")
+    print(f"Log file: {logging_settings.log_file}")
     print("Press Ctrl+C to stop.")
+    LOGGER.info(
+        "web starting host=%s port=%s sqlite=%s raw_evidence=%s",
+        config.host,
+        config.port,
+        config.sqlite_path,
+        config.raw_evidence_dir,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopped.")
+        LOGGER.info("web stopped by keyboard interrupt")
     finally:
         server.server_close()
+        LOGGER.info("web server closed")
     return 0
 
 

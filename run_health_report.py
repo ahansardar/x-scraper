@@ -8,6 +8,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from xingestion.config import load_app_config
 from xingestion.health_report import write_health_report
+from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
 from xrev.protocol import ProtocolReleaseManifest
 from xrev.runtime import load_env_file, web_session_auth_from_env
@@ -17,6 +18,7 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     load_env_file(ROOT / ".env")
     config = load_app_config(ROOT, argv)
+    configure_logging(config=config, component="health-report", console=False)
     result = write_health_report(
         config=config,
         migration_runner=MigrationRunner(
