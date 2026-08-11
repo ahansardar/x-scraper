@@ -798,6 +798,54 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(failed.state, TaskState.DEAD_LETTER)
             self.assertEqual(failed.error_json["error_class"], "PAGINATION_CURSOR_MISSING")
 
+    def test_pagination_failure_does_not_record_success_or_ingest_canonical(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20, max_pages=2),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            canonical = CanonicalStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+                network_context="direct",
+            )
+            task = ledger.create_task(
+                idempotency_key="pagination-missing-cursor-side-effects",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+                canonical_store=canonical,
+            )
+
+            result = worker.process_one()
+            session_after = sessions.get_session("session-1")
+
+            self.assertEqual(result.state, TaskState.DEAD_LETTER)
+            self.assertEqual(result.error_class, "PAGINATION_CURSOR_MISSING")
+            self.assertEqual(session_after.attempt_count, 1)
+            self.assertEqual(session_after.success_count, 0)
+            self.assertEqual(session_after.failure_count, 1)
+            self.assertEqual(canonical.counts()["canonical_tweets"], 0)
+            self.assertEqual(canonical.counts()["engagement_observations"], 0)
+
     def test_worker_does_not_continue_after_max_pages(self):
         manifest = load_manifest()
         request = CapabilityRequest(

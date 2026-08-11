@@ -260,10 +260,12 @@ class LocalWorker:
             if session is not None and self.session_store is not None:
                 session = self.session_store.record_attempt_started(session.session_id)
             page = self._execute_task(task, auth=auth)
-            if session is not None and self.session_store is not None:
-                session = self.session_store.record_attempt_success(session.session_id)
             task = self._renew_lease(task)
             lease_renewals += 1
+            validated_next_cursor = self._validate_page_pagination(task, page)
+
+            if session is not None and self.session_store is not None:
+                session = self.session_store.record_attempt_success(session.session_id)
 
             if (
                 session is not None
@@ -283,7 +285,6 @@ class LocalWorker:
                     release_id=self.manifest.release_id,
                     recipe_revision_id=task.plan_json["recipe_revision_id"],
                 )
-            validated_next_cursor = self._validate_page_pagination(task, page)
             continuation_task_id = self._queue_continuation_if_needed(
                 task,
                 page,
