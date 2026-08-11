@@ -17,7 +17,9 @@ from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.web import live_server
 from xingestion.workers import WorkerResult
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import WebSessionAuth
 
 
 class FakeHandler(live_server.LiveAppHandler):
@@ -550,6 +552,9 @@ class NorthboundApiTests(unittest.TestCase):
                     raw_evidence_dir=raw_dir,
                 ),
                 manifest=manifest,
+                auth=WebSessionAuth("auth-token", "csrf-token", "bearer-token"),
+                transport=object(),
+                evidence_sink=FileRawEvidenceSink(raw_dir),
             )
             handler = HeaderBackedHandler(headers={})
 

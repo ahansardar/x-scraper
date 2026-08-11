@@ -119,6 +119,8 @@ Storage locations:
 - Default protocol validation reports: `./data/protocol_validation/`
 - Default logs: `./data/logs/`
 
+The worker resolves `approved_protocol_release.release_id` from the SQLite task database and loads the exact matching manifest from `protocol_releases/`. If a checkout contains exactly one manifest and no approved pointer yet exists, startup bootstraps that single release as approved. With multiple manifests, startup fails until an approved release ID is set.
+
 Secret providers:
 
 - `XINGESTION_SECRET_PROVIDER=env` resolves `env:X_AUTH_TOKEN,X_CT0,X_BEARER` from environment variables. This is the local fallback.
@@ -203,9 +205,10 @@ python .\run_protocol_validation.py --json
 python .\run_protocol_validation.py --fixtures-only --json
 python .\run_protocol_validation.py --raw-only --json
 python .\run_protocol_validation.py --raw-only --write --json
+python .\run_protocol_validation.py --compare-captures --json
 ```
 
-The report includes parsed tweet counts, engagement coverage, cursor presence, and structural/typename fingerprints for drift comparison. Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`.
+The report includes parsed tweet counts, engagement coverage, cursor presence, and structural/typename fingerprints for drift comparison. `--compare-captures` replays recent replayable browser captures through the approved release recipe, stores linked `direct_replay` raw evidence, and compares browser-vs-replay parser/shape fingerprints while reporting volatile tweet-count differences as observations. Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`.
 
 Protocol release health is operator-controlled:
 

@@ -9,9 +9,9 @@ if str(SRC_ROOT) not in sys.path:
 from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
+from xingestion.releases import ReleaseStore, resolve_approved_manifest
 from xingestion.preflight import DeploymentPreflight
 from xingestion.secrets import resolve_web_session_auth
-from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import load_env_file
 
 
@@ -22,15 +22,18 @@ def main(argv=None):
     configure_logging(config=config, component="preflight", console=False)
     base_url = _arg(argv, "--base-url", None)
     strict_warnings = "--strict-warnings" in argv
+    release_store = ReleaseStore(config.sqlite_path)
+    resolved_release = resolve_approved_manifest(
+        release_store=release_store,
+        manifest_dir=ROOT / "protocol_releases",
+    )
     preflight = DeploymentPreflight(
         config=config,
         migration_runner=MigrationRunner(
             config.sqlite_path,
             ROOT / "src" / "xingestion" / "migrations" / "sql",
         ),
-        manifest=ProtocolReleaseManifest.from_file(
-            ROOT / "protocol_releases" / "search_tweets.candidate.json"
-        ),
+        manifest=resolved_release.manifest,
         auth=resolve_web_session_auth(config),
         base_url=base_url,
     )

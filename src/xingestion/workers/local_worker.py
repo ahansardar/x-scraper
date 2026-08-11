@@ -113,6 +113,40 @@ class LocalWorker:
                 message="Task was already processed or not ready",
             )
 
+        task_release_id = str(task.plan_json.get("release_id") or "")
+        if task_release_id != self.manifest.release_id:
+            envelope = classify_error(
+                "PROTOCOL_RELEASE_MISMATCH",
+                message=(
+                    f"Task release {task_release_id or 'unknown'} does not match "
+                    f"approved release {self.manifest.release_id}"
+                ),
+            )
+            task = self.ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.ENQUEUED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={
+                    "error_class": envelope.error_class,
+                    "message": envelope.message,
+                    "runtime_error": envelope.public_dict(),
+                    "task_release_id": task_release_id,
+                    "approved_release_id": self.manifest.release_id,
+                },
+            )
+            LOGGER.error(
+                "worker release mismatch task=%s %s",
+                task.task_id,
+                envelope.log_fields(),
+            )
+            return WorkerResult(
+                processed=True,
+                task_id=task.task_id,
+                state=task.state,
+                error_class=envelope.error_class,
+                message=envelope.message,
+            )
+
         if self.release_store and not self.release_store.execution_allowed(self.manifest.release_id):
             envelope = classify_error(
                 "PROTOCOL_RELEASE_BLOCKED",

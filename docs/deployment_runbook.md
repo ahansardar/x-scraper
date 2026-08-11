@@ -314,9 +314,10 @@ Validate the pinned `SEARCH_TWEETS` parser before and after protocol changes:
 python .\run_protocol_validation.py --fixtures-only --json
 python .\run_protocol_validation.py --raw-only --json
 python .\run_protocol_validation.py --raw-only --write --json
+python .\run_protocol_validation.py --compare-captures --json
 ```
 
-The first command checks committed GraphQL regression fixtures. The second checks local captured payloads under `XINGESTION_DATA_DIR\raw_evidence`. The report includes parsed tweet counts, engagement metric coverage, bottom-cursor presence, and stable structural/typename fingerprints to compare when X changes the response shape. The web console mirrors the combined view at:
+The first command checks committed GraphQL regression fixtures. The second checks local captured payloads under `XINGESTION_DATA_DIR\raw_evidence`. The comparison command replays recent replayable browser captures through the approved release recipe, stores linked `direct_replay` evidence in the same raw evidence directory, and compares parser success plus structural/typename fingerprints. Live timeline tweet counts can change between capture and replay, so counts and engagement coverage are reported as observations instead of hard drift failures. The report includes parsed tweet counts, engagement metric coverage, bottom-cursor presence, and stable fingerprints to compare when X changes the response shape. The web console mirrors the read-only combined view and the replay-writing operator run at:
 
 ```text
 GET /api/protocol-validation
@@ -324,7 +325,7 @@ GET /api/protocol-validation/reports
 POST /api/protocol-validation/run
 ```
 
-Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route does not require an admin-token header.
+Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route does not require an admin-token header and runs direct replays for recent replayable captures before writing the validation response.
 
 Bulk reprocess completed tasks for a release:
 

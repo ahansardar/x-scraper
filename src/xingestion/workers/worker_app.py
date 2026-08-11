@@ -8,19 +8,18 @@ import time
 from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
 from xingestion.logging_config import configure_logging
-from xingestion.releases import ReleaseStore
+from xingestion.releases import ReleaseStore, resolve_approved_manifest
 from xingestion.secrets import build_secret_provider, resolve_web_session_auth
 from xingestion.sessions import SessionHealth, SessionStore, import_session_registry
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xingestion.xprotocol.evidence import FileRawEvidenceSink
-from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import UrllibJsonTransport, load_env_file
 
 
 ROOT = Path(__file__).resolve().parents[3]
-MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
+MANIFEST_DIR = ROOT / "protocol_releases"
 LOGGER = logging.getLogger("xingestion.worker")
 
 
@@ -37,10 +36,15 @@ def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
     )
     if config.session_registry_path is not None:
         import_session_registry(store=session_store, path=config.session_registry_path)
+    release_store = ReleaseStore(config.sqlite_path)
+    resolved_release = resolve_approved_manifest(
+        release_store=release_store,
+        manifest_dir=root / "protocol_releases",
+    )
     return LocalWorker(
-        release_store=ReleaseStore(config.sqlite_path),
+        release_store=release_store,
         ledger=SQLiteTaskLedger(config.sqlite_path),
-        manifest=ProtocolReleaseManifest.from_file(root / "protocol_releases" / "search_tweets.candidate.json"),
+        manifest=resolved_release.manifest,
         auth=auth,
         transport=UrllibJsonTransport(),
         raw_evidence_sink=FileRawEvidenceSink(config.raw_evidence_dir),

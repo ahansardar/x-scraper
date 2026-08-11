@@ -1603,3 +1603,25 @@ Verified:
 Next:
 
 - Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
+
+## 2026-08-12 - Checkpoint 77: Approved Release Resolution and Capture Replay Validation
+
+Implemented:
+
+- Added a durable `approved_protocol_release` pointer and migration `007_approved_protocol_release.sql` so workers resolve an approved release ID before loading a manifest.
+- Changed web, worker, preflight, health report, and protocol validation entrypoints to load the exact manifest matching the approved release ID.
+- Added a worker guard that rejects tasks planned for a different release instead of executing them under the active approved release.
+- Added replayable request metadata to raw SearchTweets browser captures.
+- Added a direct-replay validator that replays recent replayable browser captures through the approved release recipe, stores linked `direct_replay` raw evidence, and compares parser counts plus structural/typename fingerprints.
+- Documented approved-release resolution and capture/replay validation in README, the deployment runbook, and the current-stage report.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_release_store.py"` passed 5 tests.
+- `python -m unittest discover -s tests -p "test_protocol_validation.py"` passed 6 tests.
+- `python -m unittest discover -s tests -p "test_one_attempt_acquisition.py"` passed 3 tests.
+- `python -m unittest discover -s tests -p "test_local_worker.py"` passed 22 tests.
+
+Next:
+
+- Add an explicit operator command/API for approving a newly staged release when more than one manifest exists.

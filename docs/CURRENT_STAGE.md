@@ -52,7 +52,7 @@ Implemented:
 - Generic `POST /api/capability-tasks`.
 - UI shortcut `POST /api/search-tweets`.
 - Capability planner boundary.
-- Protocol release manifest pinned from `protocol_releases/`.
+- Approved protocol release pointer in SQLite, resolved to one exact manifest from `protocol_releases/`.
 - Backpressure before task creation through `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`.
 
 Spec relevance:
@@ -70,6 +70,7 @@ Implemented:
 - Parser for protocol-normalized tweet records.
 - Pagination cursor extraction for the current search path.
 - Protocol release manifest and revision-style structures.
+- Capture-vs-direct-replay validator for replayable raw evidence.
 
 Spec relevance:
 

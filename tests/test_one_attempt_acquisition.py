@@ -57,6 +57,11 @@ class OneAttemptAcquisitionTests(unittest.TestCase):
                 page.raw_evidence_ref.metadata["capability_id"],
                 "SEARCH_TWEETS",
             )
+            self.assertEqual(page.raw_evidence_ref.metadata["capture_kind"], "browser")
+            self.assertEqual(page.raw_evidence_ref.metadata["acquisition_query"], "india")
+            self.assertEqual(page.raw_evidence_ref.metadata["acquisition_product"], "Top")
+            self.assertEqual(page.raw_evidence_ref.metadata["acquisition_count"], "20")
+            self.assertEqual(page.raw_evidence_ref.metadata["acquisition_cursor"], "")
 
     def test_http_error_is_typed_and_does_not_store_evidence(self):
         transport = RecordingTransport(

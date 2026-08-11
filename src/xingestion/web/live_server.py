@@ -30,12 +30,14 @@ from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.preflight import DeploymentPreflight
 from xingestion.protocol_validation import (
+    build_capture_replay_comparison_report,
     build_protocol_validation_report,
     list_protocol_validation_reports,
+    run_direct_replays_for_browser_captures,
     write_protocol_validation_report,
 )
 from xingestion.sessions import SessionHealth, SessionStore, import_session_registry
-from xingestion.releases import ReleaseHealth, ReleaseStore
+from xingestion.releases import ReleaseHealth, ReleaseStore, resolve_approved_manifest
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.secrets import (
     build_secret_provider,
@@ -53,7 +55,7 @@ from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xingestion.xprotocol.evidence import FileRawEvidenceSink
-from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId
 from xingestion.xprotocol.runtime import (
     UrllibJsonTransport,
     load_env_file,
@@ -61,7 +63,7 @@ from xingestion.xprotocol.runtime import (
 
 
 STATIC_ROOT = ROOT / "src" / "xingestion" / "web" / "static"
-MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
+MANIFEST_DIR = ROOT / "protocol_releases"
 LOGGER = logging.getLogger("xingestion.web")
 
 
@@ -79,12 +81,16 @@ class LiveAppState:
             if self.config.require_migrations
             else self.migration_runner.status()
         )
-        self.manifest = ProtocolReleaseManifest.from_file(MANIFEST_PATH)
-        self.planner = CapabilityPlanner(self.manifest)
         self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
         self.canonical_store = CanonicalStore(self.config.sqlite_path)
         self.release_store = ReleaseStore(self.config.sqlite_path)
-        self.release_store.ensure_release(self.manifest.release_id)
+        self.resolved_release = resolve_approved_manifest(
+            release_store=self.release_store,
+            manifest_dir=MANIFEST_DIR,
+        )
+        self.manifest = self.resolved_release.manifest
+        self.manifest_path = self.resolved_release.manifest_path
+        self.planner = CapabilityPlanner(self.manifest)
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
         self.auth = resolve_web_session_auth(self.config)
@@ -487,6 +493,18 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             limit=10,
             include_fixtures=True,
         )
+        direct_replay = run_direct_replays_for_browser_captures(
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+            manifest=STATE.manifest,
+            auth=STATE.auth,
+            transport=STATE.transport,
+            raw_evidence_sink=STATE.evidence_sink,
+            limit=3,
+        )
+        comparison = build_capture_replay_comparison_report(
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+            limit=10,
+        )
         path = write_protocol_validation_report(
             report,
             report_dir=STATE.config.data_dir / "protocol_validation",
@@ -494,6 +512,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         return self._json(
             {
                 "validation": report.public_dict(),
+                "direct_replay": direct_replay.public_dict(),
+                "capture_replay_comparison": comparison.public_dict(),
                 "saved_path": str(path),
             },
             status=201,
@@ -795,6 +815,8 @@ def _storage_dict():
         "data_dir": str(STATE.config.data_dir),
         "sqlite_path": str(STATE.config.sqlite_path),
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
+        "approved_release_id": STATE.release_store.approved_release_id(),
+        "manifest_path": str(STATE.manifest_path),
         "retention_days": STATE.config.retention_days,
         "operator_auth_required": False,
         "secret_provider": STATE.config.secret_provider,
@@ -837,7 +859,12 @@ def _protocol_validation_dict():
         limit=10,
         include_fixtures=True,
     )
-    return report.public_dict()
+    payload = report.public_dict()
+    payload["capture_replay_comparison"] = build_capture_replay_comparison_report(
+        raw_evidence_dir=STATE.config.raw_evidence_dir,
+        limit=10,
+    ).public_dict()
+    return payload
 
 
 def _metrics_dict():

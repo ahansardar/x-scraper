@@ -87,6 +87,36 @@ class ReleaseStore:
         release = self.ensure_release(release_id)
         return release.health not in {ReleaseHealth.QUARANTINED, ReleaseHealth.RETIRED}
 
+    def approve_release(self, release_id: str, *, reason: str = "approved") -> ReleaseRecord:
+        release = self.ensure_release(release_id)
+        now = _now()
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT INTO approved_protocol_release (
+                    id,
+                    release_id,
+                    reason,
+                    updated_at
+                )
+                VALUES ('current', ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    release_id = excluded.release_id,
+                    reason = excluded.reason,
+                    updated_at = excluded.updated_at
+                """,
+                (release.release_id, reason, now),
+            )
+            conn.commit()
+        return release
+
+    def approved_release_id(self) -> str | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT release_id FROM approved_protocol_release WHERE id = 'current'"
+            ).fetchone()
+        return str(row["release_id"]) if row else None
+
     def _initialize(self) -> None:
         with closing(self._connect()) as conn:
             conn.execute(
@@ -94,6 +124,16 @@ class ReleaseStore:
                 CREATE TABLE IF NOT EXISTS protocol_release_health (
                     release_id TEXT PRIMARY KEY,
                     health TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS approved_protocol_release (
+                    id TEXT PRIMARY KEY,
+                    release_id TEXT NOT NULL,
                     reason TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
