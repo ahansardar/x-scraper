@@ -1287,10 +1287,12 @@ Verified:
 - `python .\run_outbox.py --json` listed one stale unpublished event for a `DEAD_LETTER` task before processing.
 - `python .\run_outbox.py --process --limit 5 --json` processed that event through the local worker path with `Task was already processed or not ready`.
 - `python .\run_outbox.py --json` then reported `unpublished_events: 0`.
+- Temporary live API smoke on `127.0.0.1:8011` returned `health_ok: true`, `startup_ok: true`, `outbox_pending: 0`, and `processed_events: 0`.
+- Temporary live supervisor probe on `127.0.0.1:8012` passed web, migrations, storage, startup, queue, sessions, and release checks; process-table validation was intentionally skipped because this was not a supervised deployment process.
 
 Next:
 
-- Re-run `run_supervisor_check.py` with the deployment web process running to confirm the queue check stays green.
+- Add deeper `SEARCH_TWEETS` parser validation fixtures and drift fingerprints.
 
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
