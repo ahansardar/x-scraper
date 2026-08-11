@@ -80,7 +80,7 @@ def load_logging_settings(*, config: AppConfig, component: str) -> LoggingSettin
 
 def _path_from_env(name: str, default: Path) -> Path:
     raw = os.getenv(name, "").strip()
-    return Path(raw).expanduser().resolve() if raw else default.resolve()
+    return Path(raw).expanduser().resolve() if raw else default
 
 
 def _int_env(name: str, default: int) -> int:
