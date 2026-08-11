@@ -130,10 +130,17 @@ h2 {
 }
 
 .ops-panel,
+.outbox-panel,
 .startup-panel,
 .support-panel {
   display: grid;
   gap: 12px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .metrics-grid {
@@ -356,6 +363,7 @@ th {
   .task-panel,
   .flow-panel,
   .ops-panel,
+  .outbox-panel,
   .startup-panel,
   .session-panel,
   .metrics-panel,

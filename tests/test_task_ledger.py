@@ -415,7 +415,7 @@ class TaskLedgerTests(unittest.TestCase):
         request, plan = make_request_and_plan()
         with tempfile.TemporaryDirectory() as temp_dir:
             ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
-            ledger.create_task(
+            task = ledger.create_task(
                 idempotency_key="metrics-key",
                 capability_id=request.capability_id,
                 contract_version=request.contract_version,
@@ -431,9 +431,13 @@ class TaskLedgerTests(unittest.TestCase):
             self.assertEqual(outbox["unpublished_events"], 1)
             self.assertIsNotNone(outbox["oldest_unpublished_at"])
             self.assertGreaterEqual(outbox["oldest_unpublished_lag_seconds"], 0)
+            events = ledger.list_unpublished_outbox_events(limit=10)
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0].task_id, task.task_id)
 
             ledger.claim_next_outbox_event()
             self.assertEqual(ledger.outbox_stats()["unpublished_events"], 0)
+            self.assertEqual(ledger.list_unpublished_outbox_events(), ())
 
     def test_active_task_count_can_filter_by_capability(self):
         request, plan = make_request_and_plan()

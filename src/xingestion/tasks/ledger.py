@@ -436,6 +436,22 @@ class SQLiteTaskLedger:
             "oldest_unpublished_lag_seconds": lag_seconds,
         }
 
+    def list_unpublished_outbox_events(self, *, limit: int = 25) -> tuple[OutboxEvent, ...]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM outbox_events
+                WHERE published_at IS NULL
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return tuple(_outbox_event_from_row(row) for row in rows)
+
     def claim_next_outbox_event(self) -> OutboxEvent | None:
         now = _now()
         with closing(self._connect()) as conn:

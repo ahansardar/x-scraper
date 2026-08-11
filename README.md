@@ -149,6 +149,15 @@ Release risk recommendations are advisory. Repeated operation or parser drift si
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
 
+Inspect and process unpublished transactional outbox events without Docker:
+
+```powershell
+python .\run_outbox.py --json
+python .\run_outbox.py --process --limit 5 --json
+```
+
+`--process` uses the same local worker execution path as `run_worker.py`. It does not delete or force-publish queued events outside worker handling.
+
 Protocol release health is operator-controlled:
 
 ```text
@@ -218,6 +227,7 @@ Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in
 - `POST /api/tasks/{task_id}/export`
 - `GET /api/support-exports/{file_name}/download`
 - `POST /api/support-exports/retention`
+- `POST /api/outbox/process`
 - `POST /api/reprocess/jobs`
 - `POST /api/sessions/{session_id}/restore`
 - `POST /api/sessions/{session_id}/disable`
@@ -267,6 +277,15 @@ The web console also exposes the same queue in the Needs Attention panel and via
 ```text
 GET /api/task-actions
 ```
+
+Inspect and process the transactional outbox through HTTP:
+
+```text
+GET /api/outbox
+POST /api/outbox/process
+```
+
+The Outbox Recovery panel mirrors these endpoints. Processing is bounded by request limit and uses the live worker path, including session leasing, release quarantine checks, telemetry, canonical persistence, retry scheduling, and continuation queueing.
 
 Retention cleanup is available from the Operations panel and:
 

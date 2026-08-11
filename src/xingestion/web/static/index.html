@@ -68,6 +68,30 @@
         <button id="runRetention" class="secondary" type="button">Run retention cleanup</button>
       </section>
 
+      <section class="panel outbox-panel">
+        <div class="section-title">
+          <span class="mark accent"></span>
+          <h2>Outbox Recovery</h2>
+        </div>
+        <div id="outboxSummary" class="summary">Loading outbox queue...</div>
+        <div class="button-row">
+          <button id="refreshOutbox" class="secondary" type="button">Refresh outbox</button>
+          <button id="processOutbox" type="button">Process queued events</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Task</th>
+              <th>State</th>
+              <th>Age</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody id="outboxEvents"></tbody>
+        </table>
+      </section>
+
       <section class="panel startup-panel">
         <div class="section-title">
           <span class="mark neutral"></span>

@@ -1268,6 +1268,30 @@ Next:
 
 - Add operator queue drain/replay guidance for old unpublished outbox events.
 
+## 2026-08-12 - Checkpoint 65: Outbox Recovery Controls
+
+Implemented:
+
+- Added `SQLiteTaskLedger.list_unpublished_outbox_events(...)` for oldest-first queue visibility.
+- Added reusable `xingestion.outbox_operations` helpers for queue summaries and bounded processing.
+- Added `run_outbox.py` to inspect unpublished outbox events or process a bounded batch through the live local worker path.
+- Added `GET /api/outbox` and admin-gated `POST /api/outbox/process`.
+- Added an Outbox Recovery panel to the web console with refresh and bounded process controls.
+- Documented no-Docker outbox inspection and recovery in the README and deployment runbook.
+- Extended CI smoke checks to require the outbox recovery frontend and deployment docs.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py`
+- `python .\run_outbox.py --json` listed one stale unpublished event for a `DEAD_LETTER` task before processing.
+- `python .\run_outbox.py --process --limit 5 --json` processed that event through the local worker path with `Task was already processed or not ready`.
+- `python .\run_outbox.py --json` then reported `unpublished_events: 0`.
+
+Next:
+
+- Re-run `run_supervisor_check.py` with the deployment web process running to confirm the queue check stays green.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

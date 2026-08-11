@@ -16,6 +16,7 @@ from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.web import live_server
+from xingestion.workers import WorkerResult
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 
 
@@ -45,6 +46,23 @@ class HeaderBackedHandler(FakeHandler):
     def __init__(self, headers):
         super().__init__()
         self.headers = headers
+
+
+class StubOutboxWorker:
+    def __init__(self, ledger, task_id):
+        self.ledger = ledger
+        self.task_id = task_id
+
+    def process_one(self):
+        event = self.ledger.claim_next_outbox_event()
+        if event is None:
+            return WorkerResult(processed=False)
+        task = self.ledger.transition_task(
+            self.task_id,
+            from_state=TaskState.CREATED,
+            to_state=TaskState.ENQUEUED,
+        )
+        return WorkerResult(processed=True, task_id=task.task_id, state=task.state)
 
 
 class NorthboundApiTests(unittest.TestCase):
@@ -307,6 +325,70 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["actions"][0]["task_id"], failed.task_id)
             self.assertEqual(payload["actions"][0]["severity"], "CRITICAL")
             self.assertTrue(payload["actions"][0]["replayable"])
+
+    def test_outbox_route_lists_pending_events(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="outbox-route",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            live_server.STATE = SimpleNamespace(ledger=ledger)
+            handler = FakeHandler()
+            handler.path = "/api/outbox"
+
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["stats"]["unpublished_events"], 1)
+            self.assertEqual(payload["events"][0]["task_id"], task.task_id)
+
+    def test_outbox_process_route_requires_worker_and_admin(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="outbox-process-route",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(admin_token="expected-token"),
+                ledger=ledger,
+                worker=StubOutboxWorker(ledger, task.task_id),
+            )
+            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+
+            payload = handler._process_outbox({"limit": 5})
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["outbox_process"]["processed_events"], 1)
+            self.assertEqual(
+                payload["outbox_process"]["after"]["unpublished_events"],
+                0,
+            )
 
     def test_export_failed_task_writes_support_package(self):
         manifest = ProtocolReleaseManifest.from_file(

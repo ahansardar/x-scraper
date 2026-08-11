@@ -27,6 +27,7 @@ from xingestion.investigation import (
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
 from xingestion.operator_tasks import list_operator_task_actions
+from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.preflight import DeploymentPreflight
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
@@ -168,6 +169,11 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/task-actions":
             actions = list_operator_task_actions(STATE.config.sqlite_path, limit=25)
             return self._json({"actions": [_task_action_dict(action) for action in actions]})
+        if parsed.path == "/api/outbox":
+            try:
+                return self._json(list_outbox_queue(STATE.ledger, limit=25))
+            except ValueError as exc:
+                return self._json({"message": str(exc)}, status=400)
         if parsed.path == "/api/support-exports":
             exports = list_support_exports(STATE.config, limit=25)
             retention = apply_support_export_retention(
@@ -245,6 +251,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._run_support_export_retention()
+        if parsed.path == "/api/outbox/process":
+            if not self._require_admin():
+                return
+            return self._process_outbox(self._read_json())
         if parsed.path == "/api/releases/current/quarantine":
             if not self._require_admin():
                 return
@@ -401,6 +411,18 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             dry_run=False,
         )
         return self._json({"retention": result.public_dict()}, status=200)
+
+    def _process_outbox(self, body):
+        limit = int(body.get("limit", 5))
+        try:
+            result = process_outbox(
+                ledger=STATE.ledger,
+                worker=STATE.worker,
+                limit=limit,
+            )
+        except ValueError as exc:
+            return self._json({"message": str(exc)}, status=400)
+        return self._json({"outbox_process": result.public_dict()}, status=200)
 
     def _support_export_detail(self, name):
         try:

@@ -5,6 +5,10 @@ const tweets = document.querySelector("#tweets");
 const tasks = document.querySelector("#tasks");
 const retention = document.querySelector("#retention");
 const runRetention = document.querySelector("#runRetention");
+const outboxSummary = document.querySelector("#outboxSummary");
+const outboxEvents = document.querySelector("#outboxEvents");
+const refreshOutbox = document.querySelector("#refreshOutbox");
+const processOutbox = document.querySelector("#processOutbox");
 const startupSummary = document.querySelector("#startupSummary");
 const startupChecks = document.querySelector("#startupChecks");
 const metrics = document.querySelector("#metrics");
@@ -110,6 +114,29 @@ async function loadRetention() {
     Keeping terminal tasks for <strong>${data.retention_days}</strong> days.
     Cleanup currently matches <strong>${data.dry_run.matched_tasks}</strong> tasks.
   `;
+}
+
+async function loadOutbox() {
+  const data = await getJson("/api/outbox");
+  const lag = data.stats.oldest_unpublished_lag_seconds;
+  outboxSummary.innerHTML = `
+    <strong>${data.stats.unpublished_events}</strong>
+    unpublished events. Oldest lag:
+    <strong>${lag === null || lag === undefined ? "none" : `${lag}s`}</strong>.
+  `;
+  if (!data.events.length) {
+    outboxEvents.innerHTML = `<tr><td colspan="5">No unpublished outbox events.</td></tr>`;
+    return;
+  }
+  outboxEvents.innerHTML = data.events.map((event) => `
+    <tr>
+      <td>${event.event_id.slice(0, 18)}</td>
+      <td>${event.task_id.slice(0, 18)}</td>
+      <td><span class="${taskStateClass(event.task_state)}">${event.task_state}</span></td>
+      <td>${formatDuration(event.age_seconds)}</td>
+      <td>${event.event_type}</td>
+    </tr>
+  `).join("");
 }
 
 async function loadStartup() {
@@ -300,6 +327,19 @@ function formatDateTime(value) {
     return "";
   }
   return value.replace("T", " ").replace("+00:00", " UTC");
+}
+
+function formatDuration(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (value < 60) {
+    return `${value}s`;
+  }
+  if (value < 3600) {
+    return `${Math.floor(value / 60)}m ${value % 60}s`;
+  }
+  return `${Math.floor(value / 3600)}h ${Math.floor((value % 3600) / 60)}m`;
 }
 
 form.addEventListener("submit", async (event) => {
@@ -545,6 +585,53 @@ runSupportExportRetention.addEventListener("click", async () => {
   }
 });
 
+refreshOutbox.addEventListener("click", async () => {
+  refreshOutbox.disabled = true;
+  try {
+    await loadOutbox();
+  } catch (error) {
+    outboxSummary.textContent = error.message;
+  } finally {
+    refreshOutbox.disabled = false;
+  }
+});
+
+processOutbox.addEventListener("click", async () => {
+  processOutbox.disabled = true;
+  summary.textContent = "Processing queued outbox events through the local worker...";
+  tweets.innerHTML = "";
+  try {
+    const data = await getJson("/api/outbox/process", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...adminHeaders()
+      },
+      body: JSON.stringify({limit: 5})
+    });
+    const result = data.outbox_process;
+    outboxSummary.innerHTML = `
+      Processed <strong>${result.processed_events}</strong> events.
+      Pending before <strong>${result.before.unpublished_events}</strong>,
+      after <strong>${result.after.unpublished_events}</strong>.
+    `;
+    const packageView = document.createElement("pre");
+    packageView.className = "diagnostic-pre";
+    packageView.textContent = JSON.stringify(result.worker_results, null, 2);
+    tweets.appendChild(packageView);
+    await loadOutbox();
+    await loadTasks();
+    await loadTaskActions();
+    await loadMetrics();
+    await loadSessions();
+  } catch (error) {
+    outboxSummary.textContent = error.message;
+    summary.textContent = error.message;
+  } finally {
+    processOutbox.disabled = false;
+  }
+});
+
 async function waitForResult(resultUrl) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(resultUrl);
@@ -597,6 +684,10 @@ loadSupportExports().catch((error) => {
 });
 loadRetention().catch((error) => {
   retention.textContent = error.message;
+});
+loadOutbox().catch((error) => {
+  outboxSummary.textContent = error.message;
+  outboxEvents.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
 });
 loadStartup().catch((error) => {
   startupSummary.textContent = error.message;

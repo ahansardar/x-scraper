@@ -23,14 +23,7 @@ MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
 LOGGER = logging.getLogger("xingestion.worker")
 
 
-def main(argv=None):
-    argv = sys.argv[1:] if argv is None else argv
-    load_env_file(ROOT / ".env")
-    config = load_app_config(ROOT, argv)
-    logging_settings = configure_logging(config=config, component="worker")
-    config.data_dir.mkdir(parents=True, exist_ok=True)
-    config.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
-
+def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
     auth = web_session_auth_from_env()
     session_store = SessionStore(config.sqlite_path)
     session_store.upsert_session(
@@ -40,11 +33,10 @@ def main(argv=None):
         network_context=config.default_network_context,
         health=SessionHealth.HEALTHY if not auth.missing_fields() else SessionHealth.AUTH_EXPIRED,
     )
-
-    worker = LocalWorker(
+    return LocalWorker(
         release_store=ReleaseStore(config.sqlite_path),
         ledger=SQLiteTaskLedger(config.sqlite_path),
-        manifest=ProtocolReleaseManifest.from_file(MANIFEST_PATH),
+        manifest=ProtocolReleaseManifest.from_file(root / "protocol_releases" / "search_tweets.candidate.json"),
         auth=auth,
         transport=UrllibJsonTransport(),
         raw_evidence_sink=FileRawEvidenceSink(config.raw_evidence_dir),
@@ -52,6 +44,17 @@ def main(argv=None):
         session_store=session_store,
         telemetry_store=ProtocolTelemetryStore(config.sqlite_path),
     )
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    load_env_file(ROOT / ".env")
+    config = load_app_config(ROOT, argv)
+    logging_settings = configure_logging(config=config, component="worker")
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    config.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
+
+    worker = build_worker(config=config)
 
     once = "--once" in argv
     sleep_seconds = _float_arg(argv, "--sleep", 2.0)

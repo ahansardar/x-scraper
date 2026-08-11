@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py
 
       - name: Static smoke check frontend assets
         shell: pwsh
@@ -91,6 +91,12 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "release risk" -Quiet)) {
             throw "Frontend does not expose release risk recommendations"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Outbox Recovery" -Quiet)) {
+            throw "Frontend does not expose outbox recovery"
+          }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/api/outbox/process" -Quiet)) {
+            throw "Frontend does not call outbox process endpoint"
+          }
 
       - name: Check deployment runbook
         shell: pwsh
@@ -136,4 +142,7 @@ jobs:
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_task_actions.py" -Quiet)) {
             throw "Deployment runbook must document task action listing"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_outbox.py" -Quiet)) {
+            throw "Deployment runbook must document outbox recovery"
           }

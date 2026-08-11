@@ -213,6 +213,27 @@ The web console mirrors this in the Needs Attention panel. Parent/operator tooli
 GET /api/task-actions
 ```
 
+Inspect transactional outbox lag and the oldest unpublished events:
+
+```powershell
+python .\run_outbox.py --json
+```
+
+Process a bounded batch through the same local worker path used in deployment:
+
+```powershell
+python .\run_outbox.py --process --limit 5 --json
+```
+
+Equivalent web API routes:
+
+```text
+GET /api/outbox
+POST /api/outbox/process
+```
+
+The `POST` route requires `x-admin-token`. Processing does not delete rows or manually force acknowledgements; it claims events via the ledger and executes `LocalWorker.process_one()`, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
+
 Bulk reprocess completed tasks for a release:
 
 ```text
