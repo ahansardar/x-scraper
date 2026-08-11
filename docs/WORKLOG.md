@@ -1226,6 +1226,48 @@ Next:
 
 - Add focused failure-case coverage for startup directory probing.
 
+## 2026-08-11 - Checkpoint 63: Startup Directory Failure Coverage
+
+Implemented:
+
+- Added focused failure-case coverage for startup directory probing.
+- Simulated a read-only support export directory without relying on platform-specific filesystem permissions.
+- Verified preflight reports `startup_directories` as `FAIL` and surfaces the underlying write error.
+
+Verified:
+
+- `python -m unittest discover -s tests -p test_preflight.py`
+- `python -m compileall -q src tests run_preflight.py run_startup_check.py`
+
+Next:
+
+- Run final verification and push the ten-step startup readiness stack.
+
+## 2026-08-11 - Checkpoint 64: Startup Readiness Stack Verification
+
+Implemented:
+
+- Ran the final verification pass for the ten-step startup readiness stack.
+- Verified unit, compile, startup check, migration, health report, live `/api/startup`, and frontend startup-loader paths.
+- Confirmed supervisor now consumes startup readiness from the running API.
+- Recorded an existing queue-lag deployment signal from supervisor output instead of masking it.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py`
+- `python .\run_startup_check.py`
+- `python .\run_migrations.py`
+- `python .\run_health_report.py`
+- Started `python .\run_app.py --host 127.0.0.1 --port 8000` with `XINGESTION_ADMIN_TOKEN` set for local verification.
+- `Invoke-RestMethod http://127.0.0.1:8000/api/startup` returned `ok: true` and `startup_directories: PASS`.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/app.js` confirmed `/api/startup`, `loadStartup`, and `startupChecks`.
+- `python .\run_supervisor_check.py --base-url http://127.0.0.1:8000` confirmed startup readiness but failed on existing queue lag: `oldest_unpublished_lag_seconds=2800 exceeds limit=300`.
+
+Next:
+
+- Add operator queue drain/replay guidance for old unpublished outbox events.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
