@@ -118,6 +118,7 @@ The live app also exposes storage paths at:
 
 ```text
 GET /api/storage
+GET /api/startup
 GET /api/health
 ```
 

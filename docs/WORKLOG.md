@@ -1103,6 +1103,129 @@ Next:
 
 - Add deployment startup checks for writable data, log, report, raw evidence, and support export directories.
 
+## 2026-08-11 - Checkpoint 56: Startup Directory Preflight Checks
+
+Implemented:
+
+- Added preflight startup directory readiness checks for data, raw evidence, reports, support exports, and logs.
+- Respected `XINGESTION_LOG_DIR` through the existing logging settings loader.
+- Probed each startup directory with real write/delete checks.
+- Added unit coverage for the new `startup_directories` check.
+
+Verified:
+
+- `python -m unittest discover -s tests -p test_preflight.py`
+- `python -m compileall -q src tests run_preflight.py`
+
+Next:
+
+- Expose startup readiness from the running web app.
+
+## 2026-08-11 - Checkpoint 57: Startup Readiness API
+
+Implemented:
+
+- Added `GET /api/startup`.
+- The endpoint returns the same preflight-backed startup and deployment checks without recursively probing the running API.
+- Added handler-level API coverage for the endpoint and the `startup_directories` check.
+
+Verified:
+
+- `python -m unittest discover -s tests -p test_northbound_api.py`
+- `python -m unittest discover -s tests -p test_preflight.py`
+- `python -m compileall -q src tests run_app.py run_preflight.py`
+
+Next:
+
+- Add startup readiness to the frontend.
+
+## 2026-08-11 - Checkpoint 58: Frontend Startup Readiness Panel
+
+Implemented:
+
+- Added a Startup Readiness panel to the web console.
+- Loaded real `/api/startup` data and rendered check status/message rows.
+- Added static frontend coverage for the panel and loader.
+
+Verified:
+
+- `python -m unittest discover -s tests -p test_frontend_copy.py`
+- `python -m compileall -q src tests run_app.py`
+
+Next:
+
+- Add a startup check command for deployment scripts.
+
+## 2026-08-11 - Checkpoint 59: Startup Check Command
+
+Implemented:
+
+- Added `run_startup_check.py`.
+- The command loads `.env`, configures logging, runs preflight, prints the startup directory check, and exits nonzero on startup directory failure.
+
+Verified:
+
+- `python .\run_startup_check.py`
+- `python -m compileall -q run_startup_check.py src tests`
+
+Next:
+
+- Add startup check to CI and deployment docs.
+
+## 2026-08-11 - Checkpoint 60: Startup Check CI And Docs
+
+Implemented:
+
+- Added `run_startup_check.py` to compile checks.
+- Added CI static checks for `/api/startup` frontend usage and runbook startup-check documentation.
+- Updated README and deployment runbook command sequences.
+
+Verified:
+
+- `python .\run_startup_check.py`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py`
+- `Select-String -Path .github\workflows\ci.yml,README.md,docs\deployment_runbook.md -Pattern "run_startup_check.py|/api/startup"`
+
+Next:
+
+- Include startup readiness in health reports.
+
+## 2026-08-11 - Checkpoint 61: Health Report Startup Readiness
+
+Implemented:
+
+- Added top-level `startup` readiness to health reports.
+- Projected the `startup_directories` preflight check into report JSON for fast operator review.
+- Added health report tests for the startup section.
+
+Verified:
+
+- `python -m unittest discover -s tests -p test_health_report.py`
+- `python -m compileall -q src tests run_health_report.py`
+- `python .\run_health_report.py`
+
+Next:
+
+- Use startup readiness in supervisor checks.
+
+## 2026-08-11 - Checkpoint 62: Supervisor Startup Readiness
+
+Implemented:
+
+- Added `/api/startup` to supervisor endpoint checks.
+- Added a dedicated `startup` supervision result.
+- Supervisor now fails when the running API reports failed startup readiness.
+- Added supervisor tests for passing and failed startup readiness.
+
+Verified:
+
+- `python -m unittest discover -s tests -p test_supervision.py`
+- `python -m compileall -q src tests run_supervisor_check.py`
+
+Next:
+
+- Add focused failure-case coverage for startup directory probing.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

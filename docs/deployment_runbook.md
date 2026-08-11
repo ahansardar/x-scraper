@@ -65,6 +65,7 @@ python .\run_health_report.py --base-url http://127.0.0.1:8000
 
 ```text
 GET /api/health
+GET /api/startup
 GET /api/storage
 GET /api/metrics
 GET /api/migrations
@@ -80,7 +81,7 @@ For supervised hosts, run:
 python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --require-external-data-dir
 ```
 
-This fails if the API is not returning JSON, migrations are pending, storage is still inside the checkout, no healthy session exists, the release is blocked, outbox lag/depth exceeds thresholds, or the expected web/worker command lines are missing.
+This fails if the API is not returning JSON, startup directories are not writable, migrations are pending, storage is still inside the checkout, no healthy session exists, the release is blocked, outbox lag/depth exceeds thresholds, or the expected web/worker command lines are missing.
 
 The app stores:
 
