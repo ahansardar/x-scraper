@@ -16,7 +16,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -46,6 +46,7 @@ Smoke-check a running deployment:
 ```powershell
 python .\run_preflight.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000
+python .\run_supervisor_check.py --base-url http://127.0.0.1:8000
 python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
@@ -182,6 +183,14 @@ python .\run_health_report.py --base-url http://127.0.0.1:8000
 Reports are written to `XINGESTION_DATA_DIR\reports\health-report-*.json` unless `--output` is provided. The JSON includes preflight status, storage paths, migration status, task/outbox counts, canonical counts, telemetry summary, release risk, and safe session diagnostics. It does not export raw X secrets, credential references, or lease tokens.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
+
+For hosted operation, run the web and worker commands under a process supervisor and verify them with:
+
+```powershell
+python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --require-external-data-dir
+```
+
+See [docs/process_supervision.md](docs/process_supervision.md) for Windows Task Scheduler/NSSM setup and restart checks.
 
 Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in the `x-admin-token` header:
 

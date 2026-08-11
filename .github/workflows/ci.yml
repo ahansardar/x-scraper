@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py
 
       - name: Static smoke check frontend assets
         shell: pwsh
@@ -79,4 +79,13 @@ jobs:
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_health_report.py" -Quiet)) {
             throw "Deployment runbook must document health report export"
+          }
+          if (-not (Test-Path .\docs\process_supervision.md)) {
+            throw "Missing process supervision guide"
+          }
+          if (-not (Select-String -Path .\docs\process_supervision.md -Pattern "run_supervisor_check.py" -Quiet)) {
+            throw "Process supervision guide must document supervisor check"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_supervisor_check.py" -Quiet)) {
+            throw "Deployment runbook must document supervisor check"
           }

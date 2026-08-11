@@ -51,6 +51,7 @@ After the web process is listening, verify the deployed API shape:
 
 ```powershell
 python .\run_preflight.py --base-url http://127.0.0.1:8000
+python .\run_supervisor_check.py --base-url http://127.0.0.1:8000
 python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
@@ -66,6 +67,14 @@ GET /api/sessions
 GET /api/releases/current
 GET /api/releases/current/risk
 ```
+
+For supervised hosts, run:
+
+```powershell
+python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --require-external-data-dir
+```
+
+This fails if the API is not returning JSON, migrations are pending, storage is still inside the checkout, no healthy session exists, the release is blocked, outbox lag/depth exceeds thresholds, or the expected web/worker command lines are missing.
 
 The app stores:
 
@@ -184,16 +193,19 @@ Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py
 ```
 
 After starting web and worker:
 
 ```powershell
 python .\run_preflight.py --base-url http://127.0.0.1:8000
+python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes
 python .\run_smoke.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000 --submit "india lang:en" --wait 90
 python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
 CI runs the same checks on Windows Python 3.11 and 3.12, including frontend and secret-hygiene checks.
+
+See [process_supervision.md](process_supervision.md) for Windows Task Scheduler/NSSM examples and restart verification.

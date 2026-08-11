@@ -845,6 +845,28 @@ Next:
 
 - Add a deployable process supervision guide for running web and worker as durable Windows services or host-managed processes.
 
+## 2026-08-11 - Checkpoint 46: Deployment Process Supervision
+
+Implemented:
+
+- Added `run_supervisor_check.py` for no-Docker supervised deployment verification.
+- Added `src/xingestion/supervision.py` to check JSON API liveness, current migrations, storage paths, outbox lag/depth, session availability, release execution state, and optional process-table evidence for web and worker commands.
+- Added `docs/process_supervision.md` with Windows Task Scheduler and NSSM setup guidance.
+- Documented `run_supervisor_check.py` in README and the deployment runbook.
+- Added unit tests for ready deployments, outbox lag failures, checkout-local storage failures, and missing worker process detection.
+- Updated CI compile and documentation checks for the new command and guide.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py`
+- `python .\run_migrations.py`
+- `python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes`
+
+Next:
+
+- Add production log configuration and rotated log guidance for web, worker, and operator commands.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
