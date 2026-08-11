@@ -23,7 +23,7 @@ from xingestion.support_export import (
 )
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 def load_manifest():

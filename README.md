@@ -2,9 +2,10 @@
 
 This repository is being rebuilt from `FINAL_PRODUCT_SPEC.md` into a production-oriented X protocol ingestion platform.
 
-The original GraphQL scripts and local research artifacts now live under `playground/`. They remain useful as an experimental reference, but new production code should follow the spec's split:
+The original GraphQL scripts and local research artifacts now live under `playground/`. They remain useful as an experimental reference, but new production code now lives under one product package:
 
-- `src/xrev/`: X protocol research/runtime models and validated protocol releases.
+- `src/xingestion/`: production ingestion, web, worker, storage, operations, and protocol runtime code.
+- `src/xingestion/xprotocol/`: internal X protocol research/runtime models and validated protocol release bindings.
 - `protocol_releases/`: approved or candidate protocol release manifests.
 - `docs/WORKLOG.md`: incremental implementation ledger.
 - `docs/CURRENT_STAGE.md`: current implementation stage versus `FINAL_PRODUCT_SPEC.md`.

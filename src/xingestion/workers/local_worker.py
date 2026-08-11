@@ -13,16 +13,16 @@ from xingestion.secrets import SecretProvider
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.telemetry import ProtocolTelemetryStore
-from xrev.evidence import RawEvidenceRef, RawEvidenceSink
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
-from xrev.runtime import (
+from xingestion.xprotocol.evidence import RawEvidenceRef, RawEvidenceSink
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import (
     ProtocolError,
     SearchTweetsRequest,
     WebSessionAuth,
     acquire_search_tweets_page,
 )
-from xrev.runtime.transport import OneAttemptTransport
-from xrev.runtime.transport import RetryDisposition
+from xingestion.xprotocol.runtime.transport import OneAttemptTransport
+from xingestion.xprotocol.runtime.transport import RetryDisposition
 from uuid import uuid4
 
 

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from xingestion.config import AppConfig
-from xrev.runtime import WebSessionAuth
+from xingestion.xprotocol.runtime import WebSessionAuth
 
 
 @dataclass(frozen=True)

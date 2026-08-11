@@ -13,7 +13,7 @@ from xingestion.capabilities import (
     SearchTweetsInput,
 )
 from xingestion.tasks import SQLiteTaskLedger, TaskState
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 def load_manifest():

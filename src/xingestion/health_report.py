@@ -19,8 +19,8 @@ from xingestion.secrets import secret_provider_status
 from xingestion.sessions import SessionRecord, SessionStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.telemetry import ProtocolTelemetryStore, TelemetrySummary
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import WebSessionAuth
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import WebSessionAuth
 
 
 @dataclass(frozen=True)

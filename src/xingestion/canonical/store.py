@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from xrev.runtime import SearchTweetsPage
+from xingestion.xprotocol.runtime import SearchTweetsPage
 
 
 @dataclass(frozen=True)

@@ -12,8 +12,8 @@ from xingestion.health_report import build_health_report, write_health_report
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
-from xrev.runtime import WebSessionAuth
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import WebSessionAuth
 
 
 def load_manifest():

@@ -12,7 +12,7 @@ from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.telemetry import ProtocolTelemetryStore
-from xrev.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 
 @dataclass(frozen=True)

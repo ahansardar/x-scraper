@@ -14,9 +14,9 @@ from xingestion.sessions import SessionHealth, SessionStore, import_session_regi
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
-from xrev.evidence import FileRawEvidenceSink
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import UrllibJsonTransport, load_env_file
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import UrllibJsonTransport, load_env_file
 
 
 ROOT = Path(__file__).resolve().parents[3]

@@ -12,7 +12,7 @@ from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.operator_tasks import DEFAULT_ACTION_STATES, list_operator_task_actions
 from xingestion.tasks import TaskState
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.runtime import load_env_file
 
 
 def main(argv=None):

@@ -10,8 +10,8 @@ from uuid import uuid4
 
 from xingestion.canonical import CanonicalStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
-from xrev.evidence import RawEvidenceRef
-from xrev.runtime import parse_search_tweets_page
+from xingestion.xprotocol.evidence import RawEvidenceRef
+from xingestion.xprotocol.runtime import parse_search_tweets_page
 
 
 @dataclass(frozen=True)

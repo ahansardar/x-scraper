@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.canonical import CanonicalStore
-from xrev.evidence import RawEvidenceRef
-from xrev.runtime import SearchTweetsPage, TweetRecord
+from xingestion.xprotocol.evidence import RawEvidenceRef
+from xingestion.xprotocol.runtime import SearchTweetsPage, TweetRecord
 
 
 def make_page(*, like_count=7):

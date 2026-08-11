@@ -11,8 +11,8 @@ from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight
 from xingestion.secrets import resolve_web_session_auth
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import load_env_file
 
 
 def main(argv=None):

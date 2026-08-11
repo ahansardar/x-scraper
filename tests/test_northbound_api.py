@@ -17,7 +17,7 @@ from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.web import live_server
 from xingestion.workers import WorkerResult
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 class FakeHandler(live_server.LiveAppHandler):

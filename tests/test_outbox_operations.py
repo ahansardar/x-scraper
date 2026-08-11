@@ -10,7 +10,7 @@ from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, Search
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import WorkerResult
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 def make_task(ledger):

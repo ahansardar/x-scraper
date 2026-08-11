@@ -7,7 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xrev.runtime import load_env_file, web_session_auth_from_env
+from xingestion.xprotocol.runtime import load_env_file, web_session_auth_from_env
 
 
 class EnvAuthTests(unittest.TestCase):

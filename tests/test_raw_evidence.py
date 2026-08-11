@@ -7,8 +7,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xrev.evidence import FileRawEvidenceSink
-from xrev.runtime import parse_search_tweets_page
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
+from xingestion.xprotocol.runtime import parse_search_tweets_page
 
 
 class RawEvidenceTests(unittest.TestCase):

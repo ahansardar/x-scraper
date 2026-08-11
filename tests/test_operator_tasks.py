@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.tasks import SQLiteTaskLedger, TaskState
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 def load_manifest():

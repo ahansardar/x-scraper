@@ -14,7 +14,7 @@ from xingestion.supervision import (
 )
 from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.runtime import load_env_file
 
 
 def main(argv=None):

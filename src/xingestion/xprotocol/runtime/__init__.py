@@ -1,4 +1,4 @@
-"""X-rev runtime helpers."""
+"""protocol runtime helpers."""
 
 from .search_tweets import (
     ProtocolHttpRequest,

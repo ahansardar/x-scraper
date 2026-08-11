@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from xrev.evidence import RawEvidenceRef, RawEvidenceSink
-from xrev.protocol import AcquisitionRecipeRevision
-from xrev.runtime.transport import (
+from xingestion.xprotocol.evidence import RawEvidenceRef, RawEvidenceSink
+from xingestion.xprotocol.protocol import AcquisitionRecipeRevision
+from xingestion.xprotocol.runtime.transport import (
     OneAttemptTransport,
     ProtocolHttpRequest,
     response_to_protocol_error,

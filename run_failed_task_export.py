@@ -10,8 +10,8 @@ if str(SRC_ROOT) not in sys.path:
 from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.support_export import write_failed_task_export
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import load_env_file
 
 
 def main(argv=None):

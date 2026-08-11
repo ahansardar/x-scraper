@@ -12,8 +12,8 @@ from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.protocol_validation import build_protocol_validation_report
 from xingestion.protocol_validation import write_protocol_validation_report
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import load_env_file
 
 
 MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"

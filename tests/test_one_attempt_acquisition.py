@@ -6,9 +6,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xrev.evidence import FileRawEvidenceSink
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import (
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import (
     ProtocolError,
     ProtocolHttpResponse,
     RetryDisposition,

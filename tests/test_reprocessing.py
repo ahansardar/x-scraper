@@ -11,9 +11,9 @@ from xingestion.canonical import CanonicalStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
-from xrev.evidence import FileRawEvidenceSink
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
-from xrev.runtime import ProtocolHttpResponse, WebSessionAuth
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import ProtocolHttpResponse, WebSessionAuth
 
 
 class FakeTransport:

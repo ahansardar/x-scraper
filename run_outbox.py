@@ -13,7 +13,7 @@ from xingestion.logging_config import configure_logging
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers.worker_app import build_worker
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.runtime import load_env_file
 
 
 def main(argv=None):

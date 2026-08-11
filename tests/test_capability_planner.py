@@ -11,7 +11,7 @@ from xingestion.capabilities import (
     CapabilityRequest,
     SearchTweetsInput,
 )
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest, RevisionStatus
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest, RevisionStatus
 
 
 def load_manifest():

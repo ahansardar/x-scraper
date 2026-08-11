@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from xrev.runtime import parse_search_tweets_page
+from xingestion.xprotocol.runtime import parse_search_tweets_page
 
 
 DEFAULT_FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "search_tweets"

@@ -13,8 +13,8 @@ from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import load_env_file, web_session_auth_from_env
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import load_env_file, web_session_auth_from_env
 
 
 def main(argv: list[str] | None = None) -> int:

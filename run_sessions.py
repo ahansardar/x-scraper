@@ -11,7 +11,7 @@ if str(SRC_ROOT) not in sys.path:
 from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.sessions import SessionStore, import_session_registry
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.runtime import load_env_file
 
 
 def main(argv=None):

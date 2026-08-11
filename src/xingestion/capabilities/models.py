@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from xrev.protocol import (
+from xingestion.xprotocol.protocol import (
     CapabilityId,
     ProtocolCapabilityBinding,
     ProtocolReleaseManifest,

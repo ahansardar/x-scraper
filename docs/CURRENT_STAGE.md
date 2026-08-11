@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-11
+Date: 2026-08-12
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -8,23 +8,23 @@ This document records where `F:\x-scraper` currently stands relative to `FINAL_P
 
 The project is currently a production-oriented local vertical slice for `SEARCH_TWEETS`.
 
-It is not yet the complete final product described in `FINAL_PRODUCT_SPEC.md`. The final spec describes a two-system platform split between:
+It is not yet the complete final product described in `FINAL_PRODUCT_SPEC.md`. The final spec describes two responsibilities:
 
-- `X-rev-os`: protocol research, validation, request construction, parsing, pagination, and approved protocol releases.
-- `XINGESTIONV2`: production ingestion, durable orchestration, retries, accounts/sessions/network allocation, canonical data, APIs, monitoring, and operations.
+- protocol runtime work: protocol research, validation, request construction, parsing, pagination, and approved protocol releases.
+- production ingestion work: durable orchestration, retries, accounts/sessions/network allocation, canonical data, APIs, monitoring, and operations.
 
-This repository now contains a working local slice of both ideas:
+This repository keeps both responsibilities in one visible source package:
 
-- `src/xrev/` contains protocol/runtime foundations.
-- `src/xingestion/` contains the production ingestion control plane, worker, storage, APIs, frontend, and operations tooling.
+- `src/xingestion/` contains the product source tree.
+- `src/xingestion/xprotocol/` contains the internal protocol/runtime foundation.
 - `playground/` contains the older experimental GraphQL scripts and research artifacts.
 
 ## Current Verified State
 
-Latest verified pushed state:
+Latest verified state:
 
-- Latest commit at the time of this document: `e0d14f9 Record startup readiness verification`.
-- GitHub Actions CI passed on Windows for Python 3.11 and 3.12.
+- See `docs/WORKLOG.md` for the latest checkpoint-level verification and commit history.
+- GitHub Actions CI runs on Windows for Python 3.11 and 3.12.
 - Local startup directory readiness passes.
 - The working implementation uses no Docker.
 - Default local storage is under `F:\x-scraper\data`.
@@ -60,7 +60,7 @@ Spec relevance:
 - Matches the spec principle that production clients request capabilities, not raw X endpoint details.
 - Current scope is one capability, not the full capability family listed in the spec.
 
-### X-rev Runtime Foundation
+### Protocol Runtime Foundation
 
 Implemented:
 
@@ -74,7 +74,7 @@ Implemented:
 Spec relevance:
 
 - Aligns with the spec's raw-first, one-attempt, protocol-owned request/parser boundary.
-- Not yet a complete X-rev-os protocol authority with full research workbench, historical registry, complete validation lifecycle, and broad drift intelligence.
+- Not yet a complete protocol authority with full research workbench, historical registry, complete validation lifecycle, and broad drift intelligence.
 
 ### Production Control Plane
 
@@ -215,11 +215,11 @@ The older GraphQL scripts and exploratory artifacts were moved under `playground
 Reason:
 
 - The final spec treats `x-scraper` history as research/prototype origin.
-- New production code needed a cleaner split between protocol runtime and ingestion control plane.
+- New production code needed a cleaner internal boundary between protocol runtime and ingestion control plane without presenting two separate source packages.
 
 ### 2. Built Protocol Runtime Foundations
 
-Implemented under `src/xrev/`:
+Implemented under `src/xingestion/xprotocol/`:
 
 - protocol release/revision models;
 - SearchTweets request builder/runtime concepts;
@@ -232,7 +232,7 @@ Reason:
 
 - The spec requires X-specific request construction, parsing, and pagination to live behind a protocol runtime boundary rather than being spread through production code.
 
-### 3. Built XINGESTION Task Control Plane
+### 3. Built Product Task Control Plane
 
 Implemented under `src/xingestion/`:
 
@@ -332,7 +332,7 @@ Reason:
 | --- | --- |
 | Capability-driven API | Partial, implemented for `SEARCH_TWEETS` |
 | Capability planner | Partial, implemented for current release/capability |
-| X-rev protocol runtime | Partial foundation |
+| Protocol runtime | Partial foundation |
 | Approved protocol release manifest | Present for current search path |
 | Raw evidence before parsing | Implemented |
 | One-attempt runtime | Implemented |
@@ -366,7 +366,7 @@ Do not claim:
 
 - full PostgreSQL/Redis production architecture;
 - distributed worker recovery through Redis consumer groups;
-- full X-rev validation lifecycle;
+- full protocol runtime validation lifecycle;
 - all capability families;
 - complete account/secret/network subsystem;
 - complete analytics/monitoring platform;

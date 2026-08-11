@@ -7,7 +7,7 @@ This log records completed, non-broken checkpoints while rebuilding toward `FINA
 Implemented:
 
 - Moved the historical scraper scripts, `.env.example`, research notes, and local artifacts into `playground/`.
-- Added immutable protocol revision dataclasses for X-rev style recipe composition.
+- Added immutable protocol revision dataclasses for protocol runtime style recipe composition.
 - Added deterministic content hashing for revisions and acquisition recipes.
 - Added a candidate `SEARCH_TWEETS` protocol release manifest based on the observed SearchTimeline POST recipe.
 - Added standard-library unit tests for immutability, composition hashing, and manifest loading.
@@ -18,13 +18,13 @@ Verified:
 
 Next:
 
-- Extract the current SearchTimeline request builder, parser, and pagination logic from `playground/graphql_search.py` into tested `src/xrev` runtime modules.
+- Extract the current SearchTimeline request builder, parser, and pagination logic from `playground/graphql_search.py` into tested `src/xingestion/xprotocol` runtime modules.
 
 ## 2026-08-10 - Checkpoint 2: SearchTweets Runtime Extraction
 
 Implemented:
 
-- Added `src/xrev/runtime/search_tweets.py` with typed request, auth, HTTP request, tweet record, and page result objects.
+- Added `src/xingestion/xprotocol/runtime/search_tweets.py` with typed request, auth, HTTP request, tweet record, and page result objects.
 - Added recipe-driven SearchTimeline request construction using the candidate manifest operation and feature bundle.
 - Added parser and pagination extraction for protocol-normalized tweet records and opaque bottom cursors.
 - Added tests for request construction, pre-network validation, tweet parsing, media extraction, and cursor extraction.
@@ -42,7 +42,7 @@ Next:
 
 Implemented:
 
-- Added `src/xrev/evidence` with a `RawEvidenceSink` protocol, `RawEvidenceRef`, and local `FileRawEvidenceSink`.
+- Added `src/xingestion/xprotocol/evidence` with a `RawEvidenceSink` protocol, `RawEvidenceRef`, and local `FileRawEvidenceSink`.
 - Stored raw JSON responses with SHA-256 content hashes and sidecar metadata.
 - Updated SearchTweets parsing results so parsed pages can carry the raw evidence reference used to produce them.
 - Added tests for raw JSON persistence, metadata persistence, content hashing, and parser evidence reference propagation.
@@ -60,7 +60,7 @@ Next:
 
 Implemented:
 
-- Added `src/xrev/runtime/transport.py` with a one-attempt transport protocol, typed HTTP response, typed protocol errors, and retry disposition metadata.
+- Added `src/xingestion/xprotocol/runtime/transport.py` with a one-attempt transport protocol, typed HTTP response, typed protocol errors, and retry disposition metadata.
 - Added `acquire_search_tweets_page(...)` to build the pinned protocol request, call transport exactly once, store raw evidence on success, and parse with the resulting evidence ref.
 - Added typed error mapping for auth/session rejection, stale operation IDs, rate limits, upstream server failures, and unexpected statuses.
 - Added tests proving success uses one transport call, persists evidence before returning parsed output, and does not hide internal retries for HTTP errors.
@@ -541,7 +541,7 @@ Next:
 Implemented:
 
 - Extended `SEARCH_TWEETS` capability payloads with `max_pages`, `page_number`, and pagination lineage fields.
-- Worker now creates a new durable continuation task when X-rev returns a next cursor and the bounded page limit is not reached.
+- Worker now creates a new durable continuation task when protocol runtime returns a next cursor and the bounded page limit is not reached.
 - Continuation tasks preserve root task ID, parent task ID, opaque cursor, page number, and max page limit.
 - Completed task results now include pagination metadata and continuation task ID.
 - Generic capability API accepts `max_pages`.
@@ -1394,3 +1394,27 @@ Verified:
 Next:
 
 - Add multi-page pagination orchestration with bounded cursor tasks.
+
+## 2026-08-12 - Checkpoint 69: Unified Source Package Layout
+
+Implemented:
+
+- Moved the visible protocol runtime package from `src/xrev/` into `src/xingestion/xprotocol/`.
+- Updated production code, CLI entrypoints, and tests to import protocol runtime code through `xingestion.xprotocol`.
+- Kept the protocol/runtime boundary intact as an internal subsystem instead of a separate sibling source tree.
+- Updated the frontend console label from the older subsystem name to `X Scraper live console`.
+- Updated README/current-stage documentation to describe one product package with an internal protocol module.
+- Restored `FINAL_PRODUCT_SPEC.md` unchanged so the canonical spec remains the source reference.
+
+Verified:
+
+- `python -m unittest discover -s tests` passed 130 tests.
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py`
+- `python .\run_preflight.py` passed migrations, storage, startup directories, secret backend, auth, sessions, and release checks; API probe remained a local-run warning because no base URL was supplied.
+- `python .\run_protocol_validation.py --fixtures-only --json` passed the checked-in SearchTimeline parser fixture with two tweets and complete engagement metrics.
+- `python .\run_startup_check.py` passed startup directory checks.
+- Temporary live server on `127.0.0.1:8018` returned JSON health/storage/startup OK and served `/` plus `/app.js`; the frontend contained `X Scraper live console`.
+
+Next:
+
+- Continue with network allocation policy metadata and worker selection controls when moving beyond the local `network_context` label.

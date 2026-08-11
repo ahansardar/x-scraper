@@ -7,7 +7,7 @@ from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.telemetry import ProtocolAttempt, ProtocolTelemetryStore
-from xrev.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 
 def build_protocol_drift_package(

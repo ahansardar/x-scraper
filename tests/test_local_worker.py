@@ -18,10 +18,10 @@ from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.workers import LocalWorker
-from xrev.evidence import FileRawEvidenceSink
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
-from xrev.runtime import ProtocolError, ProtocolHttpResponse, WebSessionAuth
-from xrev.runtime.transport import RetryDisposition
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import ProtocolError, ProtocolHttpResponse, WebSessionAuth
+from xingestion.xprotocol.runtime.transport import RetryDisposition
 
 
 class FakeTransport:

@@ -7,7 +7,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from xingestion.smoke import SmokeClient
-from xrev.runtime import load_env_file
+from xingestion.xprotocol.runtime import load_env_file
 
 
 def main(argv=None):

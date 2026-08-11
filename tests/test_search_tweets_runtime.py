@@ -5,8 +5,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import (
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import (
     SearchTweetsRequest,
     WebSessionAuth,
     build_search_timeline_request,

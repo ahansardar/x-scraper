@@ -10,7 +10,7 @@ import sqlite3
 from typing import Mapping, Protocol
 from uuid import uuid4
 
-from xrev.protocol import CapabilityId
+from xingestion.xprotocol.protocol import CapabilityId
 
 
 class TaskState(StrEnum):

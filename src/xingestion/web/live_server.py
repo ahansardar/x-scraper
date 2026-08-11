@@ -52,9 +52,9 @@ from xingestion.support_export import (
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
-from xrev.evidence import FileRawEvidenceSink
-from xrev.protocol import CapabilityId, ProtocolReleaseManifest
-from xrev.runtime import (
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import (
     UrllibJsonTransport,
     load_env_file,
 )
@@ -763,14 +763,14 @@ def _tweet_dict(tweet):
 
 
 def _load_page_from_evidence(storage_uri, raw_evidence_ref):
-    from xrev.runtime import parse_search_tweets_page
+    from xingestion.xprotocol.runtime import parse_search_tweets_page
 
     payload = json.loads(Path(storage_uri).read_text(encoding="utf-8"))
     return parse_search_tweets_page(payload, raw_evidence_ref=raw_evidence_ref)
 
 
 def _raw_evidence_ref_from_json(raw_evidence):
-    from xrev.evidence import RawEvidenceRef
+    from xingestion.xprotocol.evidence import RawEvidenceRef
 
     return RawEvidenceRef(
         evidence_id=raw_evidence["evidence_id"],
