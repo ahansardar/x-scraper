@@ -15,6 +15,7 @@ from xingestion.investigation import build_release_risk_recommendation
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight, PreflightCheck
 from xingestion.releases import ReleaseRecord, ReleaseStore
+from xingestion.secrets import secret_provider_status
 from xingestion.sessions import SessionRecord, SessionStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.telemetry import ProtocolTelemetryStore, TelemetrySummary
@@ -111,6 +112,7 @@ def _config_dict(config: AppConfig) -> dict[str, object]:
         "default_account_label": config.default_account_label,
         "default_network_context": config.default_network_context,
         "admin_token_configured": bool(config.admin_token),
+        "secret_backend": _safe_secret_backend_dict(config),
         "require_migrations": config.require_migrations,
         "max_active_tasks_per_capability": config.max_active_tasks_per_capability,
     }
@@ -125,7 +127,26 @@ def _storage_dict(config: AppConfig) -> dict[str, object]:
         "raw_evidence_dir": str(config.raw_evidence_dir),
         "raw_evidence_dir_exists": config.raw_evidence_dir.exists(),
         "reports_dir": str(config.data_dir / "reports"),
+        "protocol_validation_dir": str(config.data_dir / "protocol_validation"),
     }
+
+
+def _safe_secret_backend_dict(config: AppConfig) -> dict[str, object]:
+    try:
+        return secret_provider_status(config).public_dict()
+    except ValueError as exc:
+        return {
+            "provider": config.secret_provider,
+            "configured": False,
+            "reference_scheme": (
+                config.default_credential_ref.split(":", 1)[0]
+                if ":" in config.default_credential_ref
+                else "unknown"
+            ),
+            "reference_configured": bool(config.default_credential_ref),
+            "missing_fields": [],
+            "message": str(exc),
+        }
 
 
 def _preflight_check_dict(check: PreflightCheck) -> dict[str, str]:

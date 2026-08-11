@@ -1319,6 +1319,34 @@ Next:
 
 - Add a proper secret backend abstraction while keeping `.env` as the local development fallback.
 
+## 2026-08-12 - Checkpoint 67: Secret Provider Abstraction
+
+Implemented:
+
+- Added `XINGESTION_SECRET_PROVIDER` and `XINGESTION_SECRET_DIR` deployment settings.
+- Added `xingestion.secrets` with env-backed and file-backed web-session secret providers.
+- Kept `env:X_AUTH_TOKEN,X_CT0,X_BEARER` as the local development fallback.
+- Added `file:<session-name>` credential references for deployment-mounted JSON secrets outside git.
+- Moved web, worker, preflight, and health-report entrypoints onto the config-driven secret provider.
+- Added a dedicated preflight `secret_backend` check and safe health-report secret backend status.
+- Stopped `/api/sessions` from returning raw credential reference values.
+- Added frontend secret-backend status in Metrics.
+- Documented env and file provider setup in README and the deployment runbook.
+- Extended CI smoke checks for secret provider docs and UI status.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py`
+- `python .\run_preflight.py` passed migrations, storage, startup directories, secret backend, auth, sessions, and release checks; API probe remained a local-run warning because no base URL was supplied.
+- `python .\run_health_report.py` wrote a passing health report.
+- Scanned the generated health report and confirmed it did not contain `credential_ref`, `X_AUTH_TOKEN`, `X_CT0`, or `X_BEARER`.
+- Temporary live API smoke on `127.0.0.1:8015` reported `secret_provider: env`, `secret_configured: true`, `reference_scheme: env`, and confirmed `/api/sessions` did not contain `credential_ref`.
+
+Next:
+
+- Add more capability scaffolding only after the `SEARCH_TWEETS` vertical slice remains stable under the new secret abstraction.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

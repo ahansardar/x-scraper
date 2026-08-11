@@ -37,6 +37,7 @@ from xingestion.protocol_validation import (
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
+from xingestion.secrets import resolve_web_session_auth, secret_provider_status
 from xingestion.support_export import (
     apply_support_export_retention,
     list_support_exports,
@@ -52,7 +53,6 @@ from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import (
     UrllibJsonTransport,
     load_env_file,
-    web_session_auth_from_env,
 )
 
 
@@ -83,7 +83,7 @@ class LiveAppState:
         self.release_store.ensure_release(self.manifest.release_id)
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
-        self.auth = web_session_auth_from_env()
+        self.auth = resolve_web_session_auth(self.config)
         self.session_store = SessionStore(self.config.sqlite_path)
         self.telemetry_store = ProtocolTelemetryStore(self.config.sqlite_path)
         self.reprocess_jobs = ReprocessJobStore(self.config.sqlite_path)
@@ -759,6 +759,8 @@ def _storage_dict():
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
         "retention_days": STATE.config.retention_days,
         "admin_token_configured": bool(STATE.config.admin_token),
+        "secret_provider": STATE.config.secret_provider,
+        "secret_backend": secret_provider_status(STATE.config).public_dict(),
         "require_migrations": STATE.config.require_migrations,
         "max_active_tasks_per_capability": STATE.config.max_active_tasks_per_capability,
     }
@@ -902,7 +904,7 @@ def _session_dict(session):
     return {
         "session_id": session.session_id,
         "account_label": session.account_label,
-        "credential_ref": session.credential_ref,
+        "reference_configured": bool(session.credential_ref),
         "network_context": session.network_context,
         "health": session.health.value,
         "lease_owner": session.lease_owner,

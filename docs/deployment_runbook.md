@@ -17,6 +17,8 @@ XINGESTION_RETENTION_DAYS=30
 XINGESTION_SESSION_ID=local-env-session
 XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
+XINGESTION_SECRET_PROVIDER=env
+XINGESTION_SECRET_DIR=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
@@ -28,6 +30,26 @@ XINGESTION_LOG_BACKUP_COUNT=5
 ```
 
 Use a persistent disk for `XINGESTION_DATA_DIR`. Do not use the build checkout as production storage.
+
+For deployment-mounted secrets, set:
+
+```env
+XINGESTION_SECRET_PROVIDER=file
+XINGESTION_SECRET_DIR=F:\x-scraper-secrets
+XINGESTION_CREDENTIAL_REF=file:session-a
+```
+
+Then create `F:\x-scraper-secrets\session-a.json` outside git:
+
+```json
+{
+  "auth_token": "...",
+  "ct0": "...",
+  "bearer_token": "..."
+}
+```
+
+Preflight exposes only provider status and missing field names. It does not print token values.
 
 ## Start
 

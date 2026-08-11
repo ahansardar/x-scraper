@@ -9,13 +9,14 @@ from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
 from xingestion.logging_config import configure_logging
 from xingestion.releases import ReleaseStore
+from xingestion.secrets import resolve_web_session_auth
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xrev.evidence import FileRawEvidenceSink
 from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import UrllibJsonTransport, load_env_file, web_session_auth_from_env
+from xrev.runtime import UrllibJsonTransport, load_env_file
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -24,7 +25,7 @@ LOGGER = logging.getLogger("xingestion.worker")
 
 
 def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
-    auth = web_session_auth_from_env()
+    auth = resolve_web_session_auth(config)
     session_store = SessionStore(config.sqlite_path)
     session_store.upsert_session(
         session_id=config.default_session_id,

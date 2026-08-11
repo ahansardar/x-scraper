@@ -86,6 +86,8 @@ def _config(root: Path) -> AppConfig:
         default_credential_ref="env:X_AUTH_TOKEN,X_CT0,X_BEARER",
         default_network_context="direct",
         admin_token="token",
+        secret_provider="env",
+        secret_dir=root / "data" / "secrets",
         require_migrations=True,
         max_active_tasks_per_capability=100,
     )

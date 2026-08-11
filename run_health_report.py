@@ -10,8 +10,9 @@ from xingestion.config import load_app_config
 from xingestion.health_report import write_health_report
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
+from xingestion.secrets import resolve_web_session_auth
 from xrev.protocol import ProtocolReleaseManifest
-from xrev.runtime import load_env_file, web_session_auth_from_env
+from xrev.runtime import load_env_file
 
 
 def main(argv=None):
@@ -28,7 +29,7 @@ def main(argv=None):
         manifest=ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"
         ),
-        auth=web_session_auth_from_env(),
+        auth=resolve_web_session_auth(config),
         base_url=_arg(argv, "--base-url", None),
         output_path=_arg(argv, "--output", None),
     )

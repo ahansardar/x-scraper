@@ -11,6 +11,7 @@ from xingestion.investigation import build_release_risk_recommendation
 from xingestion.logging_config import load_logging_settings
 from xingestion.migrations import MigrationRunner
 from xingestion.releases import ReleaseHealth, ReleaseStore
+from xingestion.secrets import secret_provider_status
 from xingestion.sessions import SessionHealth, SessionRecord, SessionStore
 from xingestion.telemetry import ProtocolTelemetryStore
 from xrev.protocol import ProtocolReleaseManifest
@@ -53,6 +54,7 @@ class DeploymentPreflight:
             self._check_migrations(),
             self._check_storage(),
             self._check_startup_directories(),
+            self._check_secret_backend(),
             self._check_auth(),
             self._check_sessions(),
             self._check_release_risk(),
@@ -98,6 +100,7 @@ class DeploymentPreflight:
             "raw_evidence": self.config.raw_evidence_dir,
             "reports": self.config.data_dir / "reports",
             "support_exports": self.config.data_dir / "support_exports",
+            "protocol_validation": self.config.data_dir / "protocol_validation",
             "logs": load_logging_settings(config=self.config, component="preflight").log_dir,
         }
         failures = []
@@ -114,6 +117,23 @@ class DeploymentPreflight:
             )
         details = " ".join(f"{label}={path}" for label, path in directories.items())
         return PreflightCheck("startup_directories", "PASS", details)
+
+    def _check_secret_backend(self) -> PreflightCheck:
+        try:
+            status = secret_provider_status(self.config)
+        except ValueError as exc:
+            return PreflightCheck("secret_backend", "FAIL", str(exc))
+        if not status.configured:
+            return PreflightCheck(
+                "secret_backend",
+                "WARN",
+                f"provider={status.provider} reference_scheme={status.reference_scheme} {status.message}",
+            )
+        return PreflightCheck(
+            "secret_backend",
+            "PASS",
+            f"provider={status.provider} reference_scheme={status.reference_scheme}",
+        )
 
     def _check_auth(self) -> PreflightCheck:
         missing = self.auth.missing_fields()

@@ -97,6 +97,8 @@ XINGESTION_RETENTION_DAYS=30
 XINGESTION_SESSION_ID=local-env-session
 XINGESTION_ACCOUNT_LABEL=local-env
 XINGESTION_CREDENTIAL_REF=env:X_AUTH_TOKEN,X_CT0,X_BEARER
+XINGESTION_SECRET_PROVIDER=env
+XINGESTION_SECRET_DIR=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
@@ -112,7 +114,15 @@ Storage locations:
 - Default task ledger: `./data/tasks.sqlite3`
 - Default raw evidence: `./data/raw_evidence/`
 - Default health reports: `./data/reports/`
+- Default protocol validation reports: `./data/protocol_validation/`
 - Default logs: `./data/logs/`
+
+Secret providers:
+
+- `XINGESTION_SECRET_PROVIDER=env` resolves `env:X_AUTH_TOKEN,X_CT0,X_BEARER` from environment variables. This is the local fallback.
+- `XINGESTION_SECRET_PROVIDER=file` resolves `file:<session-name>` from `XINGESTION_SECRET_DIR\<session-name>.json`. The JSON object must contain `auth_token`, `ct0`, and `bearer_token`.
+
+Do not commit secret files. Mount `XINGESTION_SECRET_DIR` from host-managed storage in deployment.
 - Production/deployment override: set `XINGESTION_DATA_DIR` to a persistent disk path.
 
 The live app also exposes storage paths at:

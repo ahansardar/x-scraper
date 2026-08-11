@@ -216,6 +216,7 @@ async function loadMetrics() {
     <div><strong>${data.sessions.cooling_down}</strong><span>sessions cooling</span></div>
     <div><strong>${data.release_risk.action}</strong><span>release risk</span></div>
     <div><strong>${data.auth_ready ? "ready" : "missing"}</strong><span>auth state</span></div>
+    <div><strong>${data.storage.secret_backend.configured ? data.storage.secret_backend.provider : "check"}</strong><span>secret backend</span></div>
   `;
 }
 
