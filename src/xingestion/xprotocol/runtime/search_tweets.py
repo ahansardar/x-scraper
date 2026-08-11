@@ -101,14 +101,6 @@ def validate_search_tweets_pagination(
     seen_cursors: tuple[str, ...] = (),
     current_cursor: str | None = None,
 ) -> str | None:
-    if page.cursor_present and page.next_cursor in (None, ""):
-        raise ProtocolError(
-            error_class="PAGINATION_EMPTY_CONTINUATION",
-            message="SearchTimeline returned an empty bottom cursor",
-            retry_disposition=RetryDisposition.NEVER,
-            scope_hint="PAGINATION",
-        )
-
     if not expect_more:
         return page.next_cursor
 
@@ -120,7 +112,7 @@ def validate_search_tweets_pagination(
             scope_hint="PAGINATION",
         )
 
-    if page.next_cursor is None:
+    if page.next_cursor in (None, ""):
         raise ProtocolError(
             error_class="PAGINATION_EMPTY_CONTINUATION",
             message="SearchTimeline returned an empty bottom cursor",
