@@ -6,7 +6,7 @@ import json
 import logging
 from pathlib import Path
 import sys
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = ROOT / "src"
@@ -33,6 +33,7 @@ from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.support_export import (
     apply_support_export_retention,
     list_support_exports,
+    read_support_export,
     write_failed_task_export,
 )
 from xingestion.telemetry import ProtocolTelemetryStore
@@ -178,6 +179,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                     "dry_run": retention.public_dict(),
                 }
             )
+        if parsed.path.startswith("/api/support-exports/"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 3:
+                return self._support_export_detail(unquote(parts[2]))
         if parsed.path.startswith("/api/tasks/"):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 3:
@@ -388,6 +393,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             dry_run=False,
         )
         return self._json({"retention": result.public_dict()}, status=200)
+
+    def _support_export_detail(self, name):
+        try:
+            export = read_support_export(STATE.config, name)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return self._json({"message": str(exc)}, status=status)
+        return self._json({"export": export}, status=200)
 
     def _set_release_health(self, health, reason):
         release = STATE.release_store.set_health(

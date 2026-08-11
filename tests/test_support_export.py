@@ -17,6 +17,7 @@ from xingestion.support_export import (
     apply_support_export_retention,
     build_failed_task_export,
     list_support_exports,
+    read_support_export,
     write_failed_task_export,
 )
 from xingestion.tasks import SQLiteTaskLedger, TaskState
@@ -155,6 +156,30 @@ class SupportExportTests(unittest.TestCase):
             self.assertEqual(result.deleted_exports, 1)
             self.assertFalse(old_path.exists())
             self.assertTrue(new_path.exists())
+
+    def test_read_support_export_rejects_unsafe_names(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _config(root)
+            config.data_dir.mkdir(parents=True, exist_ok=True)
+            ledger = SQLiteTaskLedger(config.sqlite_path)
+            failed = _failed_task(ledger, manifest)
+            result = write_failed_task_export(
+                task_id=failed.task_id,
+                config=config,
+                manifest=manifest,
+                output_path=config.data_dir / "support_exports" / "failed-task-safe.json",
+            )
+
+            read = read_support_export(config, result.path.name)
+
+            self.assertEqual(read["summary"]["name"], "failed-task-safe.json")
+            self.assertEqual(read["package"]["task_id"], failed.task_id)
+            with self.assertRaisesRegex(ValueError, "file name"):
+                read_support_export(config, "..\\secrets.json")
+            with self.assertRaisesRegex(ValueError, "failed-task"):
+                read_support_export(config, "health-report.json")
 
 
 def _failed_task(ledger: SQLiteTaskLedger, manifest: ProtocolReleaseManifest):

@@ -242,10 +242,11 @@ The web console lists generated support packages in the Support Exports panel an
 
 ```text
 GET /api/support-exports
+GET /api/support-exports/{file_name}
 POST /api/support-exports/retention
 ```
 
-Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under `XINGESTION_DATA_DIR\support_exports`, and leaves task ledger rows untouched.
+Support export reads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; callers do not pass arbitrary filesystem paths. Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under that directory, and leaves task ledger rows untouched.
 
 List failed and retryable tasks with recommended operator actions:
 

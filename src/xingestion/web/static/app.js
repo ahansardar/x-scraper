@@ -85,7 +85,7 @@ async function loadSupportExports() {
     Cleanup currently matches <strong>${data.dry_run.matched_exports}</strong> files older than ${data.retention_days} days.
   `;
   if (!data.exports.length) {
-    supportExportsBody.innerHTML = `<tr><td colspan="4">No support exports written yet.</td></tr>`;
+    supportExportsBody.innerHTML = `<tr><td colspan="5">No support exports written yet.</td></tr>`;
     return;
   }
   supportExportsBody.innerHTML = data.exports.map((item) => `
@@ -94,6 +94,7 @@ async function loadSupportExports() {
       <td>${item.task_id ? item.task_id.slice(0, 18) : ""}</td>
       <td><span class="${severityClass(item.severity)}">${item.severity || "UNKNOWN"}</span></td>
       <td>${formatDateTime(item.modified_at)}</td>
+      <td><button class="small-button secondary" data-view-support-export="${item.name}">View</button></td>
     </tr>
   `).join("");
 }
@@ -256,6 +257,19 @@ function renderSupportExport(data) {
   tweets.appendChild(packageView);
 }
 
+function renderSupportExportDetail(data) {
+  const item = data.export;
+  summary.innerHTML = `
+    <strong>${item.summary.package_type}</strong>
+    ${item.summary.name} for task ${item.summary.task_id ? item.summary.task_id.slice(0, 18) : "unknown"}.
+  `;
+  tweets.innerHTML = "";
+  const packageView = document.createElement("pre");
+  packageView.className = "diagnostic-pre";
+  packageView.textContent = JSON.stringify(item.package, null, 2);
+  tweets.appendChild(packageView);
+}
+
 function formatViews(value) {
   return value === null || value === undefined || value === ""
     ? "views unavailable"
@@ -392,6 +406,25 @@ async function handleTaskControl(event) {
 tasks.addEventListener("click", handleTaskControl);
 taskActionsBody.addEventListener("click", handleTaskControl);
 
+supportExportsBody.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-view-support-export]");
+  if (!button) {
+    return;
+  }
+
+  button.disabled = true;
+  summary.textContent = "Loading support export...";
+  tweets.innerHTML = "";
+  try {
+    const data = await getJson(`/api/support-exports/${encodeURIComponent(button.dataset.viewSupportExport)}`);
+    renderSupportExportDetail(data);
+  } catch (error) {
+    summary.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 sessions.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-restore-session], [data-disable-session]");
   if (!button) {
@@ -508,6 +541,7 @@ loadTaskActions().catch((error) => {
 });
 loadSupportExports().catch((error) => {
   supportExportsSummary.textContent = error.message;
+  supportExportsBody.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
 });
 loadRetention().catch((error) => {
   retention.textContent = error.message;

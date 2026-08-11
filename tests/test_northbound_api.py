@@ -354,6 +354,19 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(listing["exports"][0]["severity"], "CRITICAL")
             self.assertIn("support_exports", listing["export_dir"])
 
+            name = Path(payload["export"]["path"]).name
+            handler.path = f"/api/support-exports/{name}"
+            detail = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(detail["export"]["summary"]["name"], name)
+            self.assertEqual(detail["export"]["package"]["task_id"], failed.task_id)
+
+            handler.path = "/api/support-exports/..%5Csecrets.json"
+            handler.do_GET()
+
+            self.assertEqual(handler.status, 400)
+
     def test_release_risk_dict_returns_recommendation(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

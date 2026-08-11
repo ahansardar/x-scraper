@@ -113,6 +113,20 @@ def list_support_exports(
     return summaries[:limit]
 
 
+def read_support_export(config: AppConfig, name: str) -> dict[str, object]:
+    path = _support_export_path(config, name)
+    if not path.exists():
+        raise ValueError(f"Support export {name} not found")
+    summary = _summarize_export(path)
+    if not summary.readable:
+        raise ValueError(f"Support export {name} is not readable JSON")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "summary": summary.public_dict(),
+        "package": payload,
+    }
+
+
 def apply_support_export_retention(
     config: AppConfig,
     *,
@@ -216,6 +230,17 @@ def _default_output_path(config: AppConfig, task_id: str) -> Path:
 
 def support_export_dir(config: AppConfig) -> Path:
     return config.data_dir / "support_exports"
+
+
+def _support_export_path(config: AppConfig, name: str) -> Path:
+    if Path(name).name != name:
+        raise ValueError("Support export name must be a file name")
+    if not name.startswith("failed-task-") or not name.endswith(".json"):
+        raise ValueError("Support export name must match failed-task-*.json")
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+    if any(char not in allowed for char in name):
+        raise ValueError("Support export name contains unsupported characters")
+    return support_export_dir(config) / name
 
 
 def _summarize_export(path: Path) -> SupportExportSummary:

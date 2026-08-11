@@ -1044,6 +1044,35 @@ Next:
 
 - Add an operator download/read endpoint for a selected support export without exposing arbitrary filesystem paths.
 
+## 2026-08-11 - Checkpoint 54: Safe Support Export Detail View
+
+Implemented:
+
+- Added filename-scoped support export reads for `failed-task-*.json` files.
+- Added `GET /api/support-exports/{file_name}` without accepting arbitrary filesystem paths.
+- Added validation for basename-only export names, file pattern, and safe characters.
+- Added a View action in the Support Exports frontend panel.
+- Rendered selected support export JSON in the existing diagnostic output area.
+- Added helper, API, and static frontend tests for detail reads and unsafe-name rejection.
+- Hardened CI static checks for the frontend detail action.
+- Updated README and deployment runbook.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py`
+- `python .\run_migrations.py`
+- Started `python .\run_app.py --host 127.0.0.1 --port 8000` with `XINGESTION_ADMIN_TOKEN` set for local verification.
+- `Invoke-RestMethod http://127.0.0.1:8000/api/support-exports` selected a real export filename.
+- `Invoke-RestMethod http://127.0.0.1:8000/api/support-exports/<file_name>` returned `FAILED_TASK_SUPPORT_EXPORT` with redaction metadata.
+- `Invoke-WebRequest http://127.0.0.1:8000/api/support-exports/..%5Csecrets.json` returned HTTP 400.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/app.js` confirmed `data-view-support-export`, `renderSupportExportDetail`, and `encodeURIComponent`.
+- Served frontend probe confirmed the Support Exports table includes an Action column.
+
+Next:
+
+- Add authenticated support export download with attachment headers for handoff outside the console.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
