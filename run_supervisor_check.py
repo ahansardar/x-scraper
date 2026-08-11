@@ -35,6 +35,9 @@ def main(argv=None):
         max_unpublished_events=args.max_unpublished_events,
         max_outbox_lag_seconds=args.max_outbox_lag_seconds,
         require_external_data_dir=args.require_external_data_dir,
+        required_network_context=args.required_network_context or config.worker_network_context,
+        max_network_failure_rate=args.max_network_failure_rate,
+        min_network_attempts=args.min_network_attempts,
     )
     result = checker.run()
     for check in result.checks:
@@ -66,6 +69,16 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail if XINGESTION_DATA_DIR resolves inside the repo checkout.",
     )
+    parser.add_argument(
+        "--required-network-context",
+        default="",
+        help=(
+            "Require at least one healthy session matching kind[:route][:region]. "
+            "Defaults to XINGESTION_WORKER_NETWORK_CONTEXT when set."
+        ),
+    )
+    parser.add_argument("--max-network-failure-rate", type=float, default=0.8)
+    parser.add_argument("--min-network-attempts", type=int, default=5)
     return parser
 
 

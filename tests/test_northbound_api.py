@@ -268,6 +268,42 @@ class NorthboundApiTests(unittest.TestCase):
             )
             self.assertNotIn("file:session-a", raw)
 
+    def test_network_health_dict_exposes_route_telemetry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            telemetry = ProtocolTelemetryStore(Path(temp_dir) / "tasks.sqlite3")
+            telemetry.record_attempt(
+                task_id="task-1",
+                capability_id="SEARCH_TWEETS",
+                release_id="release-1",
+                recipe_revision_id="recipe-1",
+                state="SUCCESS",
+                session_id="session-1",
+                network_context="proxy:pool-a:iad",
+            )
+            telemetry.record_attempt(
+                task_id="task-2",
+                capability_id="SEARCH_TWEETS",
+                release_id="release-1",
+                recipe_revision_id="recipe-1",
+                state="FAILURE",
+                session_id="session-1",
+                network_context="proxy:pool-a:iad",
+                error_class="RATE_LIMITED",
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(worker_network_context="proxy:pool-a"),
+                telemetry_store=telemetry,
+            )
+
+            payload = live_server._network_health_dict()
+
+            self.assertEqual(payload["worker_network_context"], "proxy:pool-a")
+            self.assertEqual(payload["routes"][0]["network_context"], "proxy:pool-a:iad")
+            self.assertEqual(payload["routes"][0]["successes"], 1)
+            self.assertEqual(payload["routes"][0]["failures"], 1)
+            self.assertEqual(payload["routes"][0]["failure_rate"], 0.5)
+            self.assertEqual(payload["routes"][0]["errors_by_class"]["RATE_LIMITED"], 1)
+
     def test_investigate_task_returns_package(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

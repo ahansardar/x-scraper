@@ -18,7 +18,7 @@ from xingestion.releases import ReleaseRecord, ReleaseStore
 from xingestion.secrets import secret_provider_status
 from xingestion.sessions import SessionRecord, SessionStore
 from xingestion.tasks import SQLiteTaskLedger
-from xingestion.telemetry import ProtocolTelemetryStore, TelemetrySummary
+from xingestion.telemetry import NetworkTelemetrySummary, ProtocolTelemetryStore, TelemetrySummary
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import WebSessionAuth
 
@@ -88,6 +88,9 @@ def build_health_report(
         "runtime_errors": _safe_section(lambda: _runtime_errors_dict(config)),
         "canonical": _safe_section(lambda: CanonicalStore(config.sqlite_path).counts()),
         "telemetry": _safe_section(lambda: _telemetry_summary_dict(telemetry_store.summary())),
+        "network_health": _safe_section(
+            lambda: _network_health_dict(config, telemetry_store)
+        ),
         "release": _safe_section(lambda: _release_dict(release_store.ensure_release(manifest.release_id))),
         "release_risk": _safe_section(
             lambda: build_release_risk_recommendation(
@@ -251,6 +254,33 @@ def _telemetry_summary_dict(summary: TelemetrySummary) -> dict[str, object]:
         "successes": summary.successes,
         "failures": summary.failures,
         "errors_by_class": dict(summary.errors_by_class),
+    }
+
+
+def _network_health_dict(
+    config: AppConfig,
+    telemetry_store: ProtocolTelemetryStore,
+) -> dict[str, object]:
+    return {
+        "worker_network_context": config.worker_network_context or None,
+        "routes": [
+            _network_route_dict(route)
+            for route in telemetry_store.network_summary()
+        ],
+    }
+
+
+def _network_route_dict(route: NetworkTelemetrySummary) -> dict[str, object]:
+    return {
+        "network_context": route.network_context,
+        "total_attempts": route.total_attempts,
+        "successes": route.successes,
+        "failures": route.failures,
+        "failure_rate": route.failure_rate,
+        "distinct_sessions": route.distinct_sessions,
+        "last_attempt_at": route.last_attempt_at,
+        "last_success_at": route.last_success_at,
+        "errors_by_class": dict(route.errors_by_class),
     }
 
 

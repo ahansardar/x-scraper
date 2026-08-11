@@ -7,6 +7,8 @@ import subprocess
 from typing import Protocol
 from urllib import request
 
+from xingestion.sessions.network import network_matches, parse_network_policy
+
 
 @dataclass(frozen=True)
 class SupervisionCheck:
@@ -83,6 +85,9 @@ class DeploymentSupervisorCheck:
         max_unpublished_events: int = 100,
         max_outbox_lag_seconds: int = 300,
         require_external_data_dir: bool = False,
+        required_network_context: str | None = None,
+        max_network_failure_rate: float = 0.8,
+        min_network_attempts: int = 5,
     ) -> None:
         self.api_client = api_client
         self.root = root.resolve()
@@ -92,6 +97,11 @@ class DeploymentSupervisorCheck:
         self.max_unpublished_events = max_unpublished_events
         self.max_outbox_lag_seconds = max_outbox_lag_seconds
         self.require_external_data_dir = require_external_data_dir
+        self.required_network_context = required_network_context or None
+        if self.required_network_context:
+            parse_network_policy(self.required_network_context)
+        self.max_network_failure_rate = max_network_failure_rate
+        self.min_network_attempts = min_network_attempts
 
     def run(self) -> SupervisionResult:
         checks: list[SupervisionCheck] = []
@@ -102,6 +112,7 @@ class DeploymentSupervisorCheck:
             metrics = self.api_client.get("/api/metrics")
             migrations = self.api_client.get("/api/migrations")
             sessions = self.api_client.get("/api/sessions")
+            network_health = self.api_client.get("/api/network-health")
             release = self.api_client.get("/api/releases/current")
         except RuntimeError as exc:
             return SupervisionResult(
@@ -123,6 +134,7 @@ class DeploymentSupervisorCheck:
                 self._check_startup(startup),
                 self._check_queue(metrics),
                 self._check_sessions(sessions, metrics),
+                self._check_network(network_health, sessions),
                 self._check_release(release),
             )
         )
@@ -241,6 +253,83 @@ class DeploymentSupervisorCheck:
             "sessions",
             "PASS",
             f"sessions={len(sessions)} healthy={healthy}",
+        )
+
+    def _check_network(
+        self,
+        network_health: dict[str, object],
+        sessions_payload: dict[str, object],
+    ) -> SupervisionCheck:
+        routes = [_dict(route) for route in _list(network_health.get("routes"))]
+        sessions = [_dict(session) for session in _list(sessions_payload.get("sessions"))]
+        unhealthy_routes = [
+            route
+            for route in routes
+            if int(route.get("total_attempts") or 0) >= self.min_network_attempts
+            and float(route.get("failure_rate") or 0.0) > self.max_network_failure_rate
+        ]
+        if unhealthy_routes:
+            route = unhealthy_routes[0]
+            return SupervisionCheck(
+                "network",
+                "FAIL",
+                (
+                    f"route={route.get('network_context')} failure_rate="
+                    f"{float(route.get('failure_rate') or 0.0):.2f} exceeds "
+                    f"limit={self.max_network_failure_rate:.2f}"
+                ),
+            )
+
+        if self.required_network_context:
+            matching_sessions = [
+                session
+                for session in sessions
+                if network_matches(
+                    str(session.get("network_context") or "direct"),
+                    self.required_network_context,
+                )
+            ]
+            healthy_matching = [
+                session
+                for session in matching_sessions
+                if str(session.get("health")) == "HEALTHY"
+            ]
+            if not healthy_matching:
+                return SupervisionCheck(
+                    "network",
+                    "FAIL",
+                    f"no healthy sessions match network_context={self.required_network_context}",
+                )
+            matching_routes = [
+                route
+                for route in routes
+                if network_matches(
+                    str(route.get("network_context") or "direct"),
+                    self.required_network_context,
+                )
+            ]
+            if not matching_routes:
+                return SupervisionCheck(
+                    "network",
+                    "WARN",
+                    (
+                        f"healthy_sessions={len(healthy_matching)} for "
+                        f"network_context={self.required_network_context}; no attempts recorded yet"
+                    ),
+                )
+            return SupervisionCheck(
+                "network",
+                "PASS",
+                (
+                    f"network_context={self.required_network_context} "
+                    f"healthy_sessions={len(healthy_matching)} routes={len(matching_routes)}"
+                ),
+            )
+
+        return SupervisionCheck(
+            "network",
+            "PASS",
+            f"routes={len(routes)} threshold={self.max_network_failure_rate:.2f}",
         )
 
     def _check_release(self, payload: dict[str, object]) -> SupervisionCheck:

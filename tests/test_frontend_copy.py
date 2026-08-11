@@ -24,6 +24,7 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("Needs Attention", html)
         self.assertIn("Support Exports", html)
         self.assertIn("Startup Readiness", html)
+        self.assertIn("Network Health", html)
         self.assertNotIn("mock", html.lower())
 
     def test_frontend_reports_non_json_api_responses(self):
@@ -74,6 +75,9 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("loadStartup", js)
         self.assertIn("startupChecks", js)
         self.assertIn("formatNetworkPolicy", js)
+        self.assertIn("/api/network-health", js)
+        self.assertIn("loadNetworkHealth", js)
+        self.assertIn("networkRateClass", js)
 
 
 if __name__ == "__main__":

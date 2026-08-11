@@ -60,6 +60,37 @@ class ProtocolTelemetryStoreTests(unittest.TestCase):
             self.assertEqual(signals[0].count, 1)
             self.assertEqual(signals[0].distinct_sessions, 1)
 
+            network_summary = store.network_summary()
+
+            self.assertEqual(len(network_summary), 1)
+            self.assertEqual(network_summary[0].network_context, "direct:iad")
+            self.assertEqual(network_summary[0].total_attempts, 2)
+            self.assertEqual(network_summary[0].successes, 1)
+            self.assertEqual(network_summary[0].failures, 1)
+            self.assertEqual(network_summary[0].failure_rate, 0.5)
+            self.assertEqual(network_summary[0].distinct_sessions, 1)
+            self.assertIn("RATE_LIMITED", network_summary[0].errors_by_class)
+
+    def test_network_summary_groups_missing_route_as_unassigned(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ProtocolTelemetryStore(Path(temp_dir) / "telemetry.sqlite3")
+
+            store.record_attempt(
+                task_id="task-1",
+                capability_id="SEARCH_TWEETS",
+                release_id="release-1",
+                recipe_revision_id="recipe-1",
+                state="FAILURE",
+                session_id=None,
+                error_class="NO_SESSION",
+            )
+
+            network_summary = store.network_summary()
+
+            self.assertEqual(network_summary[0].network_context, "unassigned")
+            self.assertEqual(network_summary[0].failures, 1)
+            self.assertEqual(network_summary[0].errors_by_class["NO_SESSION"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

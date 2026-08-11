@@ -70,12 +70,18 @@ python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-proce
 python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
-`run_supervisor_check.py` verifies JSON API liveness, current migrations, storage paths, outbox lag/depth, healthy session availability, release execution state, and optional process-table evidence for `run_app.py` and `run_worker.py`.
+`run_supervisor_check.py` verifies JSON API liveness, current migrations, storage paths, outbox lag/depth, healthy session availability, network route health, release execution state, and optional process-table evidence for `run_app.py` and `run_worker.py`.
 
 Use stricter queue thresholds when the deployment has a low-latency SLO:
 
 ```powershell
 python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --max-outbox-lag-seconds 60 --max-unpublished-events 10
+```
+
+For route-bound workers, require the same network context that the worker uses and tune failure-rate thresholds:
+
+```powershell
+python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --required-network-context proxy:pool-a --max-network-failure-rate 0.8 --min-network-attempts 5
 ```
 
 ## Restart Checklist

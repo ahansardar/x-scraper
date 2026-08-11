@@ -12,6 +12,7 @@ from xingestion.health_report import build_health_report, write_health_report
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import WebSessionAuth
 
@@ -60,6 +61,15 @@ class HealthReportTests(unittest.TestCase):
                     "message": "X returned HTTP 404 for the pinned operation",
                 },
             )
+            ProtocolTelemetryStore(config.sqlite_path).record_attempt(
+                task_id="route-task",
+                capability_id="SEARCH_TWEETS",
+                release_id=manifest.release_id,
+                recipe_revision_id="recipe-test",
+                state="SUCCESS",
+                session_id="session-1",
+                network_context="direct",
+            )
 
             result = write_health_report(
                 config=config,
@@ -82,6 +92,8 @@ class HealthReportTests(unittest.TestCase):
             )
             self.assertEqual(saved["sessions"]["total"], 1)
             self.assertIn("release_risk", saved)
+            self.assertEqual(saved["network_health"]["routes"][0]["network_context"], "direct")
+            self.assertEqual(saved["network_health"]["routes"][0]["successes"], 1)
             self.assertIn("storage", saved)
             self.assertTrue(saved["startup"]["ok"])
             self.assertEqual(saved["startup"]["status"], "PASS")
