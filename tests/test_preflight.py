@@ -64,9 +64,13 @@ class PreflightTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(statuses["migrations"], "PASS")
             self.assertEqual(statuses["storage"], "PASS")
+            self.assertEqual(statuses["startup_directories"], "PASS")
             self.assertEqual(statuses["auth"], "PASS")
             self.assertEqual(statuses["sessions"], "PASS")
             self.assertEqual(statuses["api"], "WARN")
+            self.assertTrue((config.data_dir / "reports").exists())
+            self.assertTrue((config.data_dir / "support_exports").exists())
+            self.assertTrue((config.data_dir / "logs").exists())
 
     def test_preflight_fails_pending_migrations_and_no_sessions(self):
         manifest = load_manifest()
@@ -90,6 +94,7 @@ class PreflightTests(unittest.TestCase):
             self.assertEqual(statuses["migrations"], "FAIL")
             self.assertEqual(statuses["auth"], "WARN")
             self.assertEqual(statuses["sessions"], "FAIL")
+            self.assertEqual(statuses["startup_directories"], "PASS")
 
     def test_preflight_fails_release_risk_quarantine_recommendation(self):
         manifest = load_manifest()

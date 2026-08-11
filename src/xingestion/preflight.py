@@ -8,6 +8,7 @@ from urllib import request
 
 from xingestion.config import AppConfig
 from xingestion.investigation import build_release_risk_recommendation
+from xingestion.logging_config import load_logging_settings
 from xingestion.migrations import MigrationRunner
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.sessions import SessionHealth, SessionRecord, SessionStore
@@ -51,6 +52,7 @@ class DeploymentPreflight:
         checks = [
             self._check_migrations(),
             self._check_storage(),
+            self._check_startup_directories(),
             self._check_auth(),
             self._check_sessions(),
             self._check_release_risk(),
@@ -89,6 +91,29 @@ class DeploymentPreflight:
             "PASS",
             f"sqlite={self.config.sqlite_path} raw_evidence={self.config.raw_evidence_dir}",
         )
+
+    def _check_startup_directories(self) -> PreflightCheck:
+        directories = {
+            "data": self.config.data_dir,
+            "raw_evidence": self.config.raw_evidence_dir,
+            "reports": self.config.data_dir / "reports",
+            "support_exports": self.config.data_dir / "support_exports",
+            "logs": load_logging_settings(config=self.config, component="preflight").log_dir,
+        }
+        failures = []
+        for label, path in directories.items():
+            try:
+                _probe_writable_directory(path)
+            except OSError as exc:
+                failures.append(f"{label}={path}: {exc}")
+        if failures:
+            return PreflightCheck(
+                "startup_directories",
+                "FAIL",
+                "; ".join(failures),
+            )
+        details = " ".join(f"{label}={path}" for label, path in directories.items())
+        return PreflightCheck("startup_directories", "PASS", details)
 
     def _check_auth(self) -> PreflightCheck:
         missing = self.auth.missing_fields()
@@ -196,3 +221,10 @@ def _session_available(session: SessionRecord) -> bool:
         or session.lease_expires_at <= now
     )
     return health_allows and cooldown_allows and lease_allows
+
+
+def _probe_writable_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    probe = path / ".xingestion-startup-write-check"
+    probe.write_text("ok", encoding="utf-8")
+    probe.unlink()
