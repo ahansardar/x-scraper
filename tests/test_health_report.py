@@ -83,6 +83,9 @@ class HealthReportTests(unittest.TestCase):
             self.assertEqual(saved["sessions"]["total"], 1)
             self.assertIn("release_risk", saved)
             self.assertIn("storage", saved)
+            self.assertTrue(saved["startup"]["ok"])
+            self.assertEqual(saved["startup"]["status"], "PASS")
+            self.assertIn("support_exports", saved["startup"]["message"])
             self.assertNotIn("credential_ref", raw)
             self.assertNotIn("lease_token", raw)
             self.assertNotIn("secret:x/session-1", raw)
@@ -103,6 +106,7 @@ class HealthReportTests(unittest.TestCase):
             statuses = {check["name"]: check["status"] for check in report["preflight"]}
             self.assertFalse(report["ok"])
             self.assertEqual(statuses["migrations"], "FAIL")
+            self.assertEqual(report["startup"]["status"], "PASS")
             self.assertEqual(statuses["sessions"], "FAIL")
             self.assertIn("pending_versions", report["migrations"])
 

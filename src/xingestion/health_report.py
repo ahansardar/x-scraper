@@ -80,6 +80,7 @@ def build_health_report(
         "base_url": base_url,
         "config": _config_dict(config),
         "storage": _storage_dict(config),
+        "startup": _startup_dict(preflight.checks),
         "preflight": [_preflight_check_dict(check) for check in preflight.checks],
         "migrations": _safe_section(lambda: _migration_status_dict(migration_runner)),
         "tasks": _safe_section(lambda: _task_dict(config)),
@@ -132,6 +133,18 @@ def _preflight_check_dict(check: PreflightCheck) -> dict[str, str]:
         "name": check.name,
         "status": check.status,
         "message": check.message,
+    }
+
+
+def _startup_dict(checks: tuple[PreflightCheck, ...]) -> dict[str, object]:
+    startup = next(
+        (check for check in checks if check.name == "startup_directories"),
+        PreflightCheck("startup_directories", "FAIL", "startup directory check missing"),
+    )
+    return {
+        "ok": startup.status != "FAIL",
+        "status": startup.status,
+        "message": startup.message,
     }
 
 
