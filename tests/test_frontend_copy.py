@@ -22,6 +22,7 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("Last Error", html)
         self.assertIn("Needs Attention", html)
         self.assertIn("Support Exports", html)
+        self.assertIn("Startup Readiness", html)
         self.assertNotIn("mock", html.lower())
 
     def test_frontend_reports_non_json_api_responses(self):
@@ -68,6 +69,9 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("data-download-support-export", js)
         self.assertIn("/download", js)
         self.assertIn("downloadSupportExport", js)
+        self.assertIn("/api/startup", js)
+        self.assertIn("loadStartup", js)
+        self.assertIn("startupChecks", js)
 
 
 if __name__ == "__main__":

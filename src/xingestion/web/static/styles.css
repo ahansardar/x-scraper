@@ -90,6 +90,7 @@ h2 {
 
 .flow-panel,
 .ops-panel,
+.startup-panel,
 .session-panel,
 .metrics-panel,
 .attention-panel,
@@ -129,6 +130,7 @@ h2 {
 }
 
 .ops-panel,
+.startup-panel,
 .support-panel {
   display: grid;
   gap: 12px;
@@ -246,6 +248,28 @@ button:disabled {
   background: #fbfcfd;
 }
 
+.check-list {
+  display: grid;
+  gap: 8px;
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: 150px 72px 1fr;
+  gap: 8px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbfcfd;
+  font-size: 12px;
+}
+
+.check-row code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .tweets {
   display: grid;
   gap: 10px;
@@ -332,6 +356,7 @@ th {
   .task-panel,
   .flow-panel,
   .ops-panel,
+  .startup-panel,
   .session-panel,
   .metrics-panel,
   .attention-panel,

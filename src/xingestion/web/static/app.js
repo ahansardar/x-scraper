@@ -5,6 +5,8 @@ const tweets = document.querySelector("#tweets");
 const tasks = document.querySelector("#tasks");
 const retention = document.querySelector("#retention");
 const runRetention = document.querySelector("#runRetention");
+const startupSummary = document.querySelector("#startupSummary");
+const startupChecks = document.querySelector("#startupChecks");
 const metrics = document.querySelector("#metrics");
 const sessions = document.querySelector("#sessions");
 const taskActionsBody = document.querySelector("#taskActions");
@@ -108,6 +110,20 @@ async function loadRetention() {
     Keeping terminal tasks for <strong>${data.retention_days}</strong> days.
     Cleanup currently matches <strong>${data.dry_run.matched_tasks}</strong> tasks.
   `;
+}
+
+async function loadStartup() {
+  const data = await getJson("/api/startup");
+  startupSummary.innerHTML = data.ok
+    ? "Startup checks are passing."
+    : "Startup checks need operator attention.";
+  startupChecks.innerHTML = data.checks.map((check) => `
+    <div class="check-row">
+      <strong>${check.name}</strong>
+      <span class="${severityClass(check.status === "FAIL" ? "HIGH" : check.status === "WARN" ? "MEDIUM" : "LOW")}">${check.status}</span>
+      <code>${check.message}</code>
+    </div>
+  `).join("");
 }
 
 async function loadMetrics() {
@@ -581,6 +597,9 @@ loadSupportExports().catch((error) => {
 });
 loadRetention().catch((error) => {
   retention.textContent = error.message;
+});
+loadStartup().catch((error) => {
+  startupSummary.textContent = error.message;
 });
 loadMetrics().catch((error) => {
   metrics.innerHTML = `<div><strong>error</strong><span>${error.message}</span></div>`;
