@@ -1511,6 +1511,32 @@ Next:
 
 - Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
 
+## 2026-08-12 - Checkpoint 75: Tokenless Trusted Console Controls
+
+Implemented:
+
+- Removed the admin-token requirement from trusted-console operator routes.
+- Removed frontend admin-token prompting and `x-admin-token` header injection from operator actions, downloads, retention, outbox processing, session controls, and protocol validation saves.
+- Removed `XINGESTION_ADMIN_TOKEN` from current environment examples and deployment guidance.
+- Removed admin-token state from active app configuration, smoke checks, storage metrics, and health-report config output.
+- Updated tests to assert operator routes work without configured or supplied admin-token headers.
+
+Verified:
+
+- `rg` found no active `Admin token`, `adminHeaders`, `x-admin-token`, `XINGESTION_ADMIN_TOKEN`, `admin_token_configured`, or `admin_token` references in `src`, tests, README, deployment runbook, or `.env.example`.
+- `node --check src\xingestion\web\static\app.js`
+- `python -m unittest discover -s tests -p "test_config.py"` passed 2 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 21 tests.
+- `python -m unittest discover -s tests -p "test_smoke.py"` passed 2 tests.
+- Restarted the live server on `127.0.0.1:8023`.
+- Live `POST /api/tasks/{task_id}/investigate` succeeded without an admin-token header.
+- Live `POST /api/protocol-validation/run` accepted the request without an admin-token header and wrote a report.
+- Live `/app.js` contains no prompt, admin-header helper, admin-token text, or `x-admin-token` header usage.
+
+Next:
+
+- Add deployment-boundary auth separately if this trusted console is exposed beyond a private operator network.
+
 ## 2026-08-12 - Checkpoint 74: Frontend Fitment Correction
 
 Implemented:

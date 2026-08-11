@@ -25,7 +25,6 @@ const taskActionsBody = document.querySelector("#taskActions");
 const supportExportsSummary = document.querySelector("#supportExportsSummary");
 const supportExportsBody = document.querySelector("#supportExports");
 const runSupportExportRetention = document.querySelector("#runSupportExportRetention");
-let adminToken = "";
 
 function escapeHtml(value) {
   const text = value === null || value === undefined ? "" : String(value);
@@ -59,13 +58,6 @@ async function parseJsonResponse(response, url) {
     const contentType = response.headers.get("content-type") || "unknown content type";
     throw new Error(`${url} returned non-JSON ${contentType} with HTTP ${response.status}`);
   }
-}
-
-function adminHeaders() {
-  if (!adminToken) {
-    adminToken = window.prompt("Admin token") || "";
-  }
-  return {"x-admin-token": adminToken};
 }
 
 async function loadHealth() {
@@ -529,8 +521,7 @@ async function handleTaskControl(event) {
     tweets.innerHTML = "";
     try {
       const data = await getJson(`/api/tasks/${button.dataset.exportTask}/export`, {
-        method: "POST",
-        headers: adminHeaders()
+        method: "POST"
       });
       renderSupportExport(data);
       await loadSupportExports();
@@ -550,8 +541,7 @@ async function handleTaskControl(event) {
     tweets.innerHTML = "";
     try {
       const data = await getJson(`/api/tasks/${button.dataset.investigateTask}/investigate`, {
-        method: "POST",
-        headers: adminHeaders()
+        method: "POST"
       });
       renderInvestigation(data);
     } catch (error) {
@@ -569,8 +559,7 @@ async function handleTaskControl(event) {
     summary.textContent = "Cancelling task...";
     try {
       const data = await getJson(`/api/tasks/${button.dataset.cancelTask}/cancel`, {
-        method: "POST",
-        headers: adminHeaders()
+        method: "POST"
       });
       summary.innerHTML = `<strong>${escapeHtml(data.task.state)}</strong> task ${shortId(data.task.task_id)} cancelled.`;
     } catch (error) {
@@ -588,8 +577,7 @@ async function handleTaskControl(event) {
   tweets.innerHTML = "";
   try {
     const data = await getJson(`/api/tasks/${button.dataset.replayTask}/replay`, {
-      method: "POST",
-      headers: adminHeaders()
+      method: "POST"
     });
     summary.innerHTML = `
       <strong>${escapeHtml(data.task.state)}</strong>
@@ -649,7 +637,7 @@ supportExportsBody.addEventListener("click", async (event) => {
 
 async function downloadSupportExport(name) {
   const response = await fetch(`/api/support-exports/${encodeURIComponent(name)}/download`, {
-    headers: adminHeaders()
+    headers: {}
   });
   if (!response.ok) {
     const data = await parseJsonResponse(response, `/api/support-exports/${name}/download`);
@@ -678,8 +666,7 @@ sessions.addEventListener("click", async (event) => {
   summary.textContent = `${action === "restore" ? "Restoring" : "Disabling"} session...`;
   try {
     const data = await getJson(`/api/sessions/${sessionId}/${action}`, {
-      method: "POST",
-      headers: adminHeaders()
+      method: "POST"
     });
     summary.innerHTML = `<strong>${escapeHtml(data.session.health)}</strong> session ${escapeHtml(data.session.session_id)} updated.`;
     await loadTaskActions();
@@ -700,8 +687,7 @@ importSessions.addEventListener("click", async () => {
   summary.textContent = "Importing session registry...";
   try {
     const data = await getJson("/api/sessions/import", {
-      method: "POST",
-      headers: adminHeaders()
+      method: "POST"
     });
       summary.innerHTML = `
         Imported <strong>${data.session_import.imported}</strong>
@@ -721,8 +707,7 @@ runRetention.addEventListener("click", async () => {
   runRetention.disabled = true;
   try {
     const data = await getJson("/api/retention/run", {
-      method: "POST",
-      headers: adminHeaders()
+      method: "POST"
     });
     retention.innerHTML = `
       Deleted <strong>${data.retention.deleted_tasks}</strong> terminal tasks
@@ -744,8 +729,7 @@ runSupportExportRetention.addEventListener("click", async () => {
   runSupportExportRetention.disabled = true;
   try {
     const data = await getJson("/api/support-exports/retention", {
-      method: "POST",
-      headers: adminHeaders()
+      method: "POST"
     });
     supportExportsSummary.innerHTML = `
       Deleted <strong>${data.retention.deleted_exports}</strong> support exports
@@ -778,8 +762,7 @@ processOutbox.addEventListener("click", async () => {
     const data = await getJson("/api/outbox/process", {
       method: "POST",
       headers: {
-        "content-type": "application/json",
-        ...adminHeaders()
+        "content-type": "application/json"
       },
       body: JSON.stringify({limit: 5})
     });
@@ -811,8 +794,7 @@ runProtocolValidation.addEventListener("click", async () => {
   validationSummary.textContent = "Running parser validation and saving report...";
   try {
     const data = await getJson("/api/protocol-validation/run", {
-      method: "POST",
-      headers: adminHeaders()
+      method: "POST"
     });
     validationSummary.innerHTML = `
       Saved validation report to <code>${escapeHtml(data.saved_path)}</code>.

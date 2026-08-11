@@ -22,7 +22,6 @@ XINGESTION_SECRET_DIR=
 XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_WORKER_NETWORK_CONTEXT=
-XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
 XINGESTION_LOG_DIR=
@@ -97,7 +96,7 @@ The web console can run the same configured import through:
 POST /api/sessions/import
 ```
 
-The `POST` route requires `x-admin-token`. Import output shows session IDs, account labels, network contexts, health, and reference schemes; it does not return `credential_ref` values.
+The `POST` route is available from the trusted console without an admin-token header. Import output shows session IDs, account labels, network contexts, health, and reference schemes; it does not return `credential_ref` values.
 
 ## Start
 
@@ -194,11 +193,7 @@ Poll `status_url` until the task is `DONE`, then read `result_url`.
 
 ## Operator Controls
 
-All operator `POST` routes require:
-
-```text
-x-admin-token: <XINGESTION_ADMIN_TOKEN>
-```
+Operator `POST` routes are trusted-console routes and do not require an admin-token header.
 
 Cancel pending work:
 
@@ -277,7 +272,7 @@ GET /api/support-exports/{file_name}/download
 POST /api/support-exports/retention
 ```
 
-The Support Exports panel uses the same endpoints. Detail reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; they do not accept arbitrary paths. Downloads require `x-admin-token` and return attachment headers. Retention uses `XINGESTION_RETENTION_DAYS` and deletes only `failed-task-*.json` files inside that directory.
+The Support Exports panel uses the same endpoints. Detail reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; they do not accept arbitrary paths. Downloads return attachment headers. Retention uses `XINGESTION_RETENTION_DAYS` and deletes only `failed-task-*.json` files inside that directory.
 
 List failed and retryable tasks with recommended next actions:
 
@@ -311,7 +306,7 @@ GET /api/outbox
 POST /api/outbox/process
 ```
 
-The `POST` route requires `x-admin-token`. Processing does not delete rows or manually force acknowledgements; it claims events via the ledger and executes `LocalWorker.process_one()`, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
+The `POST` route does not require an admin-token header. Processing does not delete rows or manually force acknowledgements; it claims events via the ledger and executes `LocalWorker.process_one()`, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
 
 Validate the pinned `SEARCH_TWEETS` parser before and after protocol changes:
 
@@ -329,7 +324,7 @@ GET /api/protocol-validation/reports
 POST /api/protocol-validation/run
 ```
 
-Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route requires `x-admin-token`.
+Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route does not require an admin-token header.
 
 Bulk reprocess completed tasks for a release:
 

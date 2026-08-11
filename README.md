@@ -103,7 +103,6 @@ XINGESTION_SECRET_DIR=
 XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_WORKER_NETWORK_CONTEXT=
-XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
 XINGESTION_LOG_DIR=
@@ -270,7 +269,7 @@ See [docs/process_supervision.md](docs/process_supervision.md) for Windows Task 
 Logs use rotating file handlers. Leave `XINGESTION_LOG_DIR` blank to write under `XINGESTION_DATA_DIR\logs`, or set it to a host-managed persistent log directory. See [docs/logging.md](docs/logging.md).
 Worker failure logs include the structured runtime error class, severity, scope, retryability, and operator action.
 
-Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in the `x-admin-token` header:
+Operator routes are trusted-console routes and do not require an admin-token header:
 
 - `POST /api/tasks/{task_id}/cancel`
 - `POST /api/tasks/{task_id}/replay`
@@ -318,7 +317,7 @@ GET /api/support-exports/{file_name}/download
 POST /api/support-exports/retention
 ```
 
-Support export reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; callers do not pass arbitrary filesystem paths. Downloads require `x-admin-token` and return `Content-Disposition: attachment`. Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under that directory, and leaves task ledger rows untouched.
+Support export reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; callers do not pass arbitrary filesystem paths. Downloads return `Content-Disposition: attachment`. Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under that directory, and leaves task ledger rows untouched.
 
 List failed and retryable tasks with recommended operator actions:
 

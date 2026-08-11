@@ -17,11 +17,9 @@ class SmokeClient:
         self,
         *,
         base_url: str,
-        admin_token: str = "",
         timeout_seconds: float = 10.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.admin_token = admin_token
         self.timeout_seconds = timeout_seconds
 
     def run(self, *, submit_query: str | None = None, wait_seconds: int = 60) -> SmokeResult:
@@ -98,8 +96,6 @@ class SmokeClient:
         url = path if path.startswith("http") else f"{self.base_url}{path}"
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {"content-type": "application/json"}
-        if self.admin_token:
-            headers["x-admin-token"] = self.admin_token
         req = request.Request(url, data=body, headers=headers, method=method)
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as response:

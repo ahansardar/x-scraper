@@ -137,37 +137,32 @@ class NorthboundApiTests(unittest.TestCase):
         self.assertEqual(handler.status, 400)
         self.assertIn("Unsupported capability", payload["message"])
 
-    def test_operator_route_requires_configured_admin_token(self):
+    def test_operator_route_allows_missing_admin_header(self):
         live_server.STATE = SimpleNamespace(
-            config=SimpleNamespace(admin_token="expected-token")
+            config=SimpleNamespace()
         )
         handler = HeaderBackedHandler(headers={})
 
-        result = handler._require_admin()
+        self.assertTrue(handler._require_admin())
+        self.assertIsNone(handler.status)
 
-        self.assertFalse(result)
-        self.assertEqual(handler.status, 401)
-        self.assertIn("Admin token required", handler.payload["message"])
-
-    def test_operator_route_accepts_matching_admin_token(self):
+    def test_operator_route_does_not_require_configured_token(self):
         live_server.STATE = SimpleNamespace(
-            config=SimpleNamespace(admin_token="expected-token")
+            config=SimpleNamespace()
         )
-        handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+        handler = HeaderBackedHandler(headers={})
 
         self.assertTrue(handler._require_admin())
+        self.assertIsNone(handler.status)
 
-    def test_operator_route_rejects_when_admin_token_unconfigured(self):
+    def test_operator_route_keeps_noop_guard_for_compatibility(self):
         live_server.STATE = SimpleNamespace(
-            config=SimpleNamespace(admin_token="")
+            config=SimpleNamespace()
         )
-        handler = HeaderBackedHandler(headers={"x-admin-token": "anything"})
+        handler = HeaderBackedHandler(headers={})
 
-        result = handler._require_admin()
-
-        self.assertFalse(result)
-        self.assertEqual(handler.status, 503)
-        self.assertIn("not configured", handler.payload["message"])
+        self.assertTrue(handler._require_admin())
+        self.assertIsNone(handler.status)
 
     def test_api_miss_returns_json_not_html(self):
         handler = FakeHandler()
@@ -249,12 +244,11 @@ class NorthboundApiTests(unittest.TestCase):
             store = SessionStore(root / "tasks.sqlite3")
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(
-                    admin_token="expected-token",
                     session_registry_path=registry,
                 ),
                 session_store=store,
             )
-            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+            handler = HeaderBackedHandler(headers={})
 
             payload = handler._import_sessions()
 
@@ -466,13 +460,12 @@ class NorthboundApiTests(unittest.TestCase):
             raw_dir.mkdir()
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(
-                    admin_token="expected-token",
                     data_dir=root / "data",
                     raw_evidence_dir=raw_dir,
                 ),
                 manifest=manifest,
             )
-            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+            handler = HeaderBackedHandler(headers={})
 
             payload = handler._run_protocol_validation()
 
@@ -486,7 +479,7 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 200)
             self.assertEqual(len(listing["reports"]), 1)
 
-    def test_outbox_process_route_requires_worker_and_admin(self):
+    def test_outbox_process_route_requires_worker(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"
         )
@@ -506,11 +499,11 @@ class NorthboundApiTests(unittest.TestCase):
                 plan_json=plan.public_dict(),
             )
             live_server.STATE = SimpleNamespace(
-                config=SimpleNamespace(admin_token="expected-token"),
+                config=SimpleNamespace(),
                 ledger=ledger,
                 worker=StubOutboxWorker(ledger, task.task_id),
             )
-            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+            handler = HeaderBackedHandler(headers={})
 
             payload = handler._process_outbox({"limit": 5})
 

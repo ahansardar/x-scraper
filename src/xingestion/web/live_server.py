@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from hmac import compare_digest
 import json
 import logging
 from pathlib import Path
@@ -640,17 +639,6 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             raise ValueError(f"Invalid JSON body: {exc.msg}") from exc
 
     def _require_admin(self):
-        expected = STATE.config.admin_token
-        if not expected:
-            self._json(
-                {"message": "Admin token is not configured"},
-                status=503,
-            )
-            return False
-        supplied = self.headers.get("x-admin-token", "")
-        if not compare_digest(supplied, expected):
-            self._json({"message": "Admin token required"}, status=401)
-            return False
         return True
 
     def _json(self, payload, *, status=200):
@@ -792,7 +780,7 @@ def _storage_dict():
         "sqlite_path": str(STATE.config.sqlite_path),
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
         "retention_days": STATE.config.retention_days,
-        "admin_token_configured": bool(STATE.config.admin_token),
+        "operator_auth_required": False,
         "secret_provider": STATE.config.secret_provider,
         "secret_backend": secret_provider_status(STATE.config).public_dict(),
         "session_registry_configured": STATE.config.session_registry_path is not None,

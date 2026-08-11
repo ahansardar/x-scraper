@@ -19,7 +19,6 @@ class AppConfig:
     default_credential_ref: str
     default_network_context: str
     worker_network_context: str
-    admin_token: str
     secret_provider: str
     secret_dir: Path
     session_registry_path: Path | None
@@ -42,7 +41,6 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
     )
     default_network_context = os.getenv("XINGESTION_NETWORK_CONTEXT", "direct")
     worker_network_context = os.getenv("XINGESTION_WORKER_NETWORK_CONTEXT", "").strip()
-    admin_token = os.getenv("XINGESTION_ADMIN_TOKEN", "")
     secret_provider = os.getenv("XINGESTION_SECRET_PROVIDER", "env").strip().lower()
     secret_dir = _path_from_env("XINGESTION_SECRET_DIR", data_dir / "secrets")
     session_registry_path = _optional_path_from_env("XINGESTION_SESSION_REGISTRY")
@@ -68,7 +66,6 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
         default_credential_ref=default_credential_ref,
         default_network_context=default_network_context,
         worker_network_context=worker_network_context,
-        admin_token=admin_token,
         secret_provider=secret_provider,
         secret_dir=secret_dir,
         session_registry_path=session_registry_path,
