@@ -292,17 +292,20 @@ class NorthboundApiTests(unittest.TestCase):
             )
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(worker_network_context="proxy:pool-a"),
+                manifest=SimpleNamespace(release_id="release-1"),
                 telemetry_store=telemetry,
             )
 
             payload = live_server._network_health_dict()
 
+            self.assertEqual(payload["release_id"], "release-1")
             self.assertEqual(payload["worker_network_context"], "proxy:pool-a")
             self.assertEqual(payload["routes"][0]["network_context"], "proxy:pool-a:iad")
             self.assertEqual(payload["routes"][0]["successes"], 1)
             self.assertEqual(payload["routes"][0]["failures"], 1)
             self.assertEqual(payload["routes"][0]["failure_rate"], 0.5)
             self.assertEqual(payload["routes"][0]["errors_by_class"]["RATE_LIMITED"], 1)
+            self.assertIsNone(payload["routes"][0]["recommendation"])
 
     def test_investigate_task_returns_package(self):
         manifest = ProtocolReleaseManifest.from_file(

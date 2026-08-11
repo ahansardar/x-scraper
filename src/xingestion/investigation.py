@@ -10,6 +10,10 @@ from xingestion.telemetry import ProtocolAttempt, ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 
+NETWORK_ROUTE_MIN_ATTEMPTS = 5
+NETWORK_ROUTE_MAX_FAILURE_RATE = 0.8
+
+
 def build_protocol_drift_package(
     *,
     task_id: str,
@@ -76,6 +80,10 @@ def build_release_risk_recommendation(
     release = release_store.ensure_release(manifest.release_id)
     signals = telemetry_store.release_error_signals(manifest.release_id)
     signal_by_error = {signal.error_class: signal for signal in signals}
+    network_routes = build_network_route_recommendations(
+        telemetry_store=telemetry_store,
+        release_id=manifest.release_id,
+    )
 
     action = "NO_ACTION"
     severity = "LOW"
@@ -96,6 +104,10 @@ def build_release_risk_recommendation(
         action = "ALREADY_QUARANTINED"
         severity = "HIGH"
         reason = "The release is already quarantined by operator state."
+    elif network_routes:
+        action = "NETWORK_REMEDIATION_RECOMMENDED"
+        severity = _highest_route_severity(network_routes)
+        reason = "One or more network routes show repeated acquisition failures."
 
     return {
         "release_id": manifest.release_id,
@@ -103,6 +115,7 @@ def build_release_risk_recommendation(
         "action": action,
         "severity": severity,
         "reason": reason,
+        "operator_action": _risk_operator_action(action),
         "signals": [
             {
                 "error_class": signal.error_class,
@@ -111,7 +124,44 @@ def build_release_risk_recommendation(
             }
             for signal in signals
         ],
+        "network_routes": network_routes,
     }
+
+
+def build_network_route_recommendations(
+    *,
+    telemetry_store: ProtocolTelemetryStore,
+    release_id: str | None = None,
+    min_attempts: int = NETWORK_ROUTE_MIN_ATTEMPTS,
+    max_failure_rate: float = NETWORK_ROUTE_MAX_FAILURE_RATE,
+) -> list[dict[str, object]]:
+    recommendations: list[dict[str, object]] = []
+    for route in telemetry_store.network_summary(release_id=release_id):
+        if route.network_context == "unassigned":
+            continue
+        if route.total_attempts < min_attempts or route.failure_rate <= max_failure_rate:
+            continue
+        dominant_error = _dominant_error(route.errors_by_class)
+        severity = "HIGH" if route.failure_rate >= 0.95 else "MEDIUM"
+        recommendations.append(
+            {
+                "network_context": route.network_context,
+                "action": "ROTATE_OR_PAUSE_ROUTE",
+                "severity": severity,
+                "operator_action": _route_operator_action(dominant_error),
+                "reason": _route_reason(route.network_context, dominant_error),
+                "total_attempts": route.total_attempts,
+                "successes": route.successes,
+                "failures": route.failures,
+                "failure_rate": route.failure_rate,
+                "distinct_sessions": route.distinct_sessions,
+                "dominant_error_class": dominant_error,
+                "errors_by_class": dict(route.errors_by_class),
+                "last_attempt_at": route.last_attempt_at,
+                "last_success_at": route.last_success_at,
+            }
+        )
+    return recommendations
 
 
 def _binding_for_task(manifest, capability_id: str, contract_version: int):
@@ -127,6 +177,53 @@ def _binding_for_task(manifest, capability_id: str, contract_version: int):
 def _signal_count(signal_by_error, error_class: str) -> int:
     signal = signal_by_error.get(error_class)
     return signal.count if signal else 0
+
+
+def _dominant_error(errors_by_class: Mapping[str, int]) -> str | None:
+    if not errors_by_class:
+        return None
+    return sorted(errors_by_class.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def _highest_route_severity(routes: list[dict[str, object]]) -> str:
+    severities = {str(route.get("severity")) for route in routes}
+    if "HIGH" in severities:
+        return "HIGH"
+    if "MEDIUM" in severities:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _risk_operator_action(action: str) -> str:
+    if action == "QUARANTINE_RECOMMENDED":
+        return "quarantine_release_and_refresh_protocol_operation"
+    if action == "INVESTIGATE_RECOMMENDED":
+        return "investigate_release_with_raw_evidence_before_quarantine"
+    if action == "ALREADY_QUARANTINED":
+        return "keep_release_blocked_until_new_validation_passes"
+    if action == "NETWORK_REMEDIATION_RECOMMENDED":
+        return "pause_or_rotate_unhealthy_network_routes_before_changing_release"
+    return "continue_monitoring"
+
+
+def _route_operator_action(error_class: str | None) -> str:
+    if error_class == "RATE_LIMITED":
+        return "pause_route_wait_for_cooldown_or_add_healthy_session_capacity"
+    if error_class == "AUTH_OR_SESSION_REJECTED":
+        return "restore_or_replace_sessions_on_this_network_route"
+    if error_class == "NETWORK_ERROR":
+        return "check_dns_tls_proxy_or_vpn_path_for_this_route"
+    if error_class == "NO_HEALTHY_SESSION":
+        return "add_or_restore_healthy_sessions_for_this_route"
+    if error_class:
+        return "inspect_route_sessions_and_recent_raw_evidence"
+    return "inspect_route_worker_logs_and_session_health"
+
+
+def _route_reason(network_context: str, error_class: str | None) -> str:
+    if error_class:
+        return f"Route {network_context} is repeatedly failing with {error_class}."
+    return f"Route {network_context} is repeatedly failing without a dominant error class."
 
 
 def _recipe_dict(recipe) -> dict[str, object]:

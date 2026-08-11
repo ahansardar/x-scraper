@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.investigation import (
+    build_network_route_recommendations,
     build_protocol_drift_package,
     build_release_risk_recommendation,
 )
@@ -171,6 +172,59 @@ class InvestigationTests(unittest.TestCase):
 
             self.assertEqual(risk["action"], "NO_ACTION")
             self.assertEqual(risk["severity"], "LOW")
+
+    def test_release_risk_recommends_network_remediation_for_bad_route(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            for index in range(6):
+                telemetry.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id="recipe-1",
+                    state="FAILURE",
+                    session_id="session-1",
+                    network_context="proxy:pool-a:iad",
+                    error_class="RATE_LIMITED",
+                )
+
+            risk = build_release_risk_recommendation(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+            )
+
+            self.assertEqual(risk["action"], "NETWORK_REMEDIATION_RECOMMENDED")
+            self.assertEqual(risk["severity"], "HIGH")
+            self.assertEqual(risk["operator_action"], "pause_or_rotate_unhealthy_network_routes_before_changing_release")
+            self.assertEqual(risk["network_routes"][0]["network_context"], "proxy:pool-a:iad")
+            self.assertEqual(risk["network_routes"][0]["operator_action"], "pause_route_wait_for_cooldown_or_add_healthy_session_capacity")
+
+    def test_network_route_recommendations_ignore_other_releases(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            telemetry = ProtocolTelemetryStore(Path(temp_dir) / "tasks.sqlite3")
+            for index in range(6):
+                telemetry.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id="old-release",
+                    recipe_revision_id="recipe-1",
+                    state="FAILURE",
+                    session_id="session-1",
+                    network_context="proxy:pool-a:iad",
+                    error_class="RATE_LIMITED",
+                )
+
+            recommendations = build_network_route_recommendations(
+                telemetry_store=telemetry,
+                release_id=manifest.release_id,
+            )
+
+            self.assertEqual(recommendations, [])
 
 
 if __name__ == "__main__":

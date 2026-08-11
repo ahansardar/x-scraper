@@ -181,7 +181,10 @@ class DeploymentPreflight:
         return PreflightCheck(
             "release",
             status,
-            f"release_health={release.health.value} risk={risk['action']} severity={risk['severity']}",
+            (
+                f"release_health={release.health.value} risk={risk['action']} "
+                f"severity={risk['severity']} action={risk.get('operator_action')}"
+            ),
         )
 
     def _check_api_shape(self) -> PreflightCheck:
@@ -196,6 +199,7 @@ class DeploymentPreflight:
             "/api/storage": ("sqlite_path", "raw_evidence_dir"),
             "/api/metrics": ("tasks", "release_risk", "sessions"),
             "/api/migrations": ("migrations",),
+            "/api/network-health": ("routes", "recommendations"),
             "/api/sessions": ("sessions",),
             "/api/releases/current": ("release",),
             "/api/releases/current/risk": ("risk",),

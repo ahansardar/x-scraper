@@ -246,7 +246,7 @@ async function loadNetworkHealth() {
     <strong>${data.routes.length}</strong> routes have recorded protocol attempts.
   `;
   if (!data.routes.length) {
-    networkHealth.innerHTML = `<tr><td colspan="6">No protocol attempts recorded yet.</td></tr>`;
+    networkHealth.innerHTML = `<tr><td colspan="7">No protocol attempts recorded yet.</td></tr>`;
     return;
   }
   networkHealth.innerHTML = data.routes.map((route) => `
@@ -257,6 +257,7 @@ async function loadNetworkHealth() {
       <td>${route.distinct_sessions}</td>
       <td>${formatDateTime(route.last_attempt_at)}</td>
       <td>${formatErrors(route.errors_by_class)}</td>
+      <td>${formatRouteRecommendation(route.recommendation)}</td>
     </tr>
   `).join("");
 }
@@ -362,6 +363,16 @@ function formatErrors(errors) {
     return "";
   }
   return entries.map(([name, count]) => `${name}: ${count}`).join("; ");
+}
+
+function formatRouteRecommendation(recommendation) {
+  if (!recommendation) {
+    return `<span class="state">monitor</span>`;
+  }
+  return `
+    <span class="${severityClass(recommendation.severity)}">${recommendation.action}</span>
+    <br>${recommendation.operator_action}
+  `;
 }
 
 function renderOutput(data) {
@@ -879,5 +890,5 @@ loadSessions().catch((error) => {
 });
 loadNetworkHealth().catch((error) => {
   networkHealthSummary.textContent = error.message;
-  networkHealth.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+  networkHealth.innerHTML = `<tr><td colspan="7">${error.message}</td></tr>`;
 });

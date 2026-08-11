@@ -78,6 +78,8 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("/api/network-health", js)
         self.assertIn("loadNetworkHealth", js)
         self.assertIn("networkRateClass", js)
+        self.assertIn("formatRouteRecommendation", js)
+        self.assertIn("operator_action", js)
 
 
 if __name__ == "__main__":

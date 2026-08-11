@@ -100,6 +100,7 @@ Implemented:
 - Session metadata stored without raw secret values.
 - Default local session references `.env` values through a credential reference.
 - Validated network policy metadata for session routes and worker selection.
+- Active-release route health statistics and remediation recommendations.
 - Session health states and health transitions.
 - Session leases with expiry.
 - Session restore/disable operator controls.
@@ -109,7 +110,7 @@ Implemented:
 Spec relevance:
 
 - Matches the spec's separation of session metadata, credential references, health, and leases.
-- Not yet a full production account and network allocation plane; the current implementation has validated local route metadata and worker filtering, not managed proxy/VPN provisioning.
+- Not yet a full production account and network allocation plane; the current implementation has validated local route metadata, worker filtering, route health, and remediation guidance, not managed proxy/VPN provisioning.
 
 ### Raw Evidence, Canonical Data, and Reprocessing
 
@@ -346,7 +347,7 @@ Reason:
 | Dead-letter/replay | Implemented locally |
 | Session health and leases | Implemented locally |
 | Secret backend | Not implemented; env references only |
-| Network allocation plane | Partial; validated route metadata and worker session filtering |
+| Network allocation plane | Partial; validated route metadata, worker filtering, route health, and remediation guidance |
 | Canonical tweet and engagement data | Implemented |
 | Broader canonical model | Not implemented |
 | Reprocessing from raw evidence | Implemented |
