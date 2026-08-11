@@ -67,6 +67,12 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/api/task-actions" -Quiet)) {
             throw "Frontend does not load task actions"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "data-export-task" -Quiet)) {
+            throw "Frontend does not expose failed task export"
+          }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/export" -Quiet)) {
+            throw "Frontend does not call failed task export endpoint"
+          }
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "release risk" -Quiet)) {
             throw "Frontend does not expose release risk recommendations"
           }

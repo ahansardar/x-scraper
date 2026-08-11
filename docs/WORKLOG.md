@@ -988,6 +988,34 @@ Next:
 
 - Add frontend/export workflow for failed-task support packages.
 
+## 2026-08-11 - Checkpoint 52: Frontend Failed Task Export
+
+Implemented:
+
+- Added protected `POST /api/tasks/{task_id}/export`.
+- The route writes the same safe failed-task support package as `run_failed_task_export.py`.
+- The Needs Attention panel now shows an Export action for exportable failed/retryable task rows.
+- Added frontend rendering for export path, support summary, and redaction metadata.
+- Reused the existing admin-token prompt for export writes.
+- Added handler-level and static frontend tests.
+- Hardened CI static frontend checks for the export button and route call.
+- Updated README and deployment runbook.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py`
+- `python .\run_migrations.py`
+- Started `python .\run_app.py --host 127.0.0.1 --port 8000` with `XINGESTION_ADMIN_TOKEN` set for local verification.
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/task-actions`
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/app.js` confirmed `data-export-task`, `/export`, and `renderSupportExport`.
+- `Invoke-WebRequest -UseBasicParsing -Method POST -Headers @{"x-admin-token"="local-test-token"} http://127.0.0.1:8000/api/tasks/task-4b5d86965dcc4aea841509bab0e3ae93/export`
+- Confirmed the generated support package exists under `data\support_exports` and contains `FAILED_TASK_SUPPORT_EXPORT`, `support_summary`, and redaction metadata.
+
+Next:
+
+- Add support export retention/listing so operators can see generated support packages.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

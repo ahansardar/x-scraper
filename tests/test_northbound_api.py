@@ -295,6 +295,56 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["actions"][0]["severity"], "CRITICAL")
             self.assertTrue(payload["actions"][0]["replayable"])
 
+    def test_export_failed_task_writes_support_package(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db_path = root / "data" / "tasks.sqlite3"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            task = ledger.create_task(
+                idempotency_key="export-route",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            failed = ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={"error_class": "OPERATION_NOT_FOUND"},
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    data_dir=root / "data",
+                    sqlite_path=db_path,
+                ),
+                manifest=manifest,
+            )
+            handler = FakeHandler()
+
+            payload = handler._export_failed_task(failed.task_id)
+
+            self.assertEqual(handler.status, 201)
+            self.assertEqual(payload["export"]["task_id"], failed.task_id)
+            self.assertEqual(payload["export"]["support_summary"]["severity"], "CRITICAL")
+            self.assertTrue(Path(payload["export"]["path"]).exists())
+
     def test_release_risk_dict_returns_recommendation(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

@@ -30,6 +30,7 @@ from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
+from xingestion.support_export import write_failed_task_export
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
@@ -199,6 +200,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 if not self._require_admin():
                     return
                 return self._investigate_task(parts[2])
+            if len(parts) == 4 and parts[3] == "export":
+                if not self._require_admin():
+                    return
+                return self._export_failed_task(parts[2])
 
         if parsed.path == "/api/retention/run":
             if not self._require_admin():
@@ -420,6 +425,29 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         except ValueError as exc:
             return self._json({"message": str(exc)}, status=404)
         return self._json({"investigation": package}, status=200)
+
+    def _export_failed_task(self, task_id):
+        try:
+            result = write_failed_task_export(
+                task_id=task_id,
+                config=STATE.config,
+                manifest=STATE.manifest,
+            )
+        except ValueError as exc:
+            return self._json({"message": str(exc)}, status=400)
+        return self._json(
+            {
+                "export": {
+                    "path": str(result.path),
+                    "package_type": result.package["package_type"],
+                    "task_id": result.package["task_id"],
+                    "state": result.package["state"],
+                    "support_summary": result.package["support_summary"],
+                    "redaction": result.package["redaction"],
+                }
+            },
+            status=201,
+        )
 
     def _run_reprocess_job(self, body):
         release_id = str(body.get("release_id") or STATE.manifest.release_id)

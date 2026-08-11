@@ -172,13 +172,19 @@ Build a protocol drift investigation package:
 POST /api/tasks/{task_id}/investigate
 ```
 
+Write a safe failed-task support package from the web API:
+
+```text
+POST /api/tasks/{task_id}/export
+```
+
 Export a failed-task support package without requiring a running web API:
 
 ```powershell
 python .\run_failed_task_export.py <task_id>
 ```
 
-The package is written to `XINGESTION_DATA_DIR\support_exports` by default. It includes runtime error classification, release/session/telemetry context, and raw evidence references, but not raw X secrets or raw evidence bodies.
+The package is written to `XINGESTION_DATA_DIR\support_exports` by default. It includes runtime error classification, release/session/telemetry context, and raw evidence references, but not raw X secrets or raw evidence bodies. The Needs Attention panel exposes this export for failed tasks and shows the saved path plus redaction metadata.
 
 List failed and retryable tasks with recommended next actions:
 

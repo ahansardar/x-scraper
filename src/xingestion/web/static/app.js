@@ -133,6 +133,7 @@ function taskActionControls(action) {
   }
   if (action.exportable) {
     controls.push(`<button class="small-button secondary" data-investigate-task="${action.task_id}">Investigate</button>`);
+    controls.push(`<button class="small-button secondary" data-export-task="${action.task_id}">Export</button>`);
   }
   return controls.join(" ");
 }
@@ -217,6 +218,20 @@ function renderInvestigation(data) {
   tweets.appendChild(packageView);
 }
 
+function renderSupportExport(data) {
+  const item = data.export;
+  summary.innerHTML = `
+    <strong>${item.state}</strong>
+    support export for task ${item.task_id.slice(0, 18)}
+    saved to <code>${item.path}</code>.
+  `;
+  tweets.innerHTML = "";
+  const packageView = document.createElement("pre");
+  packageView.className = "diagnostic-pre";
+  packageView.textContent = JSON.stringify(item, null, 2);
+  tweets.appendChild(packageView);
+}
+
 function formatViews(value) {
   return value === null || value === undefined || value === ""
     ? "views unavailable"
@@ -255,12 +270,31 @@ form.addEventListener("submit", async (event) => {
 });
 
 async function handleTaskControl(event) {
-  const button = event.target.closest("[data-replay-task], [data-cancel-task], [data-investigate-task]");
+  const button = event.target.closest("[data-replay-task], [data-cancel-task], [data-investigate-task], [data-export-task]");
   if (!button) {
     return;
   }
 
   button.disabled = true;
+  if (button.dataset.exportTask) {
+    summary.textContent = "Writing support export...";
+    tweets.innerHTML = "";
+    try {
+      const data = await getJson(`/api/tasks/${button.dataset.exportTask}/export`, {
+        method: "POST",
+        headers: adminHeaders()
+      });
+      renderSupportExport(data);
+    } catch (error) {
+      summary.textContent = error.message;
+    }
+    await loadTasks();
+    await loadTaskActions();
+    await loadMetrics();
+    await loadSessions();
+    return;
+  }
+
   if (button.dataset.investigateTask) {
     summary.textContent = "Building investigation package...";
     tweets.innerHTML = "";

@@ -210,6 +210,7 @@ Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in
 - `POST /api/releases/current/activate`
 - `POST /api/tasks/{task_id}/reprocess`
 - `POST /api/tasks/{task_id}/investigate`
+- `POST /api/tasks/{task_id}/export`
 - `POST /api/reprocess/jobs`
 - `POST /api/sessions/{session_id}/restore`
 - `POST /api/sessions/{session_id}/disable`
@@ -222,13 +223,19 @@ Investigation packages combine task error state, release and recipe metadata, se
 POST /api/tasks/{task_id}/investigate
 ```
 
+The web console can also write the same safe failed-task support export from the Needs Attention panel:
+
+```text
+POST /api/tasks/{task_id}/export
+```
+
 Export a safe failed-task support package directly from local SQLite:
 
 ```powershell
 python .\run_failed_task_export.py <task_id>
 ```
 
-Exports are written to `XINGESTION_DATA_DIR\support_exports\failed-task-*.json` by default. They include task state, runtime-error classification, release/session/telemetry context, and raw evidence references only.
+Exports are written to `XINGESTION_DATA_DIR\support_exports\failed-task-*.json` by default. They include task state, runtime-error classification, release/session/telemetry context, and raw evidence references only. The web export response returns the saved path, support summary, and redaction metadata.
 
 List failed and retryable tasks with recommended operator actions:
 

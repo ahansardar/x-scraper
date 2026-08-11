@@ -55,6 +55,9 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("/api/task-actions", js)
         self.assertIn("loadTaskActions", js)
         self.assertIn("taskActionControls", js)
+        self.assertIn("data-export-task", js)
+        self.assertIn("/export", js)
+        self.assertIn("renderSupportExport", js)
 
 
 if __name__ == "__main__":
