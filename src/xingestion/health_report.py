@@ -11,7 +11,10 @@ from typing import Callable
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig
 from xingestion.errors import RuntimeErrorEnvelope, envelope_from_task_error
-from xingestion.investigation import build_release_risk_recommendation
+from xingestion.investigation import (
+    build_network_route_recommendations,
+    build_release_risk_recommendation,
+)
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight, PreflightCheck
 from xingestion.releases import ReleaseRecord, ReleaseStore
@@ -89,7 +92,7 @@ def build_health_report(
         "canonical": _safe_section(lambda: CanonicalStore(config.sqlite_path).counts()),
         "telemetry": _safe_section(lambda: _telemetry_summary_dict(telemetry_store.summary())),
         "network_health": _safe_section(
-            lambda: _network_health_dict(config, telemetry_store)
+            lambda: _network_health_dict(config, manifest.release_id, telemetry_store)
         ),
         "release": _safe_section(lambda: _release_dict(release_store.ensure_release(manifest.release_id))),
         "release_risk": _safe_section(
@@ -259,18 +262,31 @@ def _telemetry_summary_dict(summary: TelemetrySummary) -> dict[str, object]:
 
 def _network_health_dict(
     config: AppConfig,
+    release_id: str,
     telemetry_store: ProtocolTelemetryStore,
 ) -> dict[str, object]:
+    route_recommendations = {
+        item["network_context"]: item
+        for item in build_network_route_recommendations(
+            telemetry_store=telemetry_store,
+            release_id=release_id,
+        )
+    }
     return {
+        "release_id": release_id,
         "worker_network_context": config.worker_network_context or None,
         "routes": [
-            _network_route_dict(route)
-            for route in telemetry_store.network_summary()
+            _network_route_dict(route, route_recommendations.get(route.network_context))
+            for route in telemetry_store.network_summary(release_id=release_id)
         ],
+        "recommendations": list(route_recommendations.values()),
     }
 
 
-def _network_route_dict(route: NetworkTelemetrySummary) -> dict[str, object]:
+def _network_route_dict(
+    route: NetworkTelemetrySummary,
+    recommendation: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "network_context": route.network_context,
         "total_attempts": route.total_attempts,
@@ -281,6 +297,7 @@ def _network_route_dict(route: NetworkTelemetrySummary) -> dict[str, object]:
         "last_attempt_at": route.last_attempt_at,
         "last_success_at": route.last_success_at,
         "errors_by_class": dict(route.errors_by_class),
+        "recommendation": recommendation,
     }
 
 

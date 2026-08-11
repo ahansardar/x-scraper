@@ -178,6 +178,7 @@ class PreflightTests(unittest.TestCase):
                 "/api/storage": {"sqlite_path": "x", "raw_evidence_dir": "raw"},
                 "/api/metrics": {"tasks": {}, "release_risk": {}, "sessions": {}},
                 "/api/migrations": {"migrations": {}},
+                "/api/network-health": {"routes": [], "recommendations": []},
                 "/api/sessions": {"sessions": []},
                 "/api/releases/current": {"release": {}},
                 "/api/releases/current/risk": {"risk": {}},

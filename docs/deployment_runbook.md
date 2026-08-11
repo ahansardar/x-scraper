@@ -160,6 +160,8 @@ For route-bound workers, pass the same route the worker uses:
 python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --required-network-context proxy:pool-a --max-network-failure-rate 0.8 --min-network-attempts 5
 ```
 
+`GET /api/releases/current/risk`, `GET /api/network-health`, health reports, and the frontend Network Health panel all keep route remediation separate from release quarantine. If the action is `NETWORK_REMEDIATION_RECOMMENDED`, rotate or pause the affected session/proxy/VPN route first; quarantine the release only when release-level protocol drift signals such as repeated operation or parser failures are present.
+
 The app stores:
 
 - task ledger: `XINGESTION_DATA_DIR\tasks.sqlite3`

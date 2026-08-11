@@ -21,6 +21,7 @@ from xingestion.capabilities import (
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
 from xingestion.investigation import (
+    build_network_route_recommendations,
     build_protocol_drift_package,
     build_release_risk_recommendation,
 )
@@ -899,17 +900,26 @@ def _telemetry_summary_dict(summary):
 
 
 def _network_health_dict():
+    route_recommendations = {
+        item["network_context"]: item
+        for item in build_network_route_recommendations(
+            telemetry_store=STATE.telemetry_store,
+            release_id=STATE.manifest.release_id,
+        )
+    }
     routes = [
-        _network_route_dict(route)
-        for route in STATE.telemetry_store.network_summary()
+        _network_route_dict(route, route_recommendations.get(route.network_context))
+        for route in STATE.telemetry_store.network_summary(release_id=STATE.manifest.release_id)
     ]
     return {
+        "release_id": STATE.manifest.release_id,
         "worker_network_context": STATE.config.worker_network_context or None,
         "routes": routes,
+        "recommendations": list(route_recommendations.values()),
     }
 
 
-def _network_route_dict(route):
+def _network_route_dict(route, recommendation=None):
     return {
         "network_context": route.network_context,
         "total_attempts": route.total_attempts,
@@ -920,6 +930,7 @@ def _network_route_dict(route):
         "last_attempt_at": route.last_attempt_at,
         "last_success_at": route.last_success_at,
         "errors_by_class": dict(route.errors_by_class),
+        "recommendation": recommendation,
     }
 
 
