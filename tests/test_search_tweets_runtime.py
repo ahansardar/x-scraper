@@ -183,6 +183,13 @@ class SearchTweetsRuntimeTests(unittest.TestCase):
         )
         self.assertTrue(empty_cursor_page.cursor_present)
         self.assertEqual(empty_cursor_page.next_cursor, "")
+        self.assertEqual(
+            validate_search_tweets_pagination(
+                empty_cursor_page,
+                expect_more=False,
+            ),
+            "",
+        )
 
         with self.assertRaises(ProtocolError) as empty_error:
             validate_search_tweets_pagination(

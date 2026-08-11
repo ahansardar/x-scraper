@@ -20,6 +20,7 @@ from xingestion.xprotocol.runtime import (
     SearchTweetsRequest,
     WebSessionAuth,
     acquire_search_tweets_page,
+    validate_search_tweets_pagination,
 )
 from xingestion.xprotocol.runtime.transport import OneAttemptTransport
 from xingestion.xprotocol.runtime.transport import RetryDisposition
@@ -263,6 +264,78 @@ class LocalWorker:
                 session = self.session_store.record_attempt_success(session.session_id)
             task = self._renew_lease(task)
             lease_renewals += 1
+
+            if (
+                session is not None
+                and self.session_store is not None
+                and session.health == SessionHealth.DEGRADED
+            ):
+                session = self.session_store.update_health(
+                    session.session_id,
+                    health=SessionHealth.HEALTHY,
+                    reason="successful acquisition after cooldown",
+                )
+
+            if self.canonical_store is not None:
+                self.canonical_store.ingest_search_tweets_page(
+                    page,
+                    task_id=task.task_id,
+                    release_id=self.manifest.release_id,
+                    recipe_revision_id=task.plan_json["recipe_revision_id"],
+                )
+            validated_next_cursor = self._validate_page_pagination(task, page)
+            continuation_task_id = self._queue_continuation_if_needed(
+                task,
+                page,
+                next_cursor=validated_next_cursor,
+            )
+            self._record_telemetry(
+                task=task,
+                session_id=session.session_id if session else None,
+                network_context=session.network_context if session else None,
+                state="SUCCESS",
+                tweet_count=len(page.tweets),
+                next_cursor_present=bool(validated_next_cursor),
+                duration_ms=_duration_ms(started),
+            )
+
+            task = self.ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.RUNNING,
+                to_state=TaskState.DONE,
+                lease_token=task.lease_token,
+                delivery_generation=task.delivery_generation,
+                clear_lease=True,
+                result_json={
+                    "raw_evidence": {
+                        "evidence_id": page.raw_evidence_ref.evidence_id,
+                        "content_sha256": page.raw_evidence_ref.content_sha256,
+                        "storage_uri": page.raw_evidence_ref.storage_uri,
+                    },
+                    "pagination": {
+                        "next_cursor": validated_next_cursor,
+                        "page_number": int(task.request_json["payload"].get("page_number", 1)),
+                        "max_pages": int(task.request_json["payload"].get("max_pages", 1)),
+                        "continuation_task_id": continuation_task_id,
+                    },
+                    "session": {
+                        "session_id": session.session_id if session else None,
+                        "network_context": session.network_context if session else None,
+                        "network_policy": (
+                            session.network_policy.public_dict() if session else None
+                        ),
+                    },
+                },
+            )
+            return WorkerResult(
+                processed=True,
+                task_id=task.task_id,
+                state=task.state,
+                raw_evidence_ref=page.raw_evidence_ref,
+                lease_renewals=lease_renewals,
+                session_id=session.session_id if session else None,
+                network_context=session.network_context if session else None,
+            )
         except (ProtocolError, ValueError) as exc:
             envelope = classify_exception(exc)
             if session is not None and isinstance(exc, ProtocolError):
@@ -303,73 +376,6 @@ class LocalWorker:
             if session is not None and session.lease_token:
                 self.session_store.release_session(session.session_id, session.lease_token)
 
-        if (
-            session is not None
-            and self.session_store is not None
-            and session.health == SessionHealth.DEGRADED
-        ):
-            session = self.session_store.update_health(
-                session.session_id,
-                health=SessionHealth.HEALTHY,
-                reason="successful acquisition after cooldown",
-            )
-
-        if self.canonical_store is not None:
-            self.canonical_store.ingest_search_tweets_page(
-                page,
-                task_id=task.task_id,
-                release_id=self.manifest.release_id,
-                recipe_revision_id=task.plan_json["recipe_revision_id"],
-            )
-        continuation_task_id = self._queue_continuation_if_needed(task, page)
-        self._record_telemetry(
-            task=task,
-            session_id=session.session_id if session else None,
-            network_context=session.network_context if session else None,
-            state="SUCCESS",
-            tweet_count=len(page.tweets),
-            next_cursor_present=bool(page.next_cursor),
-            duration_ms=_duration_ms(started),
-        )
-
-        task = self.ledger.transition_task(
-            task.task_id,
-            from_state=TaskState.RUNNING,
-            to_state=TaskState.DONE,
-            lease_token=task.lease_token,
-            delivery_generation=task.delivery_generation,
-            clear_lease=True,
-            result_json={
-                "raw_evidence": {
-                    "evidence_id": page.raw_evidence_ref.evidence_id,
-                    "content_sha256": page.raw_evidence_ref.content_sha256,
-                    "storage_uri": page.raw_evidence_ref.storage_uri,
-                },
-                "pagination": {
-                    "next_cursor": page.next_cursor,
-                    "page_number": int(task.request_json["payload"].get("page_number", 1)),
-                    "max_pages": int(task.request_json["payload"].get("max_pages", 1)),
-                    "continuation_task_id": continuation_task_id,
-                },
-                "session": {
-                    "session_id": session.session_id if session else None,
-                    "network_context": session.network_context if session else None,
-                    "network_policy": (
-                        session.network_policy.public_dict() if session else None
-                    ),
-                },
-            },
-        )
-        return WorkerResult(
-            processed=True,
-            task_id=task.task_id,
-            state=task.state,
-            raw_evidence_ref=page.raw_evidence_ref,
-            lease_renewals=lease_renewals,
-            session_id=session.session_id if session else None,
-            network_context=session.network_context if session else None,
-        )
-
     def _record_telemetry(
         self,
         *,
@@ -398,18 +404,18 @@ class LocalWorker:
             duration_ms=duration_ms,
         )
 
-    def _queue_continuation_if_needed(self, task, page):
+    def _queue_continuation_if_needed(self, task, page, *, next_cursor: str | None):
         payload = task.request_json["payload"]
         page_number = int(payload.get("page_number", 1))
         max_pages = int(payload.get("max_pages", 1))
-        if not page.next_cursor or page_number >= max_pages:
+        if not next_cursor or page_number >= max_pages:
             return None
 
         root_task_id = payload.get("pagination_root_task_id") or task.task_id
         next_payload = SearchTweetsInput(
             query=str(payload["query"]),
             product=str(payload.get("product", "Top")),
-            cursor=page.next_cursor,
+            cursor=next_cursor,
             page_size=int(payload.get("page_size", 20)),
             max_pages=max_pages,
             page_number=page_number + 1,
@@ -430,6 +436,17 @@ class LocalWorker:
             plan_json=plan.public_dict(),
         )
         return continuation.task_id
+
+    def _validate_page_pagination(self, task, page) -> str | None:
+        payload = task.request_json["payload"]
+        page_number = int(payload.get("page_number", 1))
+        max_pages = int(payload.get("max_pages", 1))
+        expect_more = page_number < max_pages
+        return validate_search_tweets_pagination(
+            page,
+            expect_more=expect_more,
+            current_cursor=payload.get("cursor"),
+        )
 
     def _renew_lease(self, task):
         lease_expires_at = (
