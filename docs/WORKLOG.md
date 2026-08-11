@@ -1478,3 +1478,35 @@ Verified:
 Next:
 
 - Add route-aware release-risk recommendations and operator-facing remediation guidance before managed proxy/VPN provisioning.
+
+## 2026-08-12 - Checkpoint 72: Route Remediation Recommendations
+
+Implemented:
+
+- Added active-release network route remediation recommendations for repeatedly failing concrete `network_context` routes.
+- Kept route remediation separate from release quarantine by returning `NETWORK_REMEDIATION_RECOMMENDED` instead of protocol-release quarantine for route-specific failures.
+- Added route `operator_action` guidance for rate limits, auth rejection, network errors, missing healthy sessions, and unknown route failures.
+- Scoped `/api/network-health` and health-report route summaries to the active protocol release.
+- Added route recommendations to `/api/network-health`, health reports, `/api/releases/current/risk`, and the frontend Network Health panel.
+- Extended preflight live API shape checks to require `/api/network-health`.
+- Updated README, deployment runbook, and current-stage documentation.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_investigation.py"` passed 6 tests.
+- `python -m unittest discover -s tests -p "test_telemetry_store.py"` passed 3 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 21 tests.
+- `python -m unittest discover -s tests -p "test_health_report.py"` passed 2 tests.
+- `python -m unittest discover -s tests -p "test_preflight.py"` passed 5 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `python -m unittest discover -s tests` passed 143 tests.
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py`
+- `python .\run_preflight.py` passed migrations, storage, startup directories, secret backend, auth, sessions, and release checks; API probe remained a local-run warning because no base URL was supplied.
+- `python .\run_startup_check.py` passed startup directory checks.
+- `python .\run_health_report.py` wrote a passing report.
+- `python .\run_protocol_validation.py --fixtures-only --json` passed the checked-in SearchTimeline parser fixture.
+- Temporary live server on `127.0.0.1:8022` returned active-release `/api/network-health` JSON, active-release risk JSON with `operator_action`, served `/` and `/app.js` with the Network Health action column, passed `run_preflight.py --base-url http://127.0.0.1:8022`, and passed supervisor with the expected first-run route warning.
+
+Next:
+
+- Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.

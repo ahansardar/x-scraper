@@ -184,7 +184,7 @@ GET /api/releases/current/risk
 
 Protocol telemetry is stored append-only in `protocol_attempts` and summarizes successes, failures, network route attribution, and protocol error classes by acquisition attempt. `GET /api/network-health` groups attempts by `network_context`, including success/failure counts, failure rate, distinct session count, latest attempt timestamps, and route-specific error classes.
 
-Release risk recommendations are advisory. Repeated operation or parser drift signals can recommend investigation or quarantine, but only operator `POST` routes change release health.
+Release risk recommendations are advisory. Repeated operation or parser drift signals can recommend investigation or quarantine, while repeated route-specific failures recommend network remediation before changing protocol code. Only operator `POST` routes change release health.
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
 
@@ -252,7 +252,7 @@ Export an operator health report after preflight:
 python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
-Reports are written to `XINGESTION_DATA_DIR\reports\health-report-*.json` unless `--output` is provided. The JSON includes preflight status, storage paths, migration status, task/outbox counts, canonical counts, telemetry summary, network route health, release risk, and safe session diagnostics. It does not export raw X secrets, credential references, or lease tokens.
+Reports are written to `XINGESTION_DATA_DIR\reports\health-report-*.json` unless `--output` is provided. The JSON includes preflight status, storage paths, migration status, task/outbox counts, canonical counts, telemetry summary, active-release network route health, route remediation recommendations, release risk, and safe session diagnostics. It does not export raw X secrets, credential references, or lease tokens.
 Health reports also include a `runtime_errors` section with recent task failures grouped by error class, severity, and scope, plus the recommended operator action.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
@@ -263,7 +263,7 @@ For hosted operation, run the web and worker commands under a process supervisor
 python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --require-external-data-dir
 ```
 
-The supervisor also checks `/api/network-health`. Use `--required-network-context proxy:pool-a`, `--max-network-failure-rate 0.8`, and `--min-network-attempts 5` to require a healthy matching route and fail repeatedly unhealthy routes after enough evidence.
+The supervisor also checks `/api/network-health`. Use `--required-network-context proxy:pool-a`, `--max-network-failure-rate 0.8`, and `--min-network-attempts 5` to require a healthy matching route and fail repeatedly unhealthy routes after enough evidence. The release-risk response keeps these as `NETWORK_REMEDIATION_RECOMMENDED` advisories so operators rotate sessions, proxy pools, or VPN paths before quarantining a protocol release.
 
 See [docs/process_supervision.md](docs/process_supervision.md) for Windows Task Scheduler/NSSM setup and restart checks.
 

@@ -91,6 +91,34 @@ class ProtocolTelemetryStoreTests(unittest.TestCase):
             self.assertEqual(network_summary[0].failures, 1)
             self.assertEqual(network_summary[0].errors_by_class["NO_SESSION"], 1)
 
+    def test_network_summary_can_filter_by_release(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ProtocolTelemetryStore(Path(temp_dir) / "telemetry.sqlite3")
+            store.record_attempt(
+                task_id="task-1",
+                capability_id="SEARCH_TWEETS",
+                release_id="release-1",
+                recipe_revision_id="recipe-1",
+                state="SUCCESS",
+                session_id="session-1",
+                network_context="direct",
+            )
+            store.record_attempt(
+                task_id="task-2",
+                capability_id="SEARCH_TWEETS",
+                release_id="release-2",
+                recipe_revision_id="recipe-1",
+                state="FAILURE",
+                session_id="session-1",
+                network_context="proxy:pool-a",
+                error_class="RATE_LIMITED",
+            )
+
+            network_summary = store.network_summary(release_id="release-1")
+
+            self.assertEqual(len(network_summary), 1)
+            self.assertEqual(network_summary[0].network_context, "direct")
+
 
 if __name__ == "__main__":
     unittest.main()

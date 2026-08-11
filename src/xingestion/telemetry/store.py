@@ -138,10 +138,12 @@ class ProtocolTelemetryStore:
             },
         )
 
-    def network_summary(self) -> tuple[NetworkTelemetrySummary, ...]:
+    def network_summary(self, release_id: str | None = None) -> tuple[NetworkTelemetrySummary, ...]:
+        where = "WHERE release_id = ?" if release_id else ""
+        params = (release_id,) if release_id else ()
         with closing(self._connect()) as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                     COALESCE(network_context, 'unassigned') AS network_context,
                     COUNT(*) AS total_attempts,
@@ -151,21 +153,25 @@ class ProtocolTelemetryStore:
                     MAX(created_at) AS last_attempt_at,
                     MAX(CASE WHEN state = 'SUCCESS' THEN created_at ELSE NULL END) AS last_success_at
                 FROM protocol_attempts
+                {where}
                 GROUP BY COALESCE(network_context, 'unassigned')
                 ORDER BY failures DESC, total_attempts DESC, network_context ASC
-                """
+                """,
+                params,
             ).fetchall()
             error_rows = conn.execute(
-                """
+                f"""
                 SELECT
                     COALESCE(network_context, 'unassigned') AS network_context,
                     error_class,
                     COUNT(*) AS count
                 FROM protocol_attempts
                 WHERE error_class IS NOT NULL
+                {"AND release_id = ?" if release_id else ""}
                 GROUP BY COALESCE(network_context, 'unassigned'), error_class
                 ORDER BY network_context ASC, count DESC, error_class ASC
-                """
+                """,
+                params,
             ).fetchall()
 
         errors_by_network: dict[str, dict[str, int]] = {}
