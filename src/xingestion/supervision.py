@@ -98,6 +98,7 @@ class DeploymentSupervisorCheck:
         try:
             health = self.api_client.get("/api/health")
             storage = self.api_client.get("/api/storage")
+            startup = self.api_client.get("/api/startup")
             metrics = self.api_client.get("/api/metrics")
             migrations = self.api_client.get("/api/migrations")
             sessions = self.api_client.get("/api/sessions")
@@ -119,6 +120,7 @@ class DeploymentSupervisorCheck:
                 self._check_health(health),
                 self._check_migrations(migrations),
                 self._check_storage(storage),
+                self._check_startup(startup),
                 self._check_queue(metrics),
                 self._check_sessions(sessions, metrics),
                 self._check_release(release),
@@ -175,6 +177,29 @@ class DeploymentSupervisorCheck:
             "storage",
             "PASS",
             f"data_dir={data_dir} sqlite={sqlite_path} raw_evidence={raw_evidence_dir}",
+        )
+
+    def _check_startup(self, startup: dict[str, object]) -> SupervisionCheck:
+        checks = _list(startup.get("checks"))
+        failures = [
+            _dict(check)
+            for check in checks
+            if _dict(check).get("status") == "FAIL"
+        ]
+        if startup.get("ok") is not True:
+            detail = "; ".join(
+                f"{check.get('name')}: {check.get('message')}"
+                for check in failures
+            )
+            return SupervisionCheck(
+                "startup",
+                "FAIL",
+                detail or "startup readiness failed",
+            )
+        return SupervisionCheck(
+            "startup",
+            "PASS",
+            f"checks={len(checks)}",
         )
 
     def _check_queue(self, metrics: dict[str, object]) -> SupervisionCheck:

@@ -45,6 +45,7 @@ class SupervisionTests(unittest.TestCase):
         statuses = {check.name: check.status for check in result.checks}
         self.assertTrue(result.ok)
         self.assertEqual(statuses["web"], "PASS")
+        self.assertEqual(statuses["startup"], "PASS")
         self.assertEqual(statuses["processes"], "PASS")
 
     def test_supervisor_check_fails_backlogged_outbox(self):
@@ -80,6 +81,30 @@ class SupervisionTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(storage.status, "FAIL")
 
+    def test_supervisor_check_fails_startup_readiness(self):
+        payloads = _ready_payloads()
+        payloads["/api/startup"] = {
+            "ok": False,
+            "checks": [
+                {
+                    "name": "startup_directories",
+                    "status": "FAIL",
+                    "message": "logs not writable",
+                }
+            ],
+        }
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        startup = next(check for check in result.checks if check.name == "startup")
+        self.assertFalse(result.ok)
+        self.assertEqual(startup.status, "FAIL")
+        self.assertIn("logs not writable", startup.message)
+
     def test_supervisor_check_fails_missing_worker_process_when_expected(self):
         checker = DeploymentSupervisorCheck(
             api_client=FakeApiClient(_ready_payloads()),
@@ -107,6 +132,16 @@ def _ready_payloads():
             "data_dir": r"F:\x-scraper-data",
             "sqlite_path": r"F:\x-scraper-data\tasks.sqlite3",
             "raw_evidence_dir": r"F:\x-scraper-data\raw_evidence",
+        },
+        "/api/startup": {
+            "ok": True,
+            "checks": [
+                {
+                    "name": "startup_directories",
+                    "status": "PASS",
+                    "message": "directories writable",
+                }
+            ],
         },
         "/api/metrics": {
             "outbox": {
