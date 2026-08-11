@@ -7,7 +7,9 @@ from xingestion.xprotocol.evidence import RawEvidenceRef, RawEvidenceSink
 from xingestion.xprotocol.protocol import AcquisitionRecipeRevision
 from xingestion.xprotocol.runtime.transport import (
     OneAttemptTransport,
+    ProtocolError,
     ProtocolHttpRequest,
+    RetryDisposition,
     response_to_protocol_error,
 )
 
@@ -58,6 +60,7 @@ class TweetRecord:
 class SearchTweetsPage:
     tweets: tuple[TweetRecord, ...]
     next_cursor: str | None
+    cursor_present: bool = False
     raw_evidence_ref: RawEvidenceRef | None = None
 
 
@@ -89,6 +92,51 @@ def acquire_search_tweets_page(
         response.json_body,
         raw_evidence_ref=evidence_ref,
     )
+
+
+def validate_search_tweets_pagination(
+    page: SearchTweetsPage,
+    *,
+    expect_more: bool,
+    seen_cursors: tuple[str, ...] = (),
+    current_cursor: str | None = None,
+) -> str | None:
+    if page.cursor_present and page.next_cursor in (None, ""):
+        raise ProtocolError(
+            error_class="PAGINATION_EMPTY_CONTINUATION",
+            message="SearchTimeline returned an empty bottom cursor",
+            retry_disposition=RetryDisposition.NEVER,
+            scope_hint="PAGINATION",
+        )
+
+    if not expect_more:
+        return page.next_cursor
+
+    if not page.cursor_present:
+        raise ProtocolError(
+            error_class="PAGINATION_CURSOR_MISSING",
+            message="SearchTimeline did not return a bottom cursor for continuation",
+            retry_disposition=RetryDisposition.NEVER,
+            scope_hint="PAGINATION",
+        )
+
+    if page.next_cursor is None:
+        raise ProtocolError(
+            error_class="PAGINATION_EMPTY_CONTINUATION",
+            message="SearchTimeline returned an empty bottom cursor",
+            retry_disposition=RetryDisposition.NEVER,
+            scope_hint="PAGINATION",
+        )
+
+    if page.next_cursor == current_cursor or page.next_cursor in seen_cursors:
+        raise ProtocolError(
+            error_class="PAGINATION_CURSOR_LOOP",
+            message="SearchTimeline returned a cursor that has already been seen",
+            retry_disposition=RetryDisposition.NEVER,
+            scope_hint="PAGINATION",
+        )
+
+    return page.next_cursor
 
 
 def build_search_timeline_request(
@@ -156,9 +204,11 @@ def parse_search_tweets_page(
 ) -> SearchTweetsPage:
     tweets: dict[str, TweetRecord] = {}
     _find_tweets(payload, tweets)
+    next_cursor, cursor_present = _find_bottom_cursor(payload)
     return SearchTweetsPage(
         tweets=tuple(tweets.values()),
-        next_cursor=_find_bottom_cursor(payload),
+        next_cursor=next_cursor,
+        cursor_present=cursor_present,
         raw_evidence_ref=raw_evidence_ref,
     )
 
@@ -274,26 +324,26 @@ def _better_view_count(existing: str | None, incoming: str | None) -> str | None
     return incoming or existing
 
 
-def _find_bottom_cursor(obj: Any) -> str | None:
+def _find_bottom_cursor(obj: Any) -> tuple[str | None, bool]:
     if isinstance(obj, Mapping):
         if obj.get("cursorType") == "Bottom":
             value = obj.get("value")
-            if value:
-                return str(value)
+            if value is None:
+                return None, True
+            return str(value), True
 
         for value in obj.values():
-            result = _find_bottom_cursor(value)
-            if result:
-                return result
-        return None
+            result, present = _find_bottom_cursor(value)
+            if present:
+                return result, True
+        return None, False
 
     if isinstance(obj, list):
         for item in obj:
-            result = _find_bottom_cursor(item)
-            if result:
-                return result
-
-    return None
+            result, present = _find_bottom_cursor(item)
+            if present:
+                return result, True
+    return None, False
 
 
 def _media_urls(legacy: Mapping[str, Any]) -> tuple[str, ...]:

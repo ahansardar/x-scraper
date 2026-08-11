@@ -7,10 +7,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import (
+    ProtocolError,
+    RetryDisposition,
     SearchTweetsRequest,
     WebSessionAuth,
     build_search_timeline_request,
     parse_search_tweets_page,
+    validate_search_tweets_pagination,
 )
 
 
@@ -137,6 +140,7 @@ class SearchTweetsRuntimeTests(unittest.TestCase):
         page = parse_search_tweets_page(payload)
 
         self.assertEqual(page.next_cursor, "next-cursor")
+        self.assertTrue(page.cursor_present)
         self.assertEqual(len(page.tweets), 1)
         tweet = page.tweets[0]
         self.assertEqual(tweet.tweet_id, "123")
@@ -144,6 +148,72 @@ class SearchTweetsRuntimeTests(unittest.TestCase):
         self.assertEqual(tweet.like_count, 3)
         self.assertEqual(tweet.media_urls, ("https://img.example/1.jpg",))
         self.assertEqual(tweet.canonical_url, "https://x.com/alice/status/123")
+
+    def test_validates_pagination_cursor_states(self):
+        missing_cursor_page = parse_search_tweets_page({"entries": []})
+        self.assertFalse(missing_cursor_page.cursor_present)
+        self.assertIsNone(
+            validate_search_tweets_pagination(
+                missing_cursor_page,
+                expect_more=False,
+            )
+        )
+
+        with self.assertRaises(ProtocolError) as missing_error:
+            validate_search_tweets_pagination(
+                missing_cursor_page,
+                expect_more=True,
+            )
+
+        self.assertEqual(
+            missing_error.exception.error_class,
+            "PAGINATION_CURSOR_MISSING",
+        )
+        self.assertEqual(
+            missing_error.exception.retry_disposition,
+            RetryDisposition.NEVER,
+        )
+
+        empty_cursor_page = parse_search_tweets_page(
+            {
+                "entries": [
+                    {"content": {"cursorType": "Bottom", "value": ""}},
+                ]
+            }
+        )
+        self.assertTrue(empty_cursor_page.cursor_present)
+        self.assertEqual(empty_cursor_page.next_cursor, "")
+
+        with self.assertRaises(ProtocolError) as empty_error:
+            validate_search_tweets_pagination(
+                empty_cursor_page,
+                expect_more=True,
+            )
+
+        self.assertEqual(
+            empty_error.exception.error_class,
+            "PAGINATION_EMPTY_CONTINUATION",
+        )
+
+        loop_cursor_page = parse_search_tweets_page(
+            {
+                "entries": [
+                    {"content": {"cursorType": "Bottom", "value": "cursor-1"}},
+                ]
+            }
+        )
+
+        with self.assertRaises(ProtocolError) as loop_error:
+            validate_search_tweets_pagination(
+                loop_cursor_page,
+                expect_more=True,
+                seen_cursors=("cursor-1",),
+            )
+
+        self.assertEqual(
+            loop_error.exception.error_class,
+            "PAGINATION_CURSOR_LOOP",
+        )
 
     def test_duplicate_tweet_entries_merge_richer_engagement_metrics(self):
         def result(likes, reposts, replies, quotes, views=None):
