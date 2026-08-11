@@ -393,6 +393,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             request_json=capability_request.public_dict(),
             plan_json=plan.public_dict(),
         )
+        outbox_process = self._process_ready_outbox(limit=5)
 
         return self._json(
             {
@@ -400,6 +401,9 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 "message": "Task queued",
                 "status_url": f"/api/tasks/{task.task_id}",
                 "result_url": f"/api/tasks/{task.task_id}/result",
+                "outbox_process": (
+                    outbox_process.public_dict() if outbox_process is not None else None
+                ),
             },
             status=202,
         )
@@ -410,6 +414,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         except ValueError as exc:
             status = 404 if "not found" in str(exc).lower() else 409
             return self._json({"message": str(exc)}, status=status)
+        outbox_process = self._process_ready_outbox(limit=5)
 
         return self._json(
             {
@@ -417,6 +422,9 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 "message": "Replay task queued",
                 "status_url": f"/api/tasks/{task.task_id}",
                 "result_url": f"/api/tasks/{task.task_id}/result",
+                "outbox_process": (
+                    outbox_process.public_dict() if outbox_process is not None else None
+                ),
             },
             status=201,
         )
@@ -455,14 +463,22 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
     def _process_outbox(self, body):
         limit = int(body.get("limit", 5))
         try:
-            result = process_outbox(
-                ledger=STATE.ledger,
-                worker=STATE.worker,
-                limit=limit,
-            )
+            result = self._process_ready_outbox(limit=limit)
         except ValueError as exc:
             return self._json({"message": str(exc)}, status=400)
+        if result is None:
+            return self._json({"message": "Worker is not configured"}, status=503)
         return self._json({"outbox_process": result.public_dict()}, status=200)
+
+    def _process_ready_outbox(self, *, limit):
+        worker = getattr(STATE, "worker", None)
+        if worker is None:
+            return None
+        return process_outbox(
+            ledger=STATE.ledger,
+            worker=worker,
+            limit=limit,
+        )
 
     def _run_protocol_validation(self):
         report = build_protocol_validation_report(

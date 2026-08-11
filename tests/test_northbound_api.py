@@ -65,6 +65,24 @@ class StubOutboxWorker:
         return WorkerResult(processed=True, task_id=task.task_id, state=task.state)
 
 
+class ClaimingOutboxWorker:
+    def __init__(self, ledger):
+        self.ledger = ledger
+        self.processed_task_ids = []
+
+    def process_one(self):
+        event = self.ledger.claim_next_outbox_event()
+        if event is None:
+            return WorkerResult(processed=False)
+        task = self.ledger.transition_task(
+            event.task_id,
+            from_state=TaskState.CREATED,
+            to_state=TaskState.ENQUEUED,
+        )
+        self.processed_task_ids.append(task.task_id)
+        return WorkerResult(processed=True, task_id=task.task_id, state=task.state)
+
+
 class NorthboundApiTests(unittest.TestCase):
     def test_generic_capability_task_submission_queues_task(self):
         manifest = ProtocolReleaseManifest.from_file(
@@ -97,6 +115,74 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["status_url"], f"/api/tasks/{payload['task']['task_id']}")
             task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
             self.assertEqual(task.request_json["payload"]["max_pages"], 2)
+
+    def test_generic_capability_task_submission_processes_attached_worker(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            worker = ClaimingOutboxWorker(ledger)
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(max_active_tasks_per_capability=100),
+                planner=CapabilityPlanner(manifest),
+                ledger=ledger,
+                worker=worker,
+            )
+            handler = FakeHandler()
+
+            payload = handler._create_capability_task(
+                {
+                    "capability_id": "SEARCH_TWEETS",
+                    "contract_version": 1,
+                    "payload": {"query": "india lang:en", "page_size": 20},
+                    "idempotency_key": "northbound-autoprocess",
+                }
+            )
+
+            task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
+            self.assertEqual(handler.status, 202)
+            self.assertEqual(task.state, TaskState.ENQUEUED)
+            self.assertEqual(payload["outbox_process"]["processed_events"], 1)
+            self.assertEqual(worker.processed_task_ids, [task.task_id])
+
+    def test_replay_task_processes_attached_worker(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            origin = ledger.create_task(
+                idempotency_key="replay-origin-autoprocess",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.claim_next_outbox_event()
+            failed = ledger.transition_task(
+                origin.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={"message": "failed"},
+            )
+            worker = ClaimingOutboxWorker(ledger)
+            live_server.STATE = SimpleNamespace(ledger=ledger, worker=worker)
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._replay_task(failed.task_id)
+
+            replay = ledger.get_task(payload["task"]["task_id"])
+            self.assertEqual(handler.status, 201)
+            self.assertEqual(replay.state, TaskState.ENQUEUED)
+            self.assertEqual(payload["outbox_process"]["processed_events"], 1)
+            self.assertEqual(worker.processed_task_ids, [replay.task_id])
 
     def test_generic_capability_respects_backpressure_limit(self):
         manifest = ProtocolReleaseManifest.from_file(

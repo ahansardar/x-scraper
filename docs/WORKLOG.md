@@ -1537,6 +1537,28 @@ Next:
 
 - Add deployment-boundary auth separately if this trusted console is exposed beyond a private operator network.
 
+## 2026-08-12 - Checkpoint 76: Immediate Worker Dispatch for Console Tasks
+
+Implemented:
+
+- Fixed replay and live acquisition tasks getting stuck in `CREATED` when no separate/manual outbox processing was triggered.
+- Added server-side bounded outbox draining after capability task creation and replay when the live app has an attached local worker.
+- Kept the explicit `/api/outbox/process` endpoint for manual recovery and background-style operation.
+- Added regression coverage proving task submission and replay process through an attached worker immediately.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 23 tests.
+- `python -m unittest discover -s tests -p "test_outbox_operations.py"` passed 2 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- Restarted the live server on `127.0.0.1:8023`.
+- Live `POST /api/search-tweets` created task `task-669d2ea02dfc4bf18fa962474244763e`, auto-processed 1 outbox event, reached `DONE`, returned result HTTP 200, and left 0 unpublished outbox events.
+- Live `POST /api/tasks/task-4b5d86965dcc4aea841509bab0e3ae93/replay` created replay task `task-36cc21c99e5f474491f9b6543e458784`, auto-processed 1 outbox event, reached `DONE`, returned result HTTP 200, and left 0 unpublished outbox events.
+
+Next:
+
+- Surface the auto-dispatch status in the frontend summary so operators can see whether work was processed immediately or left for a background worker.
+
 ## 2026-08-12 - Checkpoint 74: Frontend Fitment Correction
 
 Implemented:
