@@ -16,7 +16,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -229,6 +229,13 @@ python .\run_failed_task_export.py <task_id>
 ```
 
 Exports are written to `XINGESTION_DATA_DIR\support_exports\failed-task-*.json` by default. They include task state, runtime-error classification, release/session/telemetry context, and raw evidence references only.
+
+List failed and retryable tasks with recommended operator actions:
+
+```powershell
+python .\run_task_actions.py
+python .\run_task_actions.py --json
+```
 
 Retention cleanup is available from the Operations panel and:
 

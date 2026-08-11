@@ -180,6 +180,13 @@ python .\run_failed_task_export.py <task_id>
 
 The package is written to `XINGESTION_DATA_DIR\support_exports` by default. It includes runtime error classification, release/session/telemetry context, and raw evidence references, but not raw X secrets or raw evidence bodies.
 
+List failed and retryable tasks with recommended next actions:
+
+```powershell
+python .\run_task_actions.py
+python .\run_task_actions.py --json
+```
+
 Bulk reprocess completed tasks for a release:
 
 ```text
@@ -207,7 +214,7 @@ Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py
 ```
 
 After starting web and worker:

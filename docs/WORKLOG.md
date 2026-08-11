@@ -940,6 +940,29 @@ Next:
 
 - Add operator command to list failed/retryable tasks with recommended actions.
 
+## 2026-08-11 - Checkpoint 50: Operator Task Action List
+
+Implemented:
+
+- Added `run_task_actions.py` to list failed and retryable tasks from local SQLite without requiring the web API.
+- Added `src/xingestion/operator_tasks.py` with read-only task action summaries.
+- Default listing includes `DEAD_LETTER` and `RETRY_SCHEDULED` tasks.
+- Each row includes error class, severity, scope, retryability, replay/cancel/export hints, and a recommended operator action.
+- Added `--json`, `--limit`, and `--state` options.
+- Added unit tests for failed-task and retry-scheduled action summaries.
+- Updated README, deployment runbook, and CI compile/doc checks.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py`
+- `python .\run_task_actions.py --limit 5`
+- `python .\run_task_actions.py --limit 2 --json`
+
+Next:
+
+- Add frontend task action surfacing for failed/retryable tasks.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:
