@@ -237,6 +237,12 @@ python .\run_task_actions.py
 python .\run_task_actions.py --json
 ```
 
+The web console also exposes the same queue in the Needs Attention panel and via:
+
+```text
+GET /api/task-actions
+```
+
 Retention cleanup is available from the Operations panel and:
 
 ```text

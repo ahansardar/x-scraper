@@ -256,6 +256,45 @@ class NorthboundApiTests(unittest.TestCase):
             )
             self.assertEqual(payload["investigation"]["task"]["task_id"], failed.task_id)
 
+    def test_task_actions_route_returns_operator_actions(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            task = ledger.create_task(
+                idempotency_key="task-actions-route",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            failed = ledger.transition_task(
+                task.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={"error_class": "OPERATION_NOT_FOUND"},
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(sqlite_path=db_path),
+            )
+            handler = FakeHandler()
+            handler.path = "/api/task-actions"
+
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["actions"][0]["task_id"], failed.task_id)
+            self.assertEqual(payload["actions"][0]["severity"], "CRITICAL")
+            self.assertTrue(payload["actions"][0]["replayable"])
+
     def test_release_risk_dict_returns_recommendation(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

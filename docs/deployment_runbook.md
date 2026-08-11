@@ -187,6 +187,12 @@ python .\run_task_actions.py
 python .\run_task_actions.py --json
 ```
 
+The web console mirrors this in the Needs Attention panel. Parent/operator tooling can read the same JSON at:
+
+```text
+GET /api/task-actions
+```
+
 Bulk reprocess completed tasks for a release:
 
 ```text

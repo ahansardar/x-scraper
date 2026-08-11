@@ -92,6 +92,7 @@ h2 {
 .ops-panel,
 .session-panel,
 .metrics-panel,
+.attention-panel,
 .output-panel {
   grid-column: 2;
 }
@@ -120,6 +121,10 @@ h2 {
 
 .mark.neutral {
   background: #596579;
+}
+
+.mark.danger {
+  background: #a83232;
 }
 
 .ops-panel {
@@ -327,6 +332,7 @@ th {
   .ops-panel,
   .session-panel,
   .metrics-panel,
+  .attention-panel,
   .output-panel {
     display: block;
   }

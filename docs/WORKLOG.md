@@ -963,6 +963,31 @@ Next:
 
 - Add frontend task action surfacing for failed/retryable tasks.
 
+## 2026-08-11 - Checkpoint 51: Frontend Task Action Panel
+
+Implemented:
+
+- Added `GET /api/task-actions` backed by the same read-only operator task action summary used by `run_task_actions.py`.
+- Added a frontend Needs Attention panel for `DEAD_LETTER` and `RETRY_SCHEDULED` tasks.
+- The panel shows task ID, state, severity, attempts, recommended action, and replay/cancel/investigate controls.
+- Reused existing protected replay, cancel, and investigate flows from the task ledger.
+- Added frontend refreshes after task/session/retention mutations and result polling.
+- Added handler-level and static frontend tests.
+- Hardened CI static frontend checks for the attention panel and `/api/task-actions`.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py`
+- `python .\run_migrations.py`
+- Started `python .\run_app.py --host 127.0.0.1 --port 8000`
+- `Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/task-actions`
+- Served frontend probe confirmed `Needs Attention` is present.
+
+Next:
+
+- Add frontend/export workflow for failed-task support packages.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

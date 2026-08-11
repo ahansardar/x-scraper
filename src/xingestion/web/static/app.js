@@ -7,6 +7,7 @@ const retention = document.querySelector("#retention");
 const runRetention = document.querySelector("#runRetention");
 const metrics = document.querySelector("#metrics");
 const sessions = document.querySelector("#sessions");
+const taskActionsBody = document.querySelector("#taskActions");
 let adminToken = "";
 
 async function getJson(url, options) {
@@ -51,6 +52,24 @@ async function loadTasks() {
       <td>${task.capability_id}</td>
       <td><span class="state">${task.state}</span></td>
       <td>${taskActions(task)}</td>
+    </tr>
+  `).join("");
+}
+
+async function loadTaskActions() {
+  const data = await getJson("/api/task-actions");
+  if (!data.actions.length) {
+    taskActionsBody.innerHTML = `<tr><td colspan="6">No failed or retryable tasks.</td></tr>`;
+    return;
+  }
+  taskActionsBody.innerHTML = data.actions.map((action) => `
+    <tr>
+      <td>${action.task_id.slice(0, 18)}</td>
+      <td><span class="${taskStateClass(action.state)}">${action.state}</span></td>
+      <td><span class="${severityClass(action.severity)}">${action.severity}</span></td>
+      <td>${action.attempt_count} / ${action.max_attempts}</td>
+      <td>${action.operator_action}</td>
+      <td>${taskActionControls(action)}</td>
     </tr>
   `).join("");
 }
@@ -102,6 +121,40 @@ function taskActions(task) {
     return `<button class="small-button secondary" data-cancel-task="${task.task_id}">Cancel</button>`;
   }
   return "";
+}
+
+function taskActionControls(action) {
+  const controls = [];
+  if (action.replayable) {
+    controls.push(`<button class="small-button" data-replay-task="${action.task_id}">Replay</button>`);
+  }
+  if (action.cancellable) {
+    controls.push(`<button class="small-button secondary" data-cancel-task="${action.task_id}">Cancel</button>`);
+  }
+  if (action.exportable) {
+    controls.push(`<button class="small-button secondary" data-investigate-task="${action.task_id}">Investigate</button>`);
+  }
+  return controls.join(" ");
+}
+
+function taskStateClass(state) {
+  if (state === "RETRY_SCHEDULED") {
+    return "state warn";
+  }
+  if (state === "DEAD_LETTER") {
+    return "state bad";
+  }
+  return "state";
+}
+
+function severityClass(severity) {
+  if (severity === "CRITICAL" || severity === "HIGH") {
+    return "state bad";
+  }
+  if (severity === "MEDIUM") {
+    return "state warn";
+  }
+  return "state";
 }
 
 function sessionActions(session) {
@@ -192,6 +245,7 @@ form.addEventListener("submit", async (event) => {
       task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
     `;
     await loadTasks();
+    await loadTaskActions();
     await loadMetrics();
     await loadSessions();
     await waitForResult(data.result_url);
@@ -200,7 +254,7 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-tasks.addEventListener("click", async (event) => {
+async function handleTaskControl(event) {
   const button = event.target.closest("[data-replay-task], [data-cancel-task], [data-investigate-task]");
   if (!button) {
     return;
@@ -220,6 +274,7 @@ tasks.addEventListener("click", async (event) => {
       summary.textContent = error.message;
     }
     await loadTasks();
+    await loadTaskActions();
     await loadMetrics();
     await loadSessions();
     return;
@@ -237,6 +292,7 @@ tasks.addEventListener("click", async (event) => {
       summary.textContent = error.message;
     }
     await loadTasks();
+    await loadTaskActions();
     await loadMetrics();
     await loadSessions();
     return;
@@ -254,16 +310,21 @@ tasks.addEventListener("click", async (event) => {
       replay task ${data.task.task_id.slice(0, 18)} queued. Waiting for worker...
     `;
     await loadTasks();
+    await loadTaskActions();
     await loadMetrics();
     await loadSessions();
     await waitForResult(data.result_url);
   } catch (error) {
     summary.textContent = error.message;
     await loadTasks();
+    await loadTaskActions();
     await loadMetrics();
     await loadSessions();
   }
-});
+}
+
+tasks.addEventListener("click", handleTaskControl);
+taskActionsBody.addEventListener("click", handleTaskControl);
 
 sessions.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-restore-session], [data-disable-session]");
@@ -281,10 +342,12 @@ sessions.addEventListener("click", async (event) => {
       headers: adminHeaders()
     });
     summary.innerHTML = `<strong>${data.session.health}</strong> session ${data.session.session_id} updated.`;
+    await loadTaskActions();
     await loadSessions();
     await loadMetrics();
   } catch (error) {
     summary.textContent = error.message;
+    await loadTaskActions();
     await loadSessions();
     await loadMetrics();
   }
@@ -302,6 +365,7 @@ runRetention.addEventListener("click", async () => {
       older than <code>${data.retention.cutoff}</code>.
     `;
     await loadTasks();
+    await loadTaskActions();
     await loadMetrics();
     await loadSessions();
   } catch (error) {
@@ -318,6 +382,7 @@ async function waitForResult(resultUrl) {
     if (response.status === 200) {
       renderOutput(data);
       await loadTasks();
+      await loadTaskActions();
       await loadMetrics();
       await loadSessions();
       return;
@@ -325,6 +390,7 @@ async function waitForResult(resultUrl) {
     if (response.status >= 500) {
       summary.textContent = data.error?.message || data.message || "Task failed";
       await loadTasks();
+      await loadTaskActions();
       await loadMetrics();
       await loadSessions();
       return;
@@ -335,6 +401,7 @@ async function waitForResult(resultUrl) {
     `;
     await delay(1500);
     await loadTasks();
+    await loadTaskActions();
     await loadMetrics();
     await loadSessions();
   }
@@ -350,6 +417,9 @@ loadHealth().catch((error) => {
 });
 loadTasks().catch((error) => {
   tasks.innerHTML = `<tr><td colspan="4">${error.message}</td></tr>`;
+});
+loadTaskActions().catch((error) => {
+  taskActionsBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
 });
 loadRetention().catch((error) => {
   retention.textContent = error.message;

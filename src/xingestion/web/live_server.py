@@ -26,6 +26,7 @@ from xingestion.investigation import (
 )
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
+from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
@@ -154,6 +155,9 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             )
         if parsed.path == "/api/tasks":
             return self._json({"tasks": self._list_tasks()})
+        if parsed.path == "/api/task-actions":
+            actions = list_operator_task_actions(STATE.config.sqlite_path, limit=25)
+            return self._json({"actions": [_task_action_dict(action) for action in actions]})
         if parsed.path.startswith("/api/tasks/"):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 3:
@@ -547,6 +551,10 @@ def _task_dict(task):
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
+
+
+def _task_action_dict(action):
+    return action.public_dict()
 
 
 def _tweet_dict(tweet):
