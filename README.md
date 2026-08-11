@@ -16,7 +16,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -29,6 +29,7 @@ Terminal 1, web app:
 
 ```powershell
 python .\run_migrations.py
+python .\run_startup_check.py
 python .\run_preflight.py
 python .\run_app.py --host 127.0.0.1 --port 8000
 ```
@@ -44,6 +45,7 @@ Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The web
 Smoke-check a running deployment:
 
 ```powershell
+python .\run_startup_check.py
 python .\run_preflight.py --base-url http://127.0.0.1:8000
 python .\run_smoke.py --base-url http://127.0.0.1:8000
 python .\run_supervisor_check.py --base-url http://127.0.0.1:8000
@@ -174,6 +176,7 @@ For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an
 Before exposing a deployment, run:
 
 ```powershell
+python .\run_startup_check.py
 python .\run_preflight.py --base-url http://127.0.0.1:8000
 ```
 
