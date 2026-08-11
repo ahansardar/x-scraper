@@ -11,7 +11,7 @@ from xingestion.config import AppConfig
 from xingestion.health_report import build_health_report, write_health_report
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionStore
-from xingestion.tasks import SQLiteTaskLedger
+from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xrev.protocol import CapabilityId, ProtocolReleaseManifest
 from xrev.runtime import WebSessionAuth
 
@@ -36,12 +36,29 @@ class HealthReportTests(unittest.TestCase):
                 credential_ref="secret:x/session-1",
                 network_context="direct",
             )
-            SQLiteTaskLedger(config.sqlite_path).create_task(
+            ledger = SQLiteTaskLedger(config.sqlite_path)
+            ledger.create_task(
                 idempotency_key="report-task",
                 capability_id=CapabilityId.SEARCH_TWEETS,
                 contract_version=1,
                 request_json={"capability_id": "SEARCH_TWEETS"},
                 plan_json={"recipe_revision_id": "recipe-test"},
+            )
+            failed = ledger.create_task(
+                idempotency_key="failed-task",
+                capability_id=CapabilityId.SEARCH_TWEETS,
+                contract_version=1,
+                request_json={"capability_id": "SEARCH_TWEETS"},
+                plan_json={"recipe_revision_id": "recipe-test"},
+            )
+            ledger.transition_task(
+                failed.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={
+                    "error_class": "OPERATION_NOT_FOUND",
+                    "message": "X returned HTTP 404 for the pinned operation",
+                },
             )
 
             result = write_health_report(
@@ -57,6 +74,12 @@ class HealthReportTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(saved["report_type"], "XINGESTION_HEALTH_REPORT")
             self.assertEqual(saved["tasks"]["state_counts"]["CREATED"], 1)
+            self.assertEqual(saved["runtime_errors"]["by_class"]["OPERATION_NOT_FOUND"], 1)
+            self.assertEqual(saved["runtime_errors"]["by_severity"]["CRITICAL"], 1)
+            self.assertEqual(
+                saved["runtime_errors"]["recent"][0]["runtime_error"]["operator_action"],
+                "investigate_protocol_release_and_consider_quarantine",
+            )
             self.assertEqual(saved["sessions"]["total"], 1)
             self.assertIn("release_risk", saved)
             self.assertIn("storage", saved)

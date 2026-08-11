@@ -44,3 +44,16 @@ F:\x-scraper\data\logs
 ```
 
 The process supervisor may also capture stdout/stderr separately. Keep those host-managed process logs outside the repository checkout.
+
+## Runtime Errors
+
+Worker failures are logged with a structured runtime error envelope:
+
+- `error_class`
+- `severity`
+- `scope`
+- `operator_action`
+- `retryable`
+- optional HTTP status and retry-after details
+
+The same envelope is stored on failed task rows under `error_json.runtime_error` and exported in health reports under `runtime_errors`.

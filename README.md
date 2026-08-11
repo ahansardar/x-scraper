@@ -186,6 +186,7 @@ python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
 Reports are written to `XINGESTION_DATA_DIR\reports\health-report-*.json` unless `--output` is provided. The JSON includes preflight status, storage paths, migration status, task/outbox counts, canonical counts, telemetry summary, release risk, and safe session diagnostics. It does not export raw X secrets, credential references, or lease tokens.
+Health reports also include a `runtime_errors` section with recent task failures grouped by error class, severity, and scope, plus the recommended operator action.
 
 See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
 
@@ -198,6 +199,7 @@ python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-proce
 See [docs/process_supervision.md](docs/process_supervision.md) for Windows Task Scheduler/NSSM setup and restart checks.
 
 Logs use rotating file handlers. Leave `XINGESTION_LOG_DIR` blank to write under `XINGESTION_DATA_DIR\logs`, or set it to a host-managed persistent log directory. See [docs/logging.md](docs/logging.md).
+Worker failure logs include the structured runtime error class, severity, scope, retryability, and operator action.
 
 Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in the `x-admin-token` header:
 

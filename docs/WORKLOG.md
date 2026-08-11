@@ -892,6 +892,30 @@ Next:
 
 - Add structured runtime error classification for web/worker logs and health reports.
 
+## 2026-08-11 - Checkpoint 48: Runtime Error Classification
+
+Implemented:
+
+- Added `src/xingestion/errors.py` with structured runtime error envelopes.
+- Classified known runtime failures by error class, severity, scope, retryability, and recommended operator action.
+- Worker failure paths now persist `error_json.runtime_error` while preserving existing `error_class` and `message` fields.
+- Worker failure logs now include structured classification fields.
+- Health reports now export `runtime_errors` grouped by class, severity, and scope with recent examples.
+- Added unit tests for error classification, worker persistence, and health report runtime error summaries.
+- Updated README, deployment runbook, and logging docs.
+
+Verified:
+
+- `python -m unittest discover -s tests`
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py`
+- `python .\run_health_report.py`
+- `python .\run_worker.py --once`
+- `Select-String -Path data\reports\health-report-20260811T171943Z.json -Pattern '"runtime_errors"|"by_class"|"operator_action"'`
+
+Next:
+
+- Add an operator-facing failed-task drilldown export command for support handoff.
+
 ## 2026-08-10 - Checkpoint 30: JSON API Error Hardening
 
 Implemented:

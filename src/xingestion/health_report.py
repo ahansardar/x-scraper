@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+import sqlite3
 from typing import Callable
 
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig
+from xingestion.errors import RuntimeErrorEnvelope, envelope_from_task_error
 from xingestion.investigation import build_release_risk_recommendation
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight, PreflightCheck
@@ -80,6 +83,7 @@ def build_health_report(
         "preflight": [_preflight_check_dict(check) for check in preflight.checks],
         "migrations": _safe_section(lambda: _migration_status_dict(migration_runner)),
         "tasks": _safe_section(lambda: _task_dict(config)),
+        "runtime_errors": _safe_section(lambda: _runtime_errors_dict(config)),
         "canonical": _safe_section(lambda: CanonicalStore(config.sqlite_path).counts()),
         "telemetry": _safe_section(lambda: _telemetry_summary_dict(telemetry_store.summary())),
         "release": _safe_section(lambda: _release_dict(release_store.ensure_release(manifest.release_id))),
@@ -154,6 +158,58 @@ def _task_dict(config: AppConfig) -> dict[str, object]:
     }
 
 
+def _runtime_errors_dict(config: AppConfig) -> dict[str, object]:
+    if not config.sqlite_path.exists():
+        return {
+            "total": 0,
+            "by_class": {},
+            "by_severity": {},
+            "by_scope": {},
+            "recent": [],
+        }
+
+    with closing(sqlite3.connect(config.sqlite_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT task_id, state, error_json, updated_at
+            FROM capability_tasks
+            WHERE error_json IS NOT NULL
+            ORDER BY updated_at DESC
+            LIMIT 25
+            """
+        ).fetchall()
+
+    envelopes: list[tuple[sqlite3.Row, RuntimeErrorEnvelope]] = []
+    for row in rows:
+        try:
+            error_json = json.loads(row["error_json"])
+        except json.JSONDecodeError:
+            error_json = {
+                "error_class": "INVALID_ERROR_JSON",
+                "message": "Task error_json could not be decoded",
+            }
+        envelope = envelope_from_task_error(error_json)
+        if envelope is not None:
+            envelopes.append((row, envelope))
+
+    return {
+        "total": len(envelopes),
+        "by_class": _count_by(envelopes, lambda envelope: envelope.error_class),
+        "by_severity": _count_by(envelopes, lambda envelope: envelope.severity.value),
+        "by_scope": _count_by(envelopes, lambda envelope: envelope.scope.value),
+        "recent": [
+            {
+                "task_id": row["task_id"],
+                "state": row["state"],
+                "updated_at": row["updated_at"],
+                "runtime_error": envelope.public_dict(),
+            }
+            for row, envelope in envelopes[:10]
+        ],
+    }
+
+
 def _telemetry_summary_dict(summary: TelemetrySummary) -> dict[str, object]:
     return {
         "total_attempts": summary.total_attempts,
@@ -206,6 +262,17 @@ def _session_health_counts(sessions: tuple[SessionRecord, ...]) -> dict[str, int
     counts: dict[str, int] = {}
     for session in sessions:
         counts[session.health.value] = counts.get(session.health.value, 0) + 1
+    return counts
+
+
+def _count_by(
+    rows: list[tuple[sqlite3.Row, RuntimeErrorEnvelope]],
+    key_fn: Callable[[RuntimeErrorEnvelope], str],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for _, envelope in rows:
+        key = key_fn(envelope)
+        counts[key] = counts.get(key, 0) + 1
     return counts
 
 

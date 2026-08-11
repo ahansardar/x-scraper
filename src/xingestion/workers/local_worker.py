@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import logging
 from time import monotonic
 
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
+from xingestion.errors import RuntimeErrorEnvelope, classify_error, classify_exception
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
@@ -21,6 +23,10 @@ from xrev.runtime import (
 from xrev.runtime.transport import OneAttemptTransport
 from xrev.runtime.transport import RetryDisposition
 from uuid import uuid4
+
+
+LOGGER = logging.getLogger("xingestion.worker.local")
+LOGGER.addHandler(logging.NullHandler())
 
 
 @dataclass(frozen=True)
@@ -73,11 +79,16 @@ class LocalWorker:
 
         task = self.ledger.get_task(event.task_id)
         if task is None:
+            envelope = classify_error(
+                "TASK_NOT_FOUND",
+                message="Outbox event referenced a missing task",
+            )
+            LOGGER.error("worker task missing %s", envelope.log_fields())
             return WorkerResult(
                 processed=True,
                 task_id=event.task_id,
-                error_class="TASK_NOT_FOUND",
-                message="Outbox event referenced a missing task",
+                error_class=envelope.error_class,
+                message=envelope.message,
             )
 
         if task.state == TaskState.CREATED:
@@ -96,22 +107,32 @@ class LocalWorker:
             )
 
         if self.release_store and not self.release_store.execution_allowed(self.manifest.release_id):
+            envelope = classify_error(
+                "PROTOCOL_RELEASE_BLOCKED",
+                message=f"Protocol release {self.manifest.release_id} is not executable",
+            )
             task = self.ledger.transition_task(
                 task.task_id,
                 from_state=TaskState.ENQUEUED,
                 to_state=TaskState.DEAD_LETTER,
                 error_json={
-                    "error_class": "PROTOCOL_RELEASE_BLOCKED",
-                    "message": f"Protocol release {self.manifest.release_id} is not executable",
+                    "error_class": envelope.error_class,
+                    "message": envelope.message,
+                    "runtime_error": envelope.public_dict(),
                     "release_id": self.manifest.release_id,
                 },
+            )
+            LOGGER.error(
+                "worker release blocked task=%s %s",
+                task.task_id,
+                envelope.log_fields(),
             )
             return WorkerResult(
                 processed=True,
                 task_id=task.task_id,
                 state=task.state,
-                error_class="PROTOCOL_RELEASE_BLOCKED",
-                message=f"Protocol release {self.manifest.release_id} is not executable",
+                error_class=envelope.error_class,
+                message=envelope.message,
             )
 
         session = None
@@ -121,22 +142,32 @@ class LocalWorker:
                 lease_seconds=self.lease_seconds,
             )
             if session is None:
+                envelope = classify_error(
+                    "SESSION_UNAVAILABLE",
+                    message="No healthy session lease is available",
+                )
                 scheduled = self.ledger.transition_task(
                     task.task_id,
                     from_state=TaskState.ENQUEUED,
                     to_state=TaskState.RETRY_SCHEDULED,
                     error_json={
-                        "error_class": "SESSION_UNAVAILABLE",
-                        "message": "No healthy session lease is available",
+                        "error_class": envelope.error_class,
+                        "message": envelope.message,
+                        "runtime_error": envelope.public_dict(),
                     },
                     next_attempt_at=(datetime.now(UTC) + timedelta(seconds=60)).isoformat(),
+                )
+                LOGGER.warning(
+                    "worker session unavailable task=%s %s",
+                    scheduled.task_id,
+                    envelope.log_fields(),
                 )
                 return WorkerResult(
                     processed=True,
                     task_id=scheduled.task_id,
                     state=scheduled.state,
-                    error_class="SESSION_UNAVAILABLE",
-                    message="No healthy session lease is available",
+                    error_class=envelope.error_class,
+                    message=envelope.message,
                 )
 
         lease_expires_at = (
@@ -161,28 +192,36 @@ class LocalWorker:
             task = self._renew_lease(task)
             lease_renewals += 1
         except (ProtocolError, ValueError) as exc:
+            envelope = classify_exception(exc)
             if session is not None and isinstance(exc, ProtocolError):
                 self._update_session_health_from_error(session.session_id, exc)
             if session is not None and self.session_store is not None:
                 self.session_store.record_attempt_failure(
                     session.session_id,
-                    error_class=getattr(exc, "error_class", exc.__class__.__name__),
-                    error_message=str(exc),
+                    error_class=envelope.error_class,
+                    error_message=envelope.message,
                 )
             self._record_telemetry(
                 task=task,
                 session_id=session.session_id if session else None,
                 state="FAILURE",
-                error_class=getattr(exc, "error_class", exc.__class__.__name__),
+                error_class=envelope.error_class,
                 duration_ms=_duration_ms(started),
             )
-            task = self._handle_failure(task, exc)
+            task = self._handle_failure(task, exc, envelope=envelope)
+            LOGGER.error(
+                "worker task failed task=%s state=%s session=%s %s",
+                task.task_id,
+                task.state.value,
+                session.session_id if session else None,
+                envelope.log_fields(),
+            )
             return WorkerResult(
                 processed=True,
                 task_id=task.task_id,
                 state=task.state,
-                error_class=getattr(exc, "error_class", exc.__class__.__name__),
-                message=str(exc),
+                error_class=envelope.error_class,
+                message=envelope.message,
                 lease_renewals=lease_renewals,
                 session_id=session.session_id if session else None,
             )
@@ -359,10 +398,12 @@ class LocalWorker:
                 return binding.recipe
         raise ValueError(f"No recipe for {recipe_revision_id}")
 
-    def _handle_failure(self, task, exc):
+    def _handle_failure(self, task, exc, *, envelope: RuntimeErrorEnvelope | None = None):
+        envelope = envelope or classify_exception(exc)
         error_json = {
-            "error_class": getattr(exc, "error_class", exc.__class__.__name__),
-            "message": str(exc),
+            "error_class": envelope.error_class,
+            "message": envelope.message,
+            "runtime_error": envelope.public_dict(),
             "attempt_count": task.attempt_count,
         }
         retry_disposition = getattr(exc, "retry_disposition", RetryDisposition.NEVER)

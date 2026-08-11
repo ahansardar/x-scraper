@@ -378,10 +378,17 @@ class LocalWorkerTests(unittest.TestCase):
             )
 
             result = worker.process_one()
+            task_after = ledger.get_task(task.task_id)
             session_after = sessions.get_session("session-1")
 
             self.assertEqual(result.state, TaskState.DEAD_LETTER)
             self.assertEqual(result.error_class, "AUTH_OR_SESSION_REJECTED")
+            self.assertEqual(
+                task_after.error_json["runtime_error"]["operator_action"],
+                "restore_or_replace_x_session_credentials",
+            )
+            self.assertEqual(task_after.error_json["runtime_error"]["severity"], "HIGH")
+            self.assertEqual(task_after.error_json["runtime_error"]["scope"], "SESSION")
             self.assertEqual(session_after.health, SessionHealth.AUTH_EXPIRED)
             self.assertIsNone(session_after.lease_token)
             self.assertEqual(session_after.attempt_count, 1)

@@ -191,6 +191,7 @@ python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
 The report includes preflight checks, migration state, storage paths, task and outbox counts, canonical counts, telemetry summary, release risk, and safe session diagnostics. It intentionally excludes raw X secrets, credential references, and lease tokens.
+The `runtime_errors` section groups recent task failures by class, severity, scope, and recommended operator action.
 
 ## Verification Before Release
 
