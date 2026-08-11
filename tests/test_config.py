@@ -22,6 +22,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.retention_days, 30)
         self.assertEqual(config.default_session_id, "local-env-session")
         self.assertEqual(config.default_credential_ref, "env:X_AUTH_TOKEN,X_CT0,X_BEARER")
+        self.assertEqual(config.worker_network_context, "")
         self.assertEqual(config.admin_token, "")
         self.assertEqual(config.secret_provider, "env")
         self.assertEqual(config.secret_dir, (ROOT / "data" / "secrets").resolve())
@@ -41,6 +42,7 @@ class ConfigTests(unittest.TestCase):
                 "XINGESTION_ACCOUNT_LABEL",
                 "XINGESTION_CREDENTIAL_REF",
                 "XINGESTION_NETWORK_CONTEXT",
+                "XINGESTION_WORKER_NETWORK_CONTEXT",
                 "XINGESTION_ADMIN_TOKEN",
                 "XINGESTION_SECRET_PROVIDER",
                 "XINGESTION_SECRET_DIR",
@@ -59,6 +61,7 @@ class ConfigTests(unittest.TestCase):
                 os.environ["XINGESTION_ACCOUNT_LABEL"] = "account-a"
                 os.environ["XINGESTION_CREDENTIAL_REF"] = "secret:x/session-a"
                 os.environ["XINGESTION_NETWORK_CONTEXT"] = "direct:iad"
+                os.environ["XINGESTION_WORKER_NETWORK_CONTEXT"] = "direct:iad"
                 os.environ["XINGESTION_ADMIN_TOKEN"] = "admin-secret"
                 os.environ["XINGESTION_SECRET_PROVIDER"] = "file"
                 os.environ["XINGESTION_SECRET_DIR"] = str(Path(temp_dir) / "mounted-secrets")
@@ -76,6 +79,7 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(config.default_account_label, "account-a")
                 self.assertEqual(config.default_credential_ref, "secret:x/session-a")
                 self.assertEqual(config.default_network_context, "direct:iad")
+                self.assertEqual(config.worker_network_context, "direct:iad")
                 self.assertEqual(config.admin_token, "admin-secret")
                 self.assertEqual(config.secret_provider, "file")
                 self.assertEqual(config.secret_dir, (Path(temp_dir) / "mounted-secrets").resolve())

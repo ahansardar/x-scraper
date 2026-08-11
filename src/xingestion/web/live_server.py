@@ -119,6 +119,7 @@ class LiveAppState:
             session_store=self.session_store,
             telemetry_store=self.telemetry_store,
             secret_provider=self.secret_provider,
+            required_network_context=self.config.worker_network_context or None,
         )
 
 
@@ -942,6 +943,7 @@ def _session_dict(session):
         "account_label": session.account_label,
         "reference_configured": bool(session.credential_ref),
         "network_context": session.network_context,
+        "network_policy": session.network_policy.public_dict(),
         "health": session.health.value,
         "lease_owner": session.lease_owner,
         "lease_expires_at": session.lease_expires_at,

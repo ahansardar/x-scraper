@@ -18,7 +18,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -102,6 +102,7 @@ XINGESTION_SECRET_PROVIDER=env
 XINGESTION_SECRET_DIR=
 XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
+XINGESTION_WORKER_NETWORK_CONTEXT=
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
@@ -135,12 +136,14 @@ For multi-session deployments, set `XINGESTION_SESSION_REGISTRY` to a JSON file 
       "session_id": "session-a",
       "account_label": "authorized-account-a",
       "credential_ref": "file:session-a",
-      "network_context": "direct:iad",
+      "network_context": "proxy:pool-a:iad",
       "health": "HEALTHY"
     }
   ]
 }
 ```
+
+`network_context` is validated as `kind[:route][:region]`; supported kinds are `direct`, `proxy`, and `vpn`. `XINGESTION_NETWORK_CONTEXT` sets the default local session network. `XINGESTION_WORKER_NETWORK_CONTEXT` optionally restricts a deployed worker to matching sessions, for example `proxy:pool-a` or `direct:iad`.
 
 Import/list session metadata without printing secret references:
 
@@ -223,13 +226,13 @@ POST /api/sessions/{session_id}/restore
 POST /api/sessions/{session_id}/disable
 ```
 
-Workers acquire a healthy session lease before each acquisition attempt and release it after the attempt. If no healthy session is available, the task is moved to `RETRY_SCHEDULED` without making an X request.
+Workers acquire a healthy session lease before each acquisition attempt and release it after the attempt. If `XINGESTION_WORKER_NETWORK_CONTEXT` is set, the worker only leases sessions whose validated network policy matches that kind/route/region. If no matching healthy session is available, the task is moved to `RETRY_SCHEDULED` without making an X request.
 
 When a session is leased, the worker resolves that session's own credential reference through the configured secret provider. If the reference cannot resolve complete web-session auth, only that session is marked `AUTH_EXPIRED` and the task is scheduled for retry.
 
 Session-scoped protocol errors update session health automatically. Auth/session rejection marks a session `AUTH_EXPIRED`; rate limits mark it `DEGRADED` with a durable `cooldown_until` timestamp. Workers skip cooled-down sessions until the timestamp expires, then allow that degraded session back into rotation for another attempt. A successful cooled-down attempt restores that session to `HEALTHY`.
 
-Each session also stores safe operational attempt visibility: total attempts, successes, failures, last attempt time, last success time, and the last error class/message. These fields are available from `GET /api/sessions` and the Sessions panel.
+Each session also stores safe operational attempt visibility: total attempts, successes, failures, last attempt time, last success time, last error class/message, and parsed network policy metadata. These fields are available from `GET /api/sessions` and the Sessions panel.
 
 For deployment, point `XINGESTION_DATA_DIR` at persistent storage. Do not use an ephemeral build directory for this value.
 

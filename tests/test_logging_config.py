@@ -85,6 +85,7 @@ def _config(root: Path) -> AppConfig:
         default_account_label="local",
         default_credential_ref="env:X_AUTH_TOKEN,X_CT0,X_BEARER",
         default_network_context="direct",
+        worker_network_context="",
         admin_token="token",
         secret_provider="env",
         secret_dir=root / "data" / "secrets",

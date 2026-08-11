@@ -1418,3 +1418,33 @@ Verified:
 Next:
 
 - Continue with network allocation policy metadata and worker selection controls when moving beyond the local `network_context` label.
+
+## 2026-08-12 - Checkpoint 70: Network Policy Session Routing
+
+Implemented:
+
+- Added validated session network policies parsed from `network_context` values shaped as `kind[:route][:region]`.
+- Supported `direct`, `proxy`, and `vpn` network kinds with public-safe `network_policy` metadata.
+- Added `XINGESTION_WORKER_NETWORK_CONTEXT` so deployed workers can lease only sessions matching a specific route or pool.
+- Updated `SessionStore.acquire_session(...)` to filter healthy/cooled-down sessions by worker network requirement.
+- Stored selected session network policy in task results and selected network context in protocol telemetry attempts.
+- Added migration `006_protocol_attempt_network.sql` for durable telemetry route attribution.
+- Exposed parsed network policy through `GET /api/sessions`, `run_sessions.py --json`, health reports, and investigation/support packages.
+- Added a Network column to the Sessions frontend panel.
+- Updated README, deployment runbook, and current-stage documentation for no-Docker deployment usage.
+
+Verified:
+
+- `python -m unittest discover -s tests` passed 135 tests.
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py`
+- `python .\run_migrations.py` applied migration `006` to `F:\x-scraper\data\tasks.sqlite3`.
+- `python .\run_preflight.py` passed migrations, storage, startup directories, secret backend, auth, sessions, and release checks; API probe remained a local-run warning because no base URL was supplied.
+- `python .\run_startup_check.py` passed startup directory checks.
+- `python .\run_health_report.py` wrote a passing report.
+- `python .\run_sessions.py --json` returned two sessions with parsed `network_policy` metadata and no credential reference values.
+- `python .\run_protocol_validation.py --fixtures-only --json` passed the checked-in SearchTimeline parser fixture.
+- Temporary live server on `127.0.0.1:8019` returned sessions with parsed network policy, telemetry JSON, `/`, and `/app.js`; the frontend contained the Network column and `formatNetworkPolicy`.
+
+Next:
+
+- Add worker-level route health statistics and route-aware supervisor thresholds before adding managed proxy/VPN provisioning.

@@ -262,6 +262,10 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 201)
             self.assertEqual(payload["session_import"]["imported"], 1)
             self.assertEqual(store.get_session("session-a").network_context, "direct:iad")
+            self.assertEqual(
+                payload["session_import"]["sessions"][0]["network_policy"]["route"],
+                "iad",
+            )
             self.assertNotIn("file:session-a", raw)
 
     def test_investigate_task_returns_package(self):

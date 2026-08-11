@@ -8,7 +8,14 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xingestion.sessions import SessionHealth, SessionStore, import_session_registry, load_session_registry
+from xingestion.sessions import (
+    SessionHealth,
+    SessionStore,
+    import_session_registry,
+    load_session_registry,
+    network_matches,
+    parse_network_policy,
+)
 
 
 class SessionStoreTests(unittest.TestCase):
@@ -30,6 +37,29 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(session.success_count, 0)
             self.assertEqual(session.failure_count, 0)
             self.assertIsNone(session.last_error_class)
+            self.assertEqual(session.network_policy.kind, "direct")
+
+    def test_network_policy_parses_and_matches_worker_context(self):
+        policy = parse_network_policy("proxy:pool-a:iad")
+
+        self.assertEqual(policy.public_dict()["kind"], "proxy")
+        self.assertEqual(policy.public_dict()["route"], "pool-a")
+        self.assertEqual(policy.public_dict()["region"], "iad")
+        self.assertTrue(network_matches("proxy:pool-a:iad", "proxy:pool-a"))
+        self.assertTrue(network_matches("proxy:pool-a:iad", "proxy"))
+        self.assertFalse(network_matches("proxy:pool-a:iad", "direct"))
+
+    def test_rejects_invalid_network_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SessionStore(Path(temp_dir) / "sessions.sqlite3")
+
+            with self.assertRaisesRegex(ValueError, "unsupported network kind"):
+                store.upsert_session(
+                    session_id="session-1",
+                    account_label="account",
+                    credential_ref="secret:x/session-1",
+                    network_context="tor:pool-a",
+                )
 
     def test_rejects_raw_secret_material_as_credential_ref(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -60,6 +90,31 @@ class SessionStoreTests(unittest.TestCase):
             self.assertTrue(leased.lease_token.startswith("session-lease-"))
             self.assertIsNone(blocked)
             self.assertEqual(leased_again.lease_owner, "worker-b")
+
+    def test_acquire_filters_by_required_worker_network(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = SessionStore(Path(temp_dir) / "sessions.sqlite3")
+            store.upsert_session(
+                session_id="session-direct",
+                account_label="direct-account",
+                credential_ref="secret:x/direct",
+                network_context="direct:iad",
+            )
+            store.upsert_session(
+                session_id="session-proxy",
+                account_label="proxy-account",
+                credential_ref="secret:x/proxy",
+                network_context="proxy:pool-a:iad",
+            )
+
+            leased = store.acquire_session(
+                owner="worker-proxy",
+                lease_seconds=60,
+                required_network_context="proxy:pool-a",
+            )
+
+            self.assertEqual(leased.session_id, "session-proxy")
+            self.assertEqual(leased.network_context, "proxy:pool-a:iad")
 
     def test_update_health_marks_session_unavailable_for_acquisition(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -179,6 +234,7 @@ class SessionStoreTests(unittest.TestCase):
             raw = json.dumps(result.public_dict())
             self.assertNotIn("file:session-a", raw)
             self.assertIn("reference_scheme", raw)
+            self.assertIn("network_policy", raw)
 
 
 if __name__ == "__main__":

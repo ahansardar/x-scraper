@@ -19,6 +19,7 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("Run live acquisition", html)
         self.assertIn("Metrics", html)
         self.assertIn("Sessions", html)
+        self.assertIn("Network", html)
         self.assertIn("Last Error", html)
         self.assertIn("Needs Attention", html)
         self.assertIn("Support Exports", html)
@@ -72,6 +73,7 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("/api/startup", js)
         self.assertIn("loadStartup", js)
         self.assertIn("startupChecks", js)
+        self.assertIn("formatNetworkPolicy", js)
 
 
 if __name__ == "__main__":

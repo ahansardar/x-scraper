@@ -8,6 +8,8 @@ from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
+from xingestion.sessions.network import NetworkPolicy, network_matches, parse_network_policy
+
 
 class SessionHealth(StrEnum):
     HEALTHY = "HEALTHY"
@@ -40,6 +42,10 @@ class SessionRecord:
     created_at: str
     updated_at: str
 
+    @property
+    def network_policy(self) -> NetworkPolicy:
+        return parse_network_policy(self.network_context)
+
 
 class SessionStore:
     def __init__(self, db_path: str | Path) -> None:
@@ -59,6 +65,7 @@ class SessionStore:
             raise ValueError("session_id cannot be empty")
         if credential_ref.startswith(("auth_token=", "ct0=", "Bearer ")):
             raise ValueError("credential_ref must be a secret reference, not raw secret material")
+        network_policy = parse_network_policy(network_context)
 
         now = _now()
         with closing(self._connect()) as conn:
@@ -94,7 +101,7 @@ class SessionStore:
                     session_id,
                     account_label,
                     credential_ref,
-                    network_context,
+                    network_policy.label,
                     health.value,
                     now,
                     now,
@@ -112,13 +119,16 @@ class SessionStore:
         *,
         owner: str,
         lease_seconds: int = 300,
+        required_network_context: str | None = None,
     ) -> SessionRecord | None:
+        if required_network_context:
+            parse_network_policy(required_network_context)
         now = _now()
         expires = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
         token = f"session-lease-{uuid4().hex}"
         with closing(self._connect()) as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
+            rows = conn.execute(
                 """
                 SELECT *
                 FROM session_artifacts
@@ -138,12 +148,19 @@ class SessionStore:
                     lease_token IS NULL
                     OR lease_expires_at IS NULL
                     OR lease_expires_at <= ?
-                  )
+                )
                 ORDER BY updated_at ASC
-                LIMIT 1
                 """,
                 (SessionHealth.HEALTHY.value, SessionHealth.DEGRADED.value, now, now, now),
-            ).fetchone()
+            ).fetchall()
+            row = next(
+                (
+                    candidate
+                    for candidate in rows
+                    if network_matches(candidate["network_context"], required_network_context)
+                ),
+                None,
+            )
             if row is None:
                 conn.commit()
                 return None

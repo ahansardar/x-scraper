@@ -40,6 +40,7 @@ class WorkerResult:
     message: str | None = None
     lease_renewals: int = 0
     session_id: str | None = None
+    network_context: str | None = None
 
 
 class LocalWorker:
@@ -56,6 +57,7 @@ class LocalWorker:
         session_store: SessionStore | None = None,
         telemetry_store: ProtocolTelemetryStore | None = None,
         secret_provider: SecretProvider | None = None,
+        required_network_context: str | None = None,
         owner: str | None = None,
         lease_seconds: int = 300,
     ) -> None:
@@ -69,6 +71,7 @@ class LocalWorker:
         self.session_store = session_store
         self.telemetry_store = telemetry_store
         self.secret_provider = secret_provider
+        self.required_network_context = required_network_context
         self.planner = CapabilityPlanner(self.manifest)
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
@@ -143,11 +146,18 @@ class LocalWorker:
             session = self.session_store.acquire_session(
                 owner=self.owner,
                 lease_seconds=self.lease_seconds,
+                required_network_context=self.required_network_context,
             )
             if session is None:
+                message = "No healthy session lease is available"
+                if self.required_network_context:
+                    message = (
+                        "No healthy session lease is available for network_context="
+                        f"{self.required_network_context}"
+                    )
                 envelope = classify_error(
                     "SESSION_UNAVAILABLE",
-                    message="No healthy session lease is available",
+                    message=message,
                 )
                 scheduled = self.ledger.transition_task(
                     task.task_id,
@@ -171,6 +181,7 @@ class LocalWorker:
                     state=scheduled.state,
                     error_class=envelope.error_class,
                     message=envelope.message,
+                    network_context=self.required_network_context,
                 )
 
         auth = self.auth
@@ -228,6 +239,7 @@ class LocalWorker:
                     error_class=envelope.error_class,
                     message=envelope.message,
                     session_id=session.session_id,
+                    network_context=session.network_context,
                 )
 
         lease_expires_at = (
@@ -264,6 +276,7 @@ class LocalWorker:
             self._record_telemetry(
                 task=task,
                 session_id=session.session_id if session else None,
+                network_context=session.network_context if session else self.required_network_context,
                 state="FAILURE",
                 error_class=envelope.error_class,
                 duration_ms=_duration_ms(started),
@@ -284,6 +297,7 @@ class LocalWorker:
                 message=envelope.message,
                 lease_renewals=lease_renewals,
                 session_id=session.session_id if session else None,
+                network_context=session.network_context if session else self.required_network_context,
             )
         finally:
             if session is not None and session.lease_token:
@@ -311,6 +325,7 @@ class LocalWorker:
         self._record_telemetry(
             task=task,
             session_id=session.session_id if session else None,
+            network_context=session.network_context if session else None,
             state="SUCCESS",
             tweet_count=len(page.tweets),
             next_cursor_present=bool(page.next_cursor),
@@ -339,6 +354,9 @@ class LocalWorker:
                 "session": {
                     "session_id": session.session_id if session else None,
                     "network_context": session.network_context if session else None,
+                    "network_policy": (
+                        session.network_policy.public_dict() if session else None
+                    ),
                 },
             },
         )
@@ -349,6 +367,7 @@ class LocalWorker:
             raw_evidence_ref=page.raw_evidence_ref,
             lease_renewals=lease_renewals,
             session_id=session.session_id if session else None,
+            network_context=session.network_context if session else None,
         )
 
     def _record_telemetry(
@@ -356,6 +375,7 @@ class LocalWorker:
         *,
         task,
         session_id: str | None,
+        network_context: str | None,
         state: str,
         error_class: str | None = None,
         tweet_count: int = 0,
@@ -371,6 +391,7 @@ class LocalWorker:
             recipe_revision_id=str(task.plan_json["recipe_revision_id"]),
             state=state,
             session_id=session_id,
+            network_context=network_context,
             error_class=error_class,
             tweet_count=tweet_count,
             next_cursor_present=next_cursor_present,

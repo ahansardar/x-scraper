@@ -24,6 +24,7 @@ class ProtocolAttempt:
     recipe_revision_id: str
     state: str
     session_id: str | None
+    network_context: str | None
     error_class: str | None
     tweet_count: int
     next_cursor_present: bool
@@ -52,6 +53,7 @@ class ProtocolTelemetryStore:
         recipe_revision_id: str,
         state: str,
         session_id: str | None,
+        network_context: str | None = None,
         error_class: str | None = None,
         tweet_count: int = 0,
         next_cursor_present: bool = False,
@@ -67,13 +69,14 @@ class ProtocolTelemetryStore:
                     recipe_revision_id,
                     state,
                     session_id,
+                    network_context,
                     error_class,
                     tweet_count,
                     next_cursor_present,
                     duration_ms,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -82,6 +85,7 @@ class ProtocolTelemetryStore:
                     recipe_revision_id,
                     state,
                     session_id,
+                    network_context,
                     error_class,
                     tweet_count,
                     1 if next_cursor_present else 0,
@@ -171,6 +175,7 @@ class ProtocolTelemetryStore:
                     recipe_revision_id TEXT NOT NULL,
                     state TEXT NOT NULL,
                     session_id TEXT,
+                    network_context TEXT,
                     error_class TEXT,
                     tweet_count INTEGER NOT NULL,
                     next_cursor_present INTEGER NOT NULL,
@@ -206,6 +211,7 @@ def _attempt_from_row(row: sqlite3.Row) -> ProtocolAttempt:
         recipe_revision_id=row["recipe_revision_id"],
         state=row["state"],
         session_id=row["session_id"],
+        network_context=row["network_context"] if "network_context" in row.keys() else None,
         error_class=row["error_class"],
         tweet_count=int(row["tweet_count"]),
         next_cursor_present=bool(row["next_cursor_present"]),

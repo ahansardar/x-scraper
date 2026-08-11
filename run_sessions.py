@@ -57,6 +57,7 @@ def _safe_session_dict(session) -> dict[str, object]:
             else "unknown"
         ),
         "network_context": session.network_context,
+        "network_policy": session.network_policy.public_dict(),
         "health": session.health.value,
         "attempt_count": session.attempt_count,
         "success_count": session.success_count,

@@ -340,6 +340,7 @@ class LocalWorkerTests(unittest.TestCase):
 
             self.assertEqual(result.state, TaskState.DONE)
             self.assertEqual(result.session_id, "session-1")
+            self.assertEqual(result.network_context, "direct")
             self.assertIsNone(session_after.lease_token)
             self.assertEqual(session_after.attempt_count, 1)
             self.assertEqual(session_after.success_count, 1)
@@ -348,6 +349,104 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertIsNotNone(session_after.last_success_at)
             self.assertEqual(task_after.result_json["session"]["session_id"], "session-1")
             self.assertEqual(task_after.result_json["session"]["network_context"], "direct")
+            self.assertEqual(task_after.result_json["session"]["network_policy"]["kind"], "direct")
+
+    def test_worker_respects_required_network_context(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-direct",
+                account_label="direct-account",
+                credential_ref="secret:x/direct",
+                network_context="direct:iad",
+            )
+            sessions.upsert_session(
+                session_id="session-proxy",
+                account_label="proxy-account",
+                credential_ref="secret:x/proxy",
+                network_context="proxy:pool-a:iad",
+            )
+            task = ledger.create_task(
+                idempotency_key="session-worker-network-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+                required_network_context="proxy:pool-a",
+            )
+
+            result = worker.process_one()
+            task_after = ledger.get_task(task.task_id)
+
+            self.assertEqual(result.state, TaskState.DONE)
+            self.assertEqual(result.session_id, "session-proxy")
+            self.assertEqual(result.network_context, "proxy:pool-a:iad")
+            self.assertEqual(
+                task_after.result_json["session"]["network_policy"]["route"],
+                "pool-a",
+            )
+
+    def test_worker_retries_when_required_network_has_no_session(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = SQLiteTaskLedger(db_path)
+            sessions = SessionStore(db_path)
+            sessions.upsert_session(
+                session_id="session-direct",
+                account_label="direct-account",
+                credential_ref="secret:x/direct",
+                network_context="direct:iad",
+            )
+            task = ledger.create_task(
+                idempotency_key="session-worker-network-miss",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+                session_store=sessions,
+                required_network_context="proxy:pool-a",
+            )
+
+            result = worker.process_one()
+            task_after = ledger.get_task(task.task_id)
+
+            self.assertEqual(result.state, TaskState.RETRY_SCHEDULED)
+            self.assertEqual(result.error_class, "SESSION_UNAVAILABLE")
+            self.assertIn("proxy:pool-a", result.message)
+            self.assertIn("proxy:pool-a", task_after.error_json["message"])
 
     def test_worker_records_success_telemetry(self):
         manifest = load_manifest()
@@ -384,6 +483,8 @@ class LocalWorkerTests(unittest.TestCase):
             self.assertEqual(summary.total_attempts, 1)
             self.assertEqual(summary.successes, 1)
             self.assertEqual(summary.failures, 0)
+            attempts = telemetry.list_for_task(task.task_id)
+            self.assertEqual(attempts[0].network_context, None)
 
     def test_worker_records_failure_telemetry(self):
         manifest = load_manifest()

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
+from xingestion.sessions.network import parse_network_policy
 from xingestion.sessions.store import SessionHealth, SessionRecord, SessionStore
 
 
@@ -22,6 +23,7 @@ class SessionRegistryEntry:
             "reference_configured": bool(self.credential_ref),
             "reference_scheme": _reference_scheme(self.credential_ref),
             "network_context": self.network_context,
+            "network_policy": parse_network_policy(self.network_context).public_dict(),
             "health": self.health.value,
         }
 
@@ -43,6 +45,7 @@ class SessionRegistryImportResult:
                     "reference_configured": bool(session.credential_ref),
                     "reference_scheme": _reference_scheme(session.credential_ref),
                     "network_context": session.network_context,
+                    "network_policy": session.network_policy.public_dict(),
                     "health": session.health.value,
                 }
                 for session in self.sessions
@@ -86,7 +89,7 @@ def _entry_from_dict(payload: object) -> SessionRegistryEntry:
     session_id = str(payload.get("session_id") or "").strip()
     account_label = str(payload.get("account_label") or "").strip()
     credential_ref = str(payload.get("credential_ref") or "").strip()
-    network_context = str(payload.get("network_context") or "direct").strip()
+    network_context = parse_network_policy(str(payload.get("network_context") or "direct")).label
     health = SessionHealth(str(payload.get("health") or SessionHealth.HEALTHY.value))
     if not session_id:
         raise ValueError("session_id cannot be empty")

@@ -227,6 +227,7 @@ async function loadSessions() {
     <tr>
       <td>${session.session_id}</td>
       <td><span class="${sessionStateClass(session.health)}">${session.health}</span></td>
+      <td>${formatNetworkPolicy(session.network_policy, session.network_context)}</td>
       <td>${session.attempt_count} / ${session.success_count} / ${session.failure_count}</td>
       <td>${session.cooldown_until || ""}</td>
       <td>${formatSessionError(session)}</td>
@@ -306,6 +307,14 @@ function formatSessionError(session) {
   }
   const message = session.last_error_message ? `: ${session.last_error_message}` : "";
   return `${session.last_error_class}${message}`;
+}
+
+function formatNetworkPolicy(policy, fallback) {
+  if (!policy) {
+    return fallback || "";
+  }
+  const details = [policy.route, policy.region].filter(Boolean).join(" / ");
+  return details ? `${policy.kind}: ${details}` : policy.kind;
 }
 
 function renderOutput(data) {
@@ -808,5 +817,5 @@ loadMetrics().catch((error) => {
   metrics.innerHTML = `<div><strong>error</strong><span>${error.message}</span></div>`;
 });
 loadSessions().catch((error) => {
-  sessions.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+  sessions.innerHTML = `<tr><td colspan="7">${error.message}</td></tr>`;
 });

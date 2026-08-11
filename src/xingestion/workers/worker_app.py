@@ -48,6 +48,7 @@ def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
         session_store=session_store,
         telemetry_store=ProtocolTelemetryStore(config.sqlite_path),
         secret_provider=secret_provider,
+        required_network_context=config.worker_network_context or None,
     )
 
 
@@ -65,11 +66,14 @@ def main(argv=None):
     sleep_seconds = _float_arg(argv, "--sleep", 2.0)
     print(f"X ingestion worker using SQLite: {config.sqlite_path}")
     print(f"Raw evidence directory: {config.raw_evidence_dir}")
+    if config.worker_network_context:
+        print(f"Worker network context: {config.worker_network_context}")
     print(f"Log file: {logging_settings.log_file}")
     LOGGER.info(
-        "worker starting sqlite=%s raw_evidence=%s once=%s sleep_seconds=%s",
+        "worker starting sqlite=%s raw_evidence=%s network_context=%s once=%s sleep_seconds=%s",
         config.sqlite_path,
         config.raw_evidence_dir,
+        config.worker_network_context or "any",
         once,
         sleep_seconds,
     )

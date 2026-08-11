@@ -21,6 +21,7 @@ XINGESTION_SECRET_PROVIDER=env
 XINGESTION_SECRET_DIR=
 XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
+XINGESTION_WORKER_NETWORK_CONTEXT=
 XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
@@ -61,7 +62,7 @@ For multiple authorized sessions, create a registry file outside git:
       "session_id": "session-a",
       "account_label": "authorized-account-a",
       "credential_ref": "file:session-a",
-      "network_context": "direct:iad",
+      "network_context": "proxy:pool-a:iad",
       "health": "HEALTHY"
     },
     {
@@ -74,6 +75,8 @@ For multiple authorized sessions, create a registry file outside git:
   ]
 }
 ```
+
+`network_context` is parsed as `kind[:route][:region]`; supported kinds are `direct`, `proxy`, and `vpn`. Set `XINGESTION_WORKER_NETWORK_CONTEXT` on a deployed worker to bind it to a route or pool, such as `proxy:pool-a` or `direct:sfo`. The worker will only lease sessions that match the requested kind plus any supplied route/region.
 
 Point the app at it:
 
@@ -158,7 +161,7 @@ The app stores:
 - health report exports: `XINGESTION_DATA_DIR\reports\health-report-*.json`
 - rotating logs: `XINGESTION_DATA_DIR\logs`
 
-Session records expose `health`, lease metadata, `cooldown_until`, attempt counters, last attempt/success times, and the latest error class/message. HTTP 429 protocol responses cool down only the leased session, so other healthy sessions can continue processing while the limited account waits. Once the cooldown expires, a successful retry restores that session to `HEALTHY`.
+Session records expose `health`, lease metadata, `network_context`, parsed network policy, `cooldown_until`, attempt counters, last attempt/success times, and the latest error class/message. HTTP 429 protocol responses cool down only the leased session, so other healthy sessions can continue processing while the limited account waits. Once the cooldown expires, a successful retry restores that session to `HEALTHY`.
 
 ## Submit Work
 
@@ -346,7 +349,7 @@ Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py
 ```
 
 After starting web and worker:

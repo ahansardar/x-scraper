@@ -21,6 +21,7 @@ class ProtocolTelemetryStoreTests(unittest.TestCase):
                 recipe_revision_id="recipe-1",
                 state="SUCCESS",
                 session_id="session-1",
+                network_context="direct:iad",
                 tweet_count=2,
                 next_cursor_present=True,
                 duration_ms=123,
@@ -32,6 +33,7 @@ class ProtocolTelemetryStoreTests(unittest.TestCase):
                 recipe_revision_id="recipe-1",
                 state="FAILURE",
                 session_id="session-1",
+                network_context="direct:iad",
                 error_class="RATE_LIMITED",
                 duration_ms=50,
             )
@@ -48,6 +50,7 @@ class ProtocolTelemetryStoreTests(unittest.TestCase):
             self.assertEqual(len(task_attempts), 1)
             self.assertEqual(task_attempts[0].task_id, "task-2")
             self.assertEqual(task_attempts[0].state, "FAILURE")
+            self.assertEqual(task_attempts[0].network_context, "direct:iad")
             self.assertEqual(task_attempts[0].error_class, "RATE_LIMITED")
 
             signals = store.release_error_signals("release-1")

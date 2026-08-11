@@ -11,6 +11,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from xingestion.migrations import MigrationRunner
 
 
+EXPECTED_MIGRATIONS = ("001", "002", "003", "004", "005", "006")
+
+
 class MigrationRunnerTests(unittest.TestCase):
     def test_applies_baseline_migration_once(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -24,9 +27,9 @@ class MigrationRunnerTests(unittest.TestCase):
             second = runner.apply()
             status = runner.status()
 
-            self.assertEqual(first, ("001", "002", "003", "004", "005"))
+            self.assertEqual(first, EXPECTED_MIGRATIONS)
             self.assertEqual(second, ())
-            self.assertEqual(runner.applied_versions(), ("001", "002", "003", "004", "005"))
+            self.assertEqual(runner.applied_versions(), EXPECTED_MIGRATIONS)
             self.assertTrue(status.current)
             self.assertEqual(status.pending_versions, ())
 
@@ -43,6 +46,12 @@ class MigrationRunnerTests(unittest.TestCase):
                         "PRAGMA table_info(session_artifacts)"
                     ).fetchall()
                 }
+                protocol_attempt_columns = {
+                    row[1]
+                    for row in conn.execute(
+                        "PRAGMA table_info(protocol_attempts)"
+                    ).fetchall()
+                }
             self.assertIn("capability_tasks", tables)
             self.assertIn("canonical_tweets", tables)
             self.assertIn("session_artifacts", tables)
@@ -51,6 +60,7 @@ class MigrationRunnerTests(unittest.TestCase):
             self.assertIn("reprocess_jobs", tables)
             self.assertIn("attempt_count", session_columns)
             self.assertIn("last_error_class", session_columns)
+            self.assertIn("network_context", protocol_attempt_columns)
 
     def test_status_reports_pending_migrations_before_apply(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -63,9 +73,9 @@ class MigrationRunnerTests(unittest.TestCase):
             status = runner.status()
 
             self.assertFalse(status.current)
-            self.assertEqual(status.available_versions, ("001", "002", "003", "004", "005"))
+            self.assertEqual(status.available_versions, EXPECTED_MIGRATIONS)
             self.assertEqual(status.applied_versions, ())
-            self.assertEqual(status.pending_versions, ("001", "002", "003", "004", "005"))
+            self.assertEqual(status.pending_versions, EXPECTED_MIGRATIONS)
             with self.assertRaisesRegex(RuntimeError, "Pending database migrations"):
                 runner.require_current()
 
