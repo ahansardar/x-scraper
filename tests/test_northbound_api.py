@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
+from xingestion.migrations import MigrationRunner
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
@@ -391,6 +392,44 @@ class NorthboundApiTests(unittest.TestCase):
             handler.do_GET()
 
             self.assertEqual(handler.status, 400)
+
+    def test_startup_route_returns_preflight_checks(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db_path = root / "data" / "tasks.sqlite3"
+            runner = MigrationRunner(
+                db_path,
+                ROOT / "src" / "xingestion" / "migrations" / "sql",
+            )
+            runner.apply()
+            SessionStore(db_path).upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    data_dir=root / "data",
+                    sqlite_path=db_path,
+                    raw_evidence_dir=root / "data" / "raw_evidence",
+                ),
+                migration_runner=runner,
+                manifest=manifest,
+                auth=SimpleNamespace(missing_fields=lambda: []),
+            )
+            handler = FakeHandler()
+            handler.path = "/api/startup"
+
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertTrue(payload["ok"])
+            checks = {check["name"]: check["status"] for check in payload["checks"]}
+            self.assertEqual(checks["startup_directories"], "PASS")
+            self.assertEqual(checks["migrations"], "PASS")
 
     def test_release_risk_dict_returns_recommendation(self):
         manifest = ProtocolReleaseManifest.from_file(

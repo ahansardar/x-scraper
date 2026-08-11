@@ -27,6 +27,7 @@ from xingestion.investigation import (
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
 from xingestion.operator_tasks import list_operator_task_actions
+from xingestion.preflight import DeploymentPreflight
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
@@ -136,6 +137,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json({"risk": _release_risk_dict()})
         if parsed.path == "/api/storage":
             return self._json(_storage_dict())
+        if parsed.path == "/api/startup":
+            return self._json(_startup_dict())
         if parsed.path == "/api/sessions":
             return self._json({"sessions": [_session_dict(s) for s in STATE.session_store.list_sessions()]})
         if parsed.path == "/api/retention":
@@ -695,6 +698,26 @@ def _storage_dict():
         "admin_token_configured": bool(STATE.config.admin_token),
         "require_migrations": STATE.config.require_migrations,
         "max_active_tasks_per_capability": STATE.config.max_active_tasks_per_capability,
+    }
+
+
+def _startup_dict():
+    result = DeploymentPreflight(
+        config=STATE.config,
+        migration_runner=STATE.migration_runner,
+        manifest=STATE.manifest,
+        auth=STATE.auth,
+    ).run()
+    return {
+        "ok": result.ok,
+        "checks": [
+            {
+                "name": check.name,
+                "status": check.status,
+                "message": check.message,
+            }
+            for check in result.checks
+        ],
     }
 
 
