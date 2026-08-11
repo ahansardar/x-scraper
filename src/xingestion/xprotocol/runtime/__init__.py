@@ -9,6 +9,7 @@ from .search_tweets import (
     acquire_search_tweets_page,
     build_search_timeline_request,
     parse_search_tweets_page,
+    validate_search_tweets_pagination,
 )
 from .transport import (
     OneAttemptTransport,
@@ -33,6 +34,7 @@ __all__ = [
     "build_search_timeline_request",
     "load_env_file",
     "parse_search_tweets_page",
+    "validate_search_tweets_pagination",
     "UrllibJsonTransport",
     "web_session_auth_from_env",
 ]
