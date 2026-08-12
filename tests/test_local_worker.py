@@ -162,6 +162,41 @@ class LocalWorkerTests(unittest.TestCase):
             )
             self.assertIsNone(worker.process_one().task_id)
 
+    def test_worker_rejects_task_planned_for_unapproved_release(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request).public_dict()
+        plan["release_id"] = "not-approved-release"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            task = ledger.create_task(
+                idempotency_key="worker-release-mismatch",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan,
+            )
+            worker = LocalWorker(
+                ledger=ledger,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+                transport=FakeTransport(),
+                raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
+            )
+
+            result = worker.process_one()
+            failed = ledger.get_task(task.task_id)
+
+            self.assertTrue(result.processed)
+            self.assertEqual(result.error_class, "PROTOCOL_RELEASE_MISMATCH")
+            self.assertEqual(failed.state, TaskState.DEAD_LETTER)
+            self.assertEqual(failed.error_json["approved_release_id"], manifest.release_id)
+
     def test_worker_resolves_auth_from_leased_session_reference(self):
         manifest = load_manifest()
         request = CapabilityRequest(

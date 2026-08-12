@@ -22,7 +22,6 @@ XINGESTION_SECRET_DIR=
 XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_WORKER_NETWORK_CONTEXT=
-XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
 XINGESTION_LOG_DIR=
@@ -97,7 +96,7 @@ The web console can run the same configured import through:
 POST /api/sessions/import
 ```
 
-The `POST` route requires `x-admin-token`. Import output shows session IDs, account labels, network contexts, health, and reference schemes; it does not return `credential_ref` values.
+The `POST` route is available from the trusted console without an admin-token header. Import output shows session IDs, account labels, network contexts, health, and reference schemes; it does not return `credential_ref` values.
 
 ## Start
 
@@ -142,6 +141,7 @@ GET /api/migrations
 GET /api/telemetry
 GET /api/network-health
 GET /api/sessions
+GET /api/releases
 GET /api/releases/current
 GET /api/releases/current/risk
 ```
@@ -194,11 +194,7 @@ Poll `status_url` until the task is `DONE`, then read `result_url`.
 
 ## Operator Controls
 
-All operator `POST` routes require:
-
-```text
-x-admin-token: <XINGESTION_ADMIN_TOKEN>
-```
+Operator `POST` routes are trusted-console routes and do not require an admin-token header.
 
 Cancel pending work:
 
@@ -223,6 +219,34 @@ Reactivate it after investigation:
 ```text
 POST /api/releases/current/activate
 ```
+
+List and approve staged protocol manifests:
+
+```powershell
+python .\run_releases.py --json
+python .\run_releases.py current --json
+python .\run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json
+python .\run_releases.py approve xrev-search-tweets-2026-08-10-candidate-1 --reason operator_approved --json
+python .\run_releases.py audits --json
+python .\run_releases.py audit promotion-...json --json
+python .\run_releases.py prune-audits --json
+python .\run_releases.py prune-audits --days 30 --apply --json
+```
+
+Equivalent trusted-console routes:
+
+```text
+GET /api/releases
+POST /api/releases/approve
+GET /api/releases/audits
+GET /api/releases/audits/{name}
+GET /api/releases/audits/{name}/download
+POST /api/releases/audits/retention
+```
+
+Release approval first runs promotion safety checks: manifest presence, release health, binding presence, checked-in fixture validation, and browser-capture/direct-replay comparison when pairs exist. A failed safety report blocks normal approval; use `--force` or `force: true` only for an explicit emergency override. Release approval updates `approved_protocol_release` in SQLite and reloads the live process planner/worker so new tasks use the exact approved manifest. With more than one manifest in `protocol_releases`, startup requires this pointer to be present and resolvable.
+
+Every `run_releases.py check`, normal approval, blocked approval, and force approval writes a redacted `RELEASE_PROMOTION_AUDIT` package under `XINGESTION_DATA_DIR\release_promotions` by default. The package records the release ID, exact manifest path, approval pointer before/after, promotion safety report, force flag, and operator reason without raw X secrets or raw evidence bodies. Detail reads and downloads accept only `promotion-*.json` file names from that directory; they do not accept arbitrary paths. `prune-audits` dry-runs by default and deletes only matched `promotion-*.json` files when `--apply` is provided. The trusted console Promotion Trail uses `XINGESTION_RETENTION_DAYS` for its dry-run and cleanup count.
 
 Review advisory release-risk recommendations:
 
@@ -277,7 +301,7 @@ GET /api/support-exports/{file_name}/download
 POST /api/support-exports/retention
 ```
 
-The Support Exports panel uses the same endpoints. Detail reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; they do not accept arbitrary paths. Downloads require `x-admin-token` and return attachment headers. Retention uses `XINGESTION_RETENTION_DAYS` and deletes only `failed-task-*.json` files inside that directory.
+The Support Exports panel uses the same endpoints. Detail reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; they do not accept arbitrary paths. Downloads return attachment headers. Retention uses `XINGESTION_RETENTION_DAYS` and deletes only `failed-task-*.json` files inside that directory.
 
 List failed and retryable tasks with recommended next actions:
 
@@ -311,7 +335,7 @@ GET /api/outbox
 POST /api/outbox/process
 ```
 
-The `POST` route requires `x-admin-token`. Processing does not delete rows or manually force acknowledgements; it claims events via the ledger and executes `LocalWorker.process_one()`, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
+The `POST` route does not require an admin-token header. Processing does not delete rows or manually force acknowledgements; it claims events via the ledger and executes `LocalWorker.process_one()`, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
 
 Validate the pinned `SEARCH_TWEETS` parser before and after protocol changes:
 
@@ -319,9 +343,10 @@ Validate the pinned `SEARCH_TWEETS` parser before and after protocol changes:
 python .\run_protocol_validation.py --fixtures-only --json
 python .\run_protocol_validation.py --raw-only --json
 python .\run_protocol_validation.py --raw-only --write --json
+python .\run_protocol_validation.py --compare-captures --json
 ```
 
-The first command checks committed GraphQL regression fixtures. The second checks local captured payloads under `XINGESTION_DATA_DIR\raw_evidence`. The report includes parsed tweet counts, engagement metric coverage, bottom-cursor presence, and stable structural/typename fingerprints to compare when X changes the response shape. The web console mirrors the combined view at:
+The first command checks committed GraphQL regression fixtures. The second checks local captured payloads under `XINGESTION_DATA_DIR\raw_evidence`. The comparison command replays recent replayable browser captures through the approved release recipe, stores linked `direct_replay` evidence in the same raw evidence directory, and compares parser success plus structural/typename fingerprints. Live timeline tweet counts can change between capture and replay, so counts and engagement coverage are reported as observations instead of hard drift failures. The report includes parsed tweet counts, engagement metric coverage, bottom-cursor presence, and stable fingerprints to compare when X changes the response shape. The web console mirrors the read-only combined view and the replay-writing operator run at:
 
 ```text
 GET /api/protocol-validation
@@ -329,7 +354,7 @@ GET /api/protocol-validation/reports
 POST /api/protocol-validation/run
 ```
 
-Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route requires `x-admin-token`.
+Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route does not require an admin-token header and runs direct replays for recent replayable captures before writing the validation response.
 
 Bulk reprocess completed tasks for a release:
 
@@ -358,7 +383,7 @@ Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 ```
 
 After starting web and worker:

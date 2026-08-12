@@ -81,11 +81,16 @@ def acquire_search_tweets_page(
     evidence_ref = raw_evidence_sink.store_json(
         response.json_body,
         metadata={
+            "capture_kind": "browser",
             "capability_id": "SEARCH_TWEETS",
             "recipe_revision_id": recipe.revision_id,
             "operation_revision_id": recipe.operation.revision_id,
             "parser_revision_id": recipe.parser.revision_id,
             "pagination_revision_id": recipe.pagination.revision_id,
+            "acquisition_query": request.query,
+            "acquisition_product": request.product,
+            "acquisition_count": str(request.count),
+            "acquisition_cursor": request.cursor or "",
         },
     )
     return parse_search_tweets_page(

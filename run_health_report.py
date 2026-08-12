@@ -10,8 +10,8 @@ from xingestion.config import load_app_config
 from xingestion.health_report import write_health_report
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner
+from xingestion.releases import ReleaseStore, resolve_approved_manifest
 from xingestion.secrets import resolve_web_session_auth
-from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import load_env_file
 
 
@@ -20,15 +20,18 @@ def main(argv=None):
     load_env_file(ROOT / ".env")
     config = load_app_config(ROOT, argv)
     configure_logging(config=config, component="health-report", console=False)
+    release_store = ReleaseStore(config.sqlite_path)
+    resolved_release = resolve_approved_manifest(
+        release_store=release_store,
+        manifest_dir=ROOT / "protocol_releases",
+    )
     result = write_health_report(
         config=config,
         migration_runner=MigrationRunner(
             config.sqlite_path,
             ROOT / "src" / "xingestion" / "migrations" / "sql",
         ),
-        manifest=ProtocolReleaseManifest.from_file(
-            ROOT / "protocol_releases" / "search_tweets.candidate.json"
-        ),
+        manifest=resolved_release.manifest,
         auth=resolve_web_session_auth(config),
         base_url=_arg(argv, "--base-url", None),
         output_path=_arg(argv, "--output", None),

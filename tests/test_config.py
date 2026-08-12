@@ -23,7 +23,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.default_session_id, "local-env-session")
         self.assertEqual(config.default_credential_ref, "env:X_AUTH_TOKEN,X_CT0,X_BEARER")
         self.assertEqual(config.worker_network_context, "")
-        self.assertEqual(config.admin_token, "")
         self.assertEqual(config.secret_provider, "env")
         self.assertEqual(config.secret_dir, (ROOT / "data" / "secrets").resolve())
         self.assertIsNone(config.session_registry_path)
@@ -43,7 +42,6 @@ class ConfigTests(unittest.TestCase):
                 "XINGESTION_CREDENTIAL_REF",
                 "XINGESTION_NETWORK_CONTEXT",
                 "XINGESTION_WORKER_NETWORK_CONTEXT",
-                "XINGESTION_ADMIN_TOKEN",
                 "XINGESTION_SECRET_PROVIDER",
                 "XINGESTION_SECRET_DIR",
                 "XINGESTION_SESSION_REGISTRY",
@@ -62,7 +60,6 @@ class ConfigTests(unittest.TestCase):
                 os.environ["XINGESTION_CREDENTIAL_REF"] = "secret:x/session-a"
                 os.environ["XINGESTION_NETWORK_CONTEXT"] = "direct:iad"
                 os.environ["XINGESTION_WORKER_NETWORK_CONTEXT"] = "direct:iad"
-                os.environ["XINGESTION_ADMIN_TOKEN"] = "admin-secret"
                 os.environ["XINGESTION_SECRET_PROVIDER"] = "file"
                 os.environ["XINGESTION_SECRET_DIR"] = str(Path(temp_dir) / "mounted-secrets")
                 os.environ["XINGESTION_SESSION_REGISTRY"] = str(Path(temp_dir) / "sessions.json")
@@ -80,7 +77,6 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(config.default_credential_ref, "secret:x/session-a")
                 self.assertEqual(config.default_network_context, "direct:iad")
                 self.assertEqual(config.worker_network_context, "direct:iad")
-                self.assertEqual(config.admin_token, "admin-secret")
                 self.assertEqual(config.secret_provider, "file")
                 self.assertEqual(config.secret_dir, (Path(temp_dir) / "mounted-secrets").resolve())
                 self.assertEqual(config.session_registry_path, (Path(temp_dir) / "sessions.json").resolve())

@@ -18,7 +18,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -103,7 +103,6 @@ XINGESTION_SECRET_DIR=
 XINGESTION_SESSION_REGISTRY=
 XINGESTION_NETWORK_CONTEXT=direct
 XINGESTION_WORKER_NETWORK_CONTEXT=
-XINGESTION_ADMIN_TOKEN=
 XINGESTION_REQUIRE_MIGRATIONS=true
 XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY=100
 XINGESTION_LOG_DIR=
@@ -119,6 +118,19 @@ Storage locations:
 - Default health reports: `./data/reports/`
 - Default protocol validation reports: `./data/protocol_validation/`
 - Default logs: `./data/logs/`
+
+The worker resolves `approved_protocol_release.release_id` from the SQLite task database and loads the exact matching manifest from `protocol_releases/`. If a checkout contains exactly one manifest and no approved pointer yet exists, startup bootstraps that single release as approved. With multiple manifests, startup fails until an approved release ID is set.
+
+Inspect and approve staged protocol manifests without editing SQLite directly:
+
+```powershell
+python .\run_releases.py --json
+python .\run_releases.py current --json
+python .\run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json
+python .\run_releases.py approve xrev-search-tweets-2026-08-10-candidate-1 --reason operator_approved --json
+```
+
+The live console exposes the same inventory through `GET /api/releases` and can approve a staged manifest through `POST /api/releases/approve`. Approval runs promotion safety checks first: manifest presence, release health, binding presence, checked-in fixture validation, and browser-capture/direct-replay comparison when pairs exist. Use `--force` only for an explicit emergency override. Approval reloads the in-process planner and local worker so new tasks bind to the approved manifest immediately.
 
 Secret providers:
 
@@ -204,16 +216,19 @@ python .\run_protocol_validation.py --json
 python .\run_protocol_validation.py --fixtures-only --json
 python .\run_protocol_validation.py --raw-only --json
 python .\run_protocol_validation.py --raw-only --write --json
+python .\run_protocol_validation.py --compare-captures --json
 ```
 
-The report includes parsed tweet counts, engagement coverage, cursor presence, and structural/typename fingerprints for drift comparison. Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`.
+The report includes parsed tweet counts, engagement coverage, cursor presence, and structural/typename fingerprints for drift comparison. `--compare-captures` replays recent replayable browser captures through the approved release recipe, stores linked `direct_replay` raw evidence, and compares browser-vs-replay parser/shape fingerprints while reporting volatile tweet-count differences as observations. Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`.
 
 Protocol release health is operator-controlled:
 
 ```text
 GET /api/releases/current
+GET /api/releases
 POST /api/releases/current/quarantine
 POST /api/releases/current/activate
+POST /api/releases/approve
 ```
 
 A quarantined release is not executed by the worker; queued work is moved to `DEAD_LETTER` with a `PROTOCOL_RELEASE_BLOCKED` error.
@@ -270,7 +285,7 @@ See [docs/process_supervision.md](docs/process_supervision.md) for Windows Task 
 Logs use rotating file handlers. Leave `XINGESTION_LOG_DIR` blank to write under `XINGESTION_DATA_DIR\logs`, or set it to a host-managed persistent log directory. See [docs/logging.md](docs/logging.md).
 Worker failure logs include the structured runtime error class, severity, scope, retryability, and operator action.
 
-Set `XINGESTION_ADMIN_TOKEN` in deployment. Operator `POST` routes require it in the `x-admin-token` header:
+Operator routes are trusted-console routes and do not require an admin-token header:
 
 - `POST /api/tasks/{task_id}/cancel`
 - `POST /api/tasks/{task_id}/replay`
@@ -318,7 +333,7 @@ GET /api/support-exports/{file_name}/download
 POST /api/support-exports/retention
 ```
 
-Support export reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; callers do not pass arbitrary filesystem paths. Downloads require `x-admin-token` and return `Content-Disposition: attachment`. Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under that directory, and leaves task ledger rows untouched.
+Support export reads and downloads accept only `failed-task-*.json` file names from `XINGESTION_DATA_DIR\support_exports`; callers do not pass arbitrary filesystem paths. Downloads return `Content-Disposition: attachment`. Support export retention uses `XINGESTION_RETENTION_DAYS`, deletes only `failed-task-*.json` files under that directory, and leaves task ledger rows untouched.
 
 List failed and retryable tasks with recommended operator actions:
 

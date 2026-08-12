@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from xingestion.xprotocol.runtime import parse_search_tweets_page
+from xingestion.xprotocol.runtime import ProtocolError
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import SearchTweetsRequest, WebSessionAuth
+from xingestion.xprotocol.runtime.search_tweets import build_search_timeline_request
+from xingestion.xprotocol.runtime.transport import (
+    OneAttemptTransport,
+    response_to_protocol_error,
+)
+from xingestion.xprotocol.evidence import RawEvidenceRef, RawEvidenceSink
 
 
 DEFAULT_FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "search_tweets"
@@ -88,6 +97,110 @@ class SavedProtocolValidationReport:
         }
 
 
+@dataclass(frozen=True)
+class CaptureReplayComparison:
+    browser_source: str
+    direct_replay_source: str
+    ok: bool
+    browser_tweet_count: int
+    direct_tweet_count: int
+    browser_structural_fingerprint: str
+    direct_structural_fingerprint: str
+    mismatches: tuple[str, ...]
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "browser_source": self.browser_source,
+            "direct_replay_source": self.direct_replay_source,
+            "ok": self.ok,
+            "browser_tweet_count": self.browser_tweet_count,
+            "direct_tweet_count": self.direct_tweet_count,
+            "browser_structural_fingerprint": self.browser_structural_fingerprint,
+            "direct_structural_fingerprint": self.direct_structural_fingerprint,
+            "mismatches": list(self.mismatches),
+        }
+
+
+@dataclass(frozen=True)
+class CaptureReplayComparisonReport:
+    generated_at: str
+    checked_pairs: int
+    ok_pairs: int
+    failed_pairs: int
+    browser_captures: int
+    direct_replays: int
+    comparisons: tuple[CaptureReplayComparison, ...]
+
+    @property
+    def ok(self) -> bool:
+        return self.checked_pairs > 0 and self.failed_pairs == 0
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "generated_at": self.generated_at,
+            "ok": self.ok,
+            "checked_pairs": self.checked_pairs,
+            "ok_pairs": self.ok_pairs,
+            "failed_pairs": self.failed_pairs,
+            "browser_captures": self.browser_captures,
+            "direct_replays": self.direct_replays,
+            "comparisons": [item.public_dict() for item in self.comparisons],
+        }
+
+
+@dataclass(frozen=True)
+class DirectReplayRunResult:
+    browser_source: str
+    stored: bool
+    skipped: bool
+    direct_replay_ref: RawEvidenceRef | None = None
+    reason: str | None = None
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "browser_source": self.browser_source,
+            "stored": self.stored,
+            "skipped": self.skipped,
+            "direct_replay_ref": (
+                {
+                    "evidence_id": self.direct_replay_ref.evidence_id,
+                    "content_sha256": self.direct_replay_ref.content_sha256,
+                    "storage_uri": self.direct_replay_ref.storage_uri,
+                }
+                if self.direct_replay_ref is not None
+                else None
+            ),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class DirectReplayRunReport:
+    generated_at: str
+    candidates: int
+    attempted: int
+    stored: int
+    skipped: int
+    failed: int
+    results: tuple[DirectReplayRunResult, ...]
+
+    @property
+    def ok(self) -> bool:
+        return self.failed == 0
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "generated_at": self.generated_at,
+            "ok": self.ok,
+            "candidates": self.candidates,
+            "attempted": self.attempted,
+            "stored": self.stored,
+            "skipped": self.skipped,
+            "failed": self.failed,
+            "results": [result.public_dict() for result in self.results],
+        }
+
+
 def build_protocol_validation_report(
     *,
     raw_evidence_dir: Path | None,
@@ -119,6 +232,83 @@ def build_protocol_validation_report(
         failed_sources=len(results) - ok_sources,
         parser_revision_id=parser_revision_id,
         results=results,
+    )
+
+
+def run_direct_replays_for_browser_captures(
+    *,
+    raw_evidence_dir: Path,
+    manifest: ProtocolReleaseManifest,
+    auth: WebSessionAuth,
+    transport: OneAttemptTransport,
+    raw_evidence_sink: RawEvidenceSink,
+    limit: int = 3,
+) -> DirectReplayRunReport:
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    browser_captures = _classified_raw_evidence_files(raw_evidence_dir, "browser")
+    results = []
+    for browser_path in browser_captures[:limit]:
+        result = _run_direct_replay_for_capture(
+            browser_path,
+            manifest=manifest,
+            auth=auth,
+            transport=transport,
+            raw_evidence_sink=raw_evidence_sink,
+            raw_evidence_dir=raw_evidence_dir,
+        )
+        results.append(result)
+
+    stored = sum(1 for result in results if result.stored)
+    skipped = sum(1 for result in results if result.skipped)
+    failed = len(results) - stored - skipped
+    return DirectReplayRunReport(
+        generated_at=datetime.now(UTC).isoformat(),
+        candidates=len(browser_captures),
+        attempted=len(results) - skipped,
+        stored=stored,
+        skipped=skipped,
+        failed=failed,
+        results=tuple(results),
+    )
+
+
+def build_capture_replay_comparison_report(
+    *,
+    raw_evidence_dir: Path,
+    limit: int = 10,
+) -> CaptureReplayComparisonReport:
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    browser_captures = _classified_raw_evidence_files(raw_evidence_dir, "browser")
+    direct_replays = _classified_raw_evidence_files(raw_evidence_dir, "direct_replay")
+    comparisons = []
+    used_browser_sources: set[str] = set()
+    for direct_path in direct_replays[:limit]:
+        direct_meta = _metadata_for_payload(direct_path)
+        browser_path = _matching_browser_capture(
+            direct_meta,
+            browser_captures,
+            used_sources=used_browser_sources,
+        )
+        if browser_path is None:
+            continue
+        used_browser_sources.add(str(browser_path))
+        comparison = _compare_capture_pair(
+            browser_path,
+            direct_path,
+        )
+        comparisons.append(comparison)
+
+    ok_pairs = sum(1 for item in comparisons if item.ok)
+    return CaptureReplayComparisonReport(
+        generated_at=datetime.now(UTC).isoformat(),
+        checked_pairs=len(comparisons),
+        ok_pairs=ok_pairs,
+        failed_pairs=len(comparisons) - ok_pairs,
+        browser_captures=len(browser_captures),
+        direct_replays=len(direct_replays),
+        comparisons=tuple(comparisons),
     )
 
 
@@ -227,6 +417,211 @@ def _raw_evidence_files(raw_evidence_dir: Path, *, limit: int) -> tuple[Path, ..
         if not path.name.endswith(".metadata.json")
     ]
     return tuple(sorted(files, key=lambda path: path.stat().st_mtime, reverse=True)[:limit])
+
+
+def _classified_raw_evidence_files(raw_evidence_dir: Path, capture_kind: str) -> tuple[Path, ...]:
+    if not raw_evidence_dir.exists():
+        return ()
+    files = []
+    for path in raw_evidence_dir.glob("*.json"):
+        if path.name.endswith(".metadata.json"):
+            continue
+        metadata = _metadata_for_payload(path)
+        if metadata.get("capture_kind") == capture_kind:
+            files.append(path)
+    return tuple(sorted(files, key=lambda path: path.stat().st_mtime, reverse=True))
+
+
+def _metadata_for_payload(path: Path) -> dict[str, str]:
+    payload = _metadata_envelope_for_payload(path)
+    metadata = payload.get("metadata")
+    return {str(key): str(value) for key, value in dict(metadata or {}).items()}
+
+
+def _metadata_envelope_for_payload(path: Path) -> dict[str, Any]:
+    metadata_path = path.with_name(f"{path.stem}.metadata.json")
+    if not metadata_path.exists():
+        return {}
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return dict(payload or {})
+
+
+def _run_direct_replay_for_capture(
+    browser_path: Path,
+    *,
+    manifest: ProtocolReleaseManifest,
+    auth: WebSessionAuth,
+    transport: OneAttemptTransport,
+    raw_evidence_sink: RawEvidenceSink,
+    raw_evidence_dir: Path,
+) -> DirectReplayRunResult:
+    metadata_payload = _metadata_envelope_for_payload(browser_path)
+    browser_content_sha = str(metadata_payload.get("content_sha256") or "")
+    metadata = _metadata_for_payload(browser_path)
+    if not browser_content_sha:
+        return DirectReplayRunResult(
+            browser_source=str(browser_path),
+            stored=False,
+            skipped=True,
+            reason="missing_browser_content_sha256",
+        )
+    if _direct_replay_exists(raw_evidence_dir, replay_of_content_sha256=browser_content_sha):
+        return DirectReplayRunResult(
+            browser_source=str(browser_path),
+            stored=False,
+            skipped=True,
+            reason="direct_replay_already_exists",
+        )
+
+    recipe_revision_id = metadata.get("recipe_revision_id")
+    recipe = _recipe_by_revision(manifest, recipe_revision_id)
+    if recipe is None:
+        return DirectReplayRunResult(
+            browser_source=str(browser_path),
+            stored=False,
+            skipped=True,
+            reason="missing_or_unapproved_recipe_revision",
+        )
+
+    request = _search_request_from_metadata(metadata)
+    if request is None:
+        return DirectReplayRunResult(
+            browser_source=str(browser_path),
+            stored=False,
+            skipped=True,
+            reason="missing_replay_request_metadata",
+        )
+
+    try:
+        http_response = transport.send(build_search_timeline_request(recipe, auth, request))
+    except (ProtocolError, ValueError) as exc:
+        return DirectReplayRunResult(
+            browser_source=str(browser_path),
+            stored=False,
+            skipped=False,
+            reason=str(exc),
+        )
+
+    error = response_to_protocol_error(http_response)
+    if error:
+        return DirectReplayRunResult(
+            browser_source=str(browser_path),
+            stored=False,
+            skipped=False,
+            reason=f"{error.error_class}:{error.message}",
+        )
+
+    ref = raw_evidence_sink.store_json(
+        http_response.json_body,
+        metadata={
+            "capture_kind": "direct_replay",
+            "capability_id": "SEARCH_TWEETS",
+            "replay_of_content_sha256": browser_content_sha,
+            "browser_capture_source": str(browser_path),
+            "release_id": manifest.release_id,
+            "recipe_revision_id": recipe.revision_id,
+            "operation_revision_id": recipe.operation.revision_id,
+            "parser_revision_id": recipe.parser.revision_id,
+            "pagination_revision_id": recipe.pagination.revision_id,
+            "acquisition_query": request.query,
+            "acquisition_product": request.product,
+            "acquisition_count": str(request.count),
+            "acquisition_cursor": request.cursor or "",
+        },
+    )
+    return DirectReplayRunResult(
+        browser_source=str(browser_path),
+        stored=True,
+        skipped=False,
+        direct_replay_ref=ref,
+    )
+
+
+def _direct_replay_exists(raw_evidence_dir: Path, *, replay_of_content_sha256: str) -> bool:
+    for path in _classified_raw_evidence_files(raw_evidence_dir, "direct_replay"):
+        metadata = _metadata_for_payload(path)
+        if metadata.get("replay_of_content_sha256") == replay_of_content_sha256:
+            return True
+    return False
+
+
+def _recipe_by_revision(manifest: ProtocolReleaseManifest, revision_id: str | None):
+    if not revision_id:
+        return None
+    for binding in manifest.bindings:
+        if binding.recipe.revision_id == revision_id:
+            return binding.recipe
+    return None
+
+
+def _search_request_from_metadata(metadata: Mapping[str, str]) -> SearchTweetsRequest | None:
+    query = str(metadata.get("acquisition_query") or "").strip()
+    if not query:
+        return None
+    count = int(metadata.get("acquisition_count") or "20")
+    return SearchTweetsRequest(
+        query=query,
+        product=str(metadata.get("acquisition_product") or "Top"),
+        count=count,
+        cursor=str(metadata.get("acquisition_cursor") or "") or None,
+    )
+
+
+def _matching_browser_capture(
+    direct_meta: Mapping[str, str],
+    browser_captures: tuple[Path, ...],
+    *,
+    used_sources: set[str],
+) -> Path | None:
+    replay_of = direct_meta.get("replay_of_content_sha256")
+    if replay_of:
+        for path in browser_captures:
+            if str(path) in used_sources:
+                continue
+            metadata_path = path.with_name(f"{path.stem}.metadata.json")
+            try:
+                metadata_payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if metadata_payload.get("content_sha256") == replay_of:
+                return path
+    for path in browser_captures:
+        if str(path) not in used_sources:
+            return path
+    return None
+
+
+def _compare_capture_pair(browser_path: Path, direct_path: Path) -> CaptureReplayComparison:
+    browser = validate_search_tweets_payload(browser_path, source_type="browser")
+    direct = validate_search_tweets_payload(direct_path, source_type="direct_replay")
+    mismatches = []
+    if not _parse_succeeded(browser):
+        mismatches.append("browser_parse_failed")
+    if not _parse_succeeded(direct):
+        mismatches.append("direct_replay_parse_failed")
+    if browser.bottom_cursor_present != direct.bottom_cursor_present:
+        mismatches.append("bottom_cursor_present")
+    if browser.typename_fingerprint != direct.typename_fingerprint:
+        mismatches.append("typename_fingerprint")
+    if browser.structural_fingerprint != direct.structural_fingerprint:
+        mismatches.append("structural_fingerprint")
+    return CaptureReplayComparison(
+        browser_source=browser.source,
+        direct_replay_source=direct.source,
+        ok=not mismatches,
+        browser_tweet_count=browser.tweet_count,
+        direct_tweet_count=direct.tweet_count,
+        browser_structural_fingerprint=browser.structural_fingerprint,
+        direct_structural_fingerprint=direct.structural_fingerprint,
+        mismatches=tuple(mismatches),
+    )
+
+
+def _parse_succeeded(result: ProtocolValidationResult) -> bool:
+    return result.error is None and result.tweet_count > 0
 
 
 def _warnings_for_page(page) -> tuple[str, ...]:

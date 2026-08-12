@@ -25,6 +25,13 @@ class ReleaseRecord:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class ApprovedReleaseRecord:
+    release_id: str
+    reason: str
+    updated_at: str
+
+
 class ReleaseStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
@@ -87,6 +94,46 @@ class ReleaseStore:
         release = self.ensure_release(release_id)
         return release.health not in {ReleaseHealth.QUARANTINED, ReleaseHealth.RETIRED}
 
+    def approve_release(self, release_id: str, *, reason: str = "approved") -> ReleaseRecord:
+        release = self.ensure_release(release_id)
+        now = _now()
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT INTO approved_protocol_release (
+                    id,
+                    release_id,
+                    reason,
+                    updated_at
+                )
+                VALUES ('current', ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    release_id = excluded.release_id,
+                    reason = excluded.reason,
+                    updated_at = excluded.updated_at
+                """,
+                (release.release_id, reason, now),
+            )
+            conn.commit()
+        return release
+
+    def approved_release_id(self) -> str | None:
+        record = self.approved_release()
+        return record.release_id if record else None
+
+    def approved_release(self) -> ApprovedReleaseRecord | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT release_id, reason, updated_at FROM approved_protocol_release WHERE id = 'current'"
+            ).fetchone()
+        if row is None:
+            return None
+        return ApprovedReleaseRecord(
+            release_id=str(row["release_id"]),
+            reason=str(row["reason"]),
+            updated_at=str(row["updated_at"]),
+        )
+
     def _initialize(self) -> None:
         with closing(self._connect()) as conn:
             conn.execute(
@@ -94,6 +141,16 @@ class ReleaseStore:
                 CREATE TABLE IF NOT EXISTS protocol_release_health (
                     release_id TEXT PRIMARY KEY,
                     health TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS approved_protocol_release (
+                    id TEXT PRIMARY KEY,
+                    release_id TEXT NOT NULL,
                     reason TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )

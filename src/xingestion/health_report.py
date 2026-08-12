@@ -118,7 +118,7 @@ def _config_dict(config: AppConfig) -> dict[str, object]:
         "default_account_label": config.default_account_label,
         "default_network_context": config.default_network_context,
         "worker_network_context": config.worker_network_context or None,
-        "admin_token_configured": bool(config.admin_token),
+        "operator_auth_required": False,
         "secret_backend": _safe_secret_backend_dict(config),
         "require_migrations": config.require_migrations,
         "max_active_tasks_per_capability": config.max_active_tasks_per_capability,

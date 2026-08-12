@@ -1510,3 +1510,215 @@ Verified:
 Next:
 
 - Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
+
+## 2026-08-12 - Checkpoint 75: Tokenless Trusted Console Controls
+
+Implemented:
+
+- Removed the admin-token requirement from trusted-console operator routes.
+- Removed frontend admin-token prompting and `x-admin-token` header injection from operator actions, downloads, retention, outbox processing, session controls, and protocol validation saves.
+- Removed `XINGESTION_ADMIN_TOKEN` from current environment examples and deployment guidance.
+- Removed admin-token state from active app configuration, smoke checks, storage metrics, and health-report config output.
+- Updated tests to assert operator routes work without configured or supplied admin-token headers.
+
+Verified:
+
+- `rg` found no active `Admin token`, `adminHeaders`, `x-admin-token`, `XINGESTION_ADMIN_TOKEN`, `admin_token_configured`, or `admin_token` references in `src`, tests, README, deployment runbook, or `.env.example`.
+- `node --check src\xingestion\web\static\app.js`
+- `python -m unittest discover -s tests -p "test_config.py"` passed 2 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 21 tests.
+- `python -m unittest discover -s tests -p "test_smoke.py"` passed 2 tests.
+- Restarted the live server on `127.0.0.1:8023`.
+- Live `POST /api/tasks/{task_id}/investigate` succeeded without an admin-token header.
+- Live `POST /api/protocol-validation/run` accepted the request without an admin-token header and wrote a report.
+- Live `/app.js` contains no prompt, admin-header helper, admin-token text, or `x-admin-token` header usage.
+
+Next:
+
+- Add deployment-boundary auth separately if this trusted console is exposed beyond a private operator network.
+
+## 2026-08-12 - Checkpoint 76: Immediate Worker Dispatch for Console Tasks
+
+Implemented:
+
+- Fixed replay and live acquisition tasks getting stuck in `CREATED` when no separate/manual outbox processing was triggered.
+- Added server-side bounded outbox draining after capability task creation and replay when the live app has an attached local worker.
+- Kept the explicit `/api/outbox/process` endpoint for manual recovery and background-style operation.
+- Added regression coverage proving task submission and replay process through an attached worker immediately.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 23 tests.
+- `python -m unittest discover -s tests -p "test_outbox_operations.py"` passed 2 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- Restarted the live server on `127.0.0.1:8023`.
+- Live `POST /api/search-tweets` created task `task-669d2ea02dfc4bf18fa962474244763e`, auto-processed 1 outbox event, reached `DONE`, returned result HTTP 200, and left 0 unpublished outbox events.
+- Live `POST /api/tasks/task-4b5d86965dcc4aea841509bab0e3ae93/replay` created replay task `task-36cc21c99e5f474491f9b6543e458784`, auto-processed 1 outbox event, reached `DONE`, returned result HTTP 200, and left 0 unpublished outbox events.
+
+Next:
+
+- Surface the auto-dispatch status in the frontend summary so operators can see whether work was processed immediately or left for a background worker.
+
+## 2026-08-12 - Checkpoint 74: Frontend Fitment Correction
+
+Implemented:
+
+- Removed cramped two-column operational bands that forced wide tables into half-width panels.
+- Removed sticky table headers inside nested scroll containers to prevent visual stacking and overlap.
+- Kept dense task acquisition controls and task ledger side-by-side only on wide screens.
+- Made heavy operational tables full-width on desktop and horizontally scrollable only inside their panel on small screens.
+- Added a mobile-specific task ledger layout so retry/replay/investigate controls wrap inside the panel instead of clipping.
+
+Verified:
+
+- `node --check src\xingestion\web\static\app.js`
+- `python -m unittest discover -s tests -p test_frontend_copy.py` passed 3 tests.
+- `python -m unittest discover -s tests` passed 146 tests.
+- Live CSS from `http://127.0.0.1:8023/styles.css` includes the corrected mobile command-rail and workspace table rules.
+- Chrome headless loaded desktop and mobile captures before the last mobile-only retry, confirming the main layout no longer overlaps; final served CSS was checked directly after the mobile task-ledger correction.
+
+Next:
+
+- Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
+
+## 2026-08-12 - Checkpoint 73: Frontend Control Room Organization
+
+Implemented:
+
+- Reorganized the static frontend into a production operator console with a command rail, live evidence area, metrics strip, readiness panels, operator queue, session/network panels, and lifecycle/export controls.
+- Kept the console no-Docker and static-file deployable while preserving the existing endpoint bindings and DOM ids used by the live API wiring.
+- Added responsive layout rules for desktop, tablet, and mobile views with scroll-safe tables and stable controls.
+- Added frontend HTML escaping for live API fields including tweet content, user fields, session errors, export names, paths, route recommendations, and fallback error rows.
+- Preserved the no-mock frontend contract and the existing live acquisition workflow.
+
+Verified:
+
+- `node --check src\xingestion\web\static\app.js`
+- `python -m unittest discover -s tests -p test_frontend_copy.py` passed 3 tests.
+- `python -m unittest discover -s tests` passed 146 tests.
+- `python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py`
+- Live server on `127.0.0.1:8023` served the reorganized shell, the new `console-shell` CSS, and the escaped frontend JavaScript.
+- Live API probes returned JSON 200 from `/api/health`, `/api/metrics`, `/api/network-health`, and `/api/tasks`.
+
+Next:
+
+- Add a no-Docker route remediation audit/export command so operators can snapshot failing route evidence before rotating sessions or network paths.
+
+## 2026-08-12 - Checkpoint 77: Approved Release Resolution and Capture Replay Validation
+
+Implemented:
+
+- Added a durable `approved_protocol_release` pointer and migration `007_approved_protocol_release.sql` so workers resolve an approved release ID before loading a manifest.
+- Changed web, worker, preflight, health report, and protocol validation entrypoints to load the exact manifest matching the approved release ID.
+- Added a worker guard that rejects tasks planned for a different release instead of executing them under the active approved release.
+- Added replayable request metadata to raw SearchTweets browser captures.
+- Added a direct-replay validator that replays recent replayable browser captures through the approved release recipe, stores linked `direct_replay` raw evidence, and compares parser counts plus structural/typename fingerprints.
+- Documented approved-release resolution and capture/replay validation in README, the deployment runbook, and the current-stage report.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_release_store.py"` passed 5 tests.
+- `python -m unittest discover -s tests -p "test_protocol_validation.py"` passed 6 tests.
+- `python -m unittest discover -s tests -p "test_one_attempt_acquisition.py"` passed 3 tests.
+- `python -m unittest discover -s tests -p "test_local_worker.py"` passed 22 tests.
+
+Next:
+
+- Add an explicit operator command/API for approving a newly staged release when more than one manifest exists.
+
+## 2026-08-12 - Checkpoint 78: Operator Release Approval Controls
+
+Implemented:
+
+- Added release inventory objects that combine staged manifests, approved-release pointer state, release health, capability bindings, and recipe revisions.
+- Added `run_releases.py` for no-Docker release listing, current approved release inspection, and explicit release approval.
+- Added `GET /api/releases` and `POST /api/releases/approve` to the trusted console API.
+- Reloaded the live planner and local worker after approval so future tasks bind to the exact newly approved manifest without a server restart.
+- Added a frontend Protocol Governance panel for release inventory and approval actions.
+- Documented the release approval flow in README, the deployment runbook, and the current-stage report.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_release_store.py"` passed 6 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 25 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `node --check src\xingestion\web\static\app.js` passed.
+
+Next:
+
+- Add promotion safety checks that require passing fixture/raw/capture-replay validation before approving a staged release.
+
+## 2026-08-12 - Checkpoint 79: Promotion Safety Gates
+
+Implemented:
+
+- Added reusable promotion safety reports for staged protocol releases.
+- Safety checks cover manifest presence, manifest release ID match, release health, binding presence, checked-in fixture parser validation, and browser-capture/direct-replay comparison when pairs exist.
+- Added `run_releases.py check ... --json`.
+- Normal `run_releases.py approve ...` now blocks failed promotion safety unless `--force` is explicitly supplied.
+- `POST /api/releases/approve` now returns HTTP `409` with the failed safety report unless `force: true` is explicitly supplied.
+- Release inventory API and frontend Protocol Governance panel now surface safety pass/blocked state.
+
+Verified:
+
+- Focused promotion, release-store, API, and frontend tests pass.
+
+Next:
+
+- Persist promotion reports as audit artifacts before approval/force approval.
+
+## 2026-08-12 - Checkpoint 80: Promotion Audit Artifacts
+
+Implemented:
+
+- Added redacted `RELEASE_PROMOTION_AUDIT` packages for release safety checks, blocked approvals, normal approvals, and forced approvals.
+- Promotion audits write to `XINGESTION_DATA_DIR\release_promotions\promotion-*.json` by default.
+- Added safe audit listing/detail helpers that reject arbitrary paths and unreadable JSON.
+- Extended `run_releases.py` with audit writing for `check` and `approve`, plus `audits` and `audit <name>` commands.
+- Added `GET /api/releases/audits` and `GET /api/releases/audits/{name}` to the trusted console API.
+- Added a frontend Promotion Trail panel with audit history and JSON detail viewing.
+- Documented promotion audit storage and read paths in the deployment runbook and current-stage report.
+
+Verified:
+
+- `python -m compileall -q src tests run_releases.py` passed.
+- `python -m unittest discover -s tests -p "test_release_promotion.py"` passed 3 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 28 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `node --check src\xingestion\web\static\app.js` passed.
+- `python -m unittest discover -s tests` passed 164 tests.
+- `python .\run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json` wrote a promotion audit under `data\release_promotions`.
+- `python .\run_releases.py audits --limit 5 --json` listed the generated promotion audit.
+- `python .\run_releases.py audit promotion-xrev-search-tweets-2026-08-10-candidate-1-check-20260812T072318Z.json --json` read the generated audit detail.
+- Live `GET /api/health`, `GET /api/releases`, `GET /api/releases/audits`, and `GET /api/releases/audits/{name}` passed on `http://127.0.0.1:8023`.
+
+Next:
+
+- Add retention and export/download controls for promotion audit artifacts if audit volume grows.
+
+## 2026-08-12 - Checkpoint 81: Promotion Audit Lifecycle Controls
+
+Implemented:
+
+- Added promotion audit retention that deletes only old `promotion-*.json` files under `XINGESTION_DATA_DIR\release_promotions`.
+- Added a conservative `run_releases.py prune-audits` command that dry-runs by default and requires `--apply` to delete.
+- Added protected `POST /api/releases/audits/retention` for live cleanup using `XINGESTION_RETENTION_DAYS`.
+- Added safe `GET /api/releases/audits/{name}/download` responses with attachment headers.
+- Extended the Promotion Trail frontend with dry-run cleanup counts, Clean old, View, and Download controls.
+- Added CI/frontend/docs assertions for promotion audit lifecycle visibility.
+
+Verified:
+
+- `python -m compileall -q src tests run_releases.py` passed.
+- `python -m unittest discover -s tests -p "test_release_promotion.py"` passed 4 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 28 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `node --check src\xingestion\web\static\app.js` passed.
+- `python -m unittest discover -s tests` passed 165 tests.
+- `python .\run_releases.py prune-audits --json` dry-ran promotion audit cleanup with `deleted_audits=0`.
+- `python .\run_releases.py audits --limit 5 --json` listed the existing promotion audit.
+- Live `GET /api/health`, `GET /api/releases/audits`, `GET /api/releases/audits/{name}/download`, and `POST /api/releases/audits/retention` passed on `http://127.0.0.1:8023`.
+
+Next:
+
+- Add scheduled/operator reporting for promotion audit volume if deployment volume grows.

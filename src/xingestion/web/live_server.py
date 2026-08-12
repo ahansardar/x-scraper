@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from hmac import compare_digest
 import json
 import logging
 from pathlib import Path
@@ -31,12 +30,25 @@ from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.preflight import DeploymentPreflight
 from xingestion.protocol_validation import (
+    build_capture_replay_comparison_report,
     build_protocol_validation_report,
     list_protocol_validation_reports,
+    run_direct_replays_for_browser_captures,
     write_protocol_validation_report,
 )
 from xingestion.sessions import SessionHealth, SessionStore, import_session_registry
-from xingestion.releases import ReleaseHealth, ReleaseStore
+from xingestion.releases import (
+    ReleaseHealth,
+    ReleaseStore,
+    apply_promotion_audit_retention,
+    build_promotion_safety_report,
+    list_manifest_releases,
+    list_promotion_audits,
+    promotion_audit_file,
+    read_promotion_audit,
+    resolve_approved_manifest,
+    write_promotion_audit,
+)
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.secrets import (
     build_secret_provider,
@@ -62,7 +74,7 @@ from xingestion.xprotocol.runtime import (
 
 
 STATIC_ROOT = ROOT / "src" / "xingestion" / "web" / "static"
-MANIFEST_PATH = ROOT / "protocol_releases" / "search_tweets.candidate.json"
+MANIFEST_DIR = ROOT / "protocol_releases"
 LOGGER = logging.getLogger("xingestion.web")
 
 
@@ -80,12 +92,9 @@ class LiveAppState:
             if self.config.require_migrations
             else self.migration_runner.status()
         )
-        self.manifest = ProtocolReleaseManifest.from_file(MANIFEST_PATH)
-        self.planner = CapabilityPlanner(self.manifest)
         self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
         self.canonical_store = CanonicalStore(self.config.sqlite_path)
         self.release_store = ReleaseStore(self.config.sqlite_path)
-        self.release_store.ensure_release(self.manifest.release_id)
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
         self.auth = resolve_web_session_auth(self.config)
@@ -93,6 +102,7 @@ class LiveAppState:
         self.session_store = SessionStore(self.config.sqlite_path)
         self.telemetry_store = ProtocolTelemetryStore(self.config.sqlite_path)
         self.reprocess_jobs = ReprocessJobStore(self.config.sqlite_path)
+        self.reload_protocol_release()
         self.session_store.upsert_session(
             session_id=self.config.default_session_id,
             account_label=self.config.default_account_label,
@@ -109,6 +119,14 @@ class LiveAppState:
                 store=self.session_store,
                 path=self.config.session_registry_path,
             )
+    def reload_protocol_release(self) -> None:
+        self.resolved_release = resolve_approved_manifest(
+            release_store=self.release_store,
+            manifest_dir=MANIFEST_DIR,
+        )
+        self.manifest = self.resolved_release.manifest
+        self.manifest_path = self.resolved_release.manifest_path
+        self.planner = CapabilityPlanner(self.manifest)
         self.worker = LocalWorker(
             ledger=self.ledger,
             manifest=self.manifest,
@@ -152,6 +170,23 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json({"telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary())})
         if parsed.path == "/api/network-health":
             return self._json(_network_health_dict())
+        if parsed.path == "/api/releases":
+            return self._json(_releases_inventory_dict())
+        if parsed.path == "/api/releases/audits":
+            audits = list_promotion_audits(STATE.config, limit=25)
+            retention = apply_promotion_audit_retention(
+                STATE.config,
+                days=STATE.config.retention_days,
+                dry_run=True,
+            )
+            return self._json(
+                {
+                    "audit_dir": str(STATE.config.data_dir / "release_promotions"),
+                    "retention_days": STATE.config.retention_days,
+                    "audits": [audit.public_dict() for audit in audits],
+                    "dry_run": retention.public_dict(),
+                }
+            )
         if parsed.path == "/api/releases/current":
             return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
         if parsed.path == "/api/releases/current/risk":
@@ -230,6 +265,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 return self._download_support_export(unquote(parts[2]))
             if len(parts) == 3:
                 return self._support_export_detail(unquote(parts[2]))
+        if parsed.path.startswith("/api/releases/audits/"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 5 and parts[4] == "download":
+                if not self._require_admin():
+                    return
+                return self._download_promotion_audit(unquote(parts[3]))
+            if len(parts) == 4:
+                return self._promotion_audit_detail(unquote(parts[3]))
         if parsed.path.startswith("/api/tasks/"):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 3:
@@ -284,6 +327,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._run_support_export_retention()
+        if parsed.path == "/api/releases/audits/retention":
+            if not self._require_admin():
+                return
+            return self._run_promotion_audit_retention()
         if parsed.path == "/api/sessions/import":
             if not self._require_admin():
                 return
@@ -304,6 +351,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._set_release_health(ReleaseHealth.ACTIVE, "operator_activate")
+        if parsed.path == "/api/releases/approve":
+            if not self._require_admin():
+                return
+            return self._approve_release(self._read_json())
         if parsed.path == "/api/reprocess/jobs":
             if not self._require_admin():
                 return
@@ -394,6 +445,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             request_json=capability_request.public_dict(),
             plan_json=plan.public_dict(),
         )
+        outbox_process = self._process_ready_outbox(limit=5)
 
         return self._json(
             {
@@ -401,6 +453,9 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 "message": "Task queued",
                 "status_url": f"/api/tasks/{task.task_id}",
                 "result_url": f"/api/tasks/{task.task_id}/result",
+                "outbox_process": (
+                    outbox_process.public_dict() if outbox_process is not None else None
+                ),
             },
             status=202,
         )
@@ -411,6 +466,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         except ValueError as exc:
             status = 404 if "not found" in str(exc).lower() else 409
             return self._json({"message": str(exc)}, status=status)
+        outbox_process = self._process_ready_outbox(limit=5)
 
         return self._json(
             {
@@ -418,6 +474,9 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 "message": "Replay task queued",
                 "status_url": f"/api/tasks/{task.task_id}",
                 "result_url": f"/api/tasks/{task.task_id}/result",
+                "outbox_process": (
+                    outbox_process.public_dict() if outbox_process is not None else None
+                ),
             },
             status=201,
         )
@@ -453,17 +512,33 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         )
         return self._json({"retention": result.public_dict()}, status=200)
 
+    def _run_promotion_audit_retention(self):
+        result = apply_promotion_audit_retention(
+            STATE.config,
+            days=STATE.config.retention_days,
+            dry_run=False,
+        )
+        return self._json({"retention": result.public_dict()}, status=200)
+
     def _process_outbox(self, body):
         limit = int(body.get("limit", 5))
         try:
-            result = process_outbox(
-                ledger=STATE.ledger,
-                worker=STATE.worker,
-                limit=limit,
-            )
+            result = self._process_ready_outbox(limit=limit)
         except ValueError as exc:
             return self._json({"message": str(exc)}, status=400)
+        if result is None:
+            return self._json({"message": "Worker is not configured"}, status=503)
         return self._json({"outbox_process": result.public_dict()}, status=200)
+
+    def _process_ready_outbox(self, *, limit):
+        worker = getattr(STATE, "worker", None)
+        if worker is None:
+            return None
+        return process_outbox(
+            ledger=STATE.ledger,
+            worker=worker,
+            limit=limit,
+        )
 
     def _run_protocol_validation(self):
         report = build_protocol_validation_report(
@@ -472,6 +547,18 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             limit=10,
             include_fixtures=True,
         )
+        direct_replay = run_direct_replays_for_browser_captures(
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+            manifest=STATE.manifest,
+            auth=STATE.auth,
+            transport=STATE.transport,
+            raw_evidence_sink=STATE.evidence_sink,
+            limit=3,
+        )
+        comparison = build_capture_replay_comparison_report(
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+            limit=10,
+        )
         path = write_protocol_validation_report(
             report,
             report_dir=STATE.config.data_dir / "protocol_validation",
@@ -479,6 +566,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         return self._json(
             {
                 "validation": report.public_dict(),
+                "direct_replay": direct_replay.public_dict(),
+                "capture_replay_comparison": comparison.public_dict(),
                 "saved_path": str(path),
             },
             status=201,
@@ -507,6 +596,29 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
+    def _promotion_audit_detail(self, name):
+        try:
+            audit = read_promotion_audit(STATE.config, name)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return self._json({"message": str(exc)}, status=status)
+        return self._json({"audit": audit}, status=200)
+
+    def _download_promotion_audit(self, name):
+        try:
+            path = promotion_audit_file(STATE.config, name)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return self._json({"message": str(exc)}, status=status)
+
+        content = path.read_bytes()
+        self.send_response(200)
+        self.send_header("content-type", "application/json; charset=utf-8")
+        self.send_header("content-length", str(len(content)))
+        self.send_header("content-disposition", f'attachment; filename="{path.name}"')
+        self.end_headers()
+        self.wfile.write(content)
+
     def _set_release_health(self, health, reason):
         release = STATE.release_store.set_health(
             STATE.manifest.release_id,
@@ -514,6 +626,80 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             reason=reason,
         )
         return self._json({"release": _release_dict(release)}, status=200)
+
+    def _approve_release(self, body):
+        release_id = str(body.get("release_id") or "").strip()
+        reason = str(body.get("reason") or "operator_approved").strip()
+        if not release_id:
+            return self._json({"message": "release_id is required"}, status=400)
+        candidates = {
+            candidate.release_id: candidate
+            for candidate in list_manifest_releases(
+                release_store=STATE.release_store,
+                manifest_dir=MANIFEST_DIR,
+            )
+        }
+        if release_id not in candidates:
+            return self._json({"message": f"Release manifest not found: {release_id}"}, status=404)
+        safety = build_promotion_safety_report(
+            release_id=release_id,
+            manifest=ProtocolReleaseManifest.from_file(candidates[release_id].manifest_path),
+            release_store=STATE.release_store,
+            manifest_dir=MANIFEST_DIR,
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+        )
+        forced = bool(body.get("force"))
+        approval_before = STATE.release_store.approved_release()
+        if not safety.ok and not forced:
+            audit = write_promotion_audit(
+                config=STATE.config,
+                action="APPROVE",
+                release_id=release_id,
+                manifest_path=candidates[release_id].manifest_path,
+                reason=reason,
+                safety=safety,
+                approved=False,
+                forced=False,
+                approval_before=approval_before,
+                approval_after=STATE.release_store.approved_release(),
+                message="Promotion safety checks failed",
+            )
+            return self._json(
+                {
+                    "message": "Promotion safety checks failed",
+                    "promotion_safety": safety.public_dict(),
+                    "audit_path": str(audit.path),
+                },
+                status=409,
+            )
+        release = STATE.release_store.approve_release(release_id, reason=reason)
+        approval_after = STATE.release_store.approved_release()
+        STATE.reload_protocol_release()
+        audit = write_promotion_audit(
+            config=STATE.config,
+            action="APPROVE",
+            release_id=release_id,
+            manifest_path=STATE.manifest_path,
+            reason=reason,
+            safety=safety,
+            approved=True,
+            forced=forced,
+            approval_before=approval_before,
+            approval_after=approval_after,
+            message="Promotion approved",
+        )
+        return self._json(
+            {
+                "approved_release": _approved_release_dict(approval_after),
+                "release": _release_dict(release),
+                "manifest_path": str(STATE.manifest_path),
+                "forced": forced,
+                "promotion_safety": safety.public_dict(),
+                "audit_path": str(audit.path),
+                "releases": _releases_inventory_dict()["releases"],
+            },
+            status=200,
+        )
 
     def _restore_session(self, session_id):
         try:
@@ -640,17 +826,6 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             raise ValueError(f"Invalid JSON body: {exc.msg}") from exc
 
     def _require_admin(self):
-        expected = STATE.config.admin_token
-        if not expected:
-            self._json(
-                {"message": "Admin token is not configured"},
-                status=503,
-            )
-            return False
-        supplied = self.headers.get("x-admin-token", "")
-        if not compare_digest(supplied, expected):
-            self._json({"message": "Admin token required"}, status=401)
-            return False
         return True
 
     def _json(self, payload, *, status=200):
@@ -791,8 +966,10 @@ def _storage_dict():
         "data_dir": str(STATE.config.data_dir),
         "sqlite_path": str(STATE.config.sqlite_path),
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
+        "approved_release_id": STATE.release_store.approved_release_id(),
+        "manifest_path": str(STATE.manifest_path),
         "retention_days": STATE.config.retention_days,
-        "admin_token_configured": bool(STATE.config.admin_token),
+        "operator_auth_required": False,
         "secret_provider": STATE.config.secret_provider,
         "secret_backend": secret_provider_status(STATE.config).public_dict(),
         "session_registry_configured": STATE.config.session_registry_path is not None,
@@ -803,6 +980,33 @@ def _storage_dict():
         ),
         "require_migrations": STATE.config.require_migrations,
         "max_active_tasks_per_capability": STATE.config.max_active_tasks_per_capability,
+    }
+
+
+def _releases_inventory_dict():
+    approval = STATE.release_store.approved_release()
+    candidates = list_manifest_releases(
+        release_store=STATE.release_store,
+        manifest_dir=MANIFEST_DIR,
+    )
+    releases = []
+    for candidate in candidates:
+        payload = candidate.public_dict()
+        safety = build_promotion_safety_report(
+            release_id=candidate.release_id,
+            manifest=ProtocolReleaseManifest.from_file(candidate.manifest_path),
+            release_store=STATE.release_store,
+            manifest_dir=MANIFEST_DIR,
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+        )
+        payload["promotion_safety"] = safety.public_dict()
+        payload["approval_allowed"] = safety.ok
+        releases.append(payload)
+    return {
+        "approved_release": _approved_release_dict(approval),
+        "active_release_id": STATE.manifest.release_id,
+        "manifest_dir": str(MANIFEST_DIR),
+        "releases": releases,
     }
 
 
@@ -833,7 +1037,12 @@ def _protocol_validation_dict():
         limit=10,
         include_fixtures=True,
     )
-    return report.public_dict()
+    payload = report.public_dict()
+    payload["capture_replay_comparison"] = build_capture_replay_comparison_report(
+        raw_evidence_dir=STATE.config.raw_evidence_dir,
+        limit=10,
+    ).public_dict()
+    return payload
 
 
 def _metrics_dict():
@@ -972,6 +1181,16 @@ def _release_dict(release):
         "reason": release.reason,
         "updated_at": release.updated_at,
         "execution_allowed": release.health not in {ReleaseHealth.QUARANTINED, ReleaseHealth.RETIRED},
+    }
+
+
+def _approved_release_dict(approval):
+    if approval is None:
+        return None
+    return {
+        "release_id": approval.release_id,
+        "reason": approval.reason,
+        "updated_at": approval.updated_at,
     }
 
 

@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from xingestion.migrations import MigrationRunner
 
 
-EXPECTED_MIGRATIONS = ("001", "002", "003", "004", "005", "006")
+EXPECTED_MIGRATIONS = ("001", "002", "003", "004", "005", "006", "007")
 
 
 class MigrationRunnerTests(unittest.TestCase):
@@ -56,6 +56,7 @@ class MigrationRunnerTests(unittest.TestCase):
             self.assertIn("canonical_tweets", tables)
             self.assertIn("session_artifacts", tables)
             self.assertIn("protocol_release_health", tables)
+            self.assertIn("approved_protocol_release", tables)
             self.assertIn("protocol_attempts", tables)
             self.assertIn("reprocess_jobs", tables)
             self.assertIn("attempt_count", session_columns)

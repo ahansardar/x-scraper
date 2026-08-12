@@ -36,6 +36,7 @@ Important runtime locations:
 - Logs: `F:\x-scraper\data\logs`
 - Health reports: `F:\x-scraper\data\reports`
 - Support exports: `F:\x-scraper\data\support_exports`
+- Release promotion audits: `F:\x-scraper\data\release_promotions`
 
 Known current operational signal:
 
@@ -52,7 +53,10 @@ Implemented:
 - Generic `POST /api/capability-tasks`.
 - UI shortcut `POST /api/search-tweets`.
 - Capability planner boundary.
-- Protocol release manifest pinned from `protocol_releases/`.
+- Approved protocol release pointer in SQLite, resolved to one exact manifest from `protocol_releases/`.
+- Operator release inventory and approval through `run_releases.py`, `GET /api/releases`, and `POST /api/releases/approve`.
+- Promotion safety checks before normal approval, including manifest sanity, release health, fixture validation, and capture/replay comparison.
+- Redacted release promotion audit packages for checks, blocked approvals, normal approvals, and forced approvals, exposed through `run_releases.py audits`, `GET /api/releases/audits`, downloads, retention cleanup, and the frontend Promotion Trail.
 - Backpressure before task creation through `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`.
 
 Spec relevance:
@@ -70,6 +74,7 @@ Implemented:
 - Parser for protocol-normalized tweet records.
 - Pagination cursor extraction for the current search path.
 - Protocol release manifest and revision-style structures.
+- Capture-vs-direct-replay validator for replayable raw evidence.
 
 Spec relevance:
 
@@ -135,6 +140,7 @@ Implemented:
 - Current release health storage.
 - Release risk recommendations.
 - Quarantine and activate controls.
+- Approval controls that reload the live planner/worker for future tasks.
 - Protocol telemetry attempts.
 - Runtime error classification by class, severity, scope, retryability, and operator action.
 - Investigation packages for failed tasks.

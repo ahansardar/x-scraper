@@ -109,7 +109,6 @@ def _config(root: Path, *, secret_provider: str = "env") -> AppConfig:
         ),
         default_network_context="direct",
         worker_network_context="",
-        admin_token="token",
         secret_provider=secret_provider,
         secret_dir=root / "secrets",
         session_registry_path=None,

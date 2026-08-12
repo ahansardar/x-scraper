@@ -2,6 +2,8 @@ import json
 from io import BytesIO
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
+import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -17,7 +19,9 @@ from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.web import live_server
 from xingestion.workers import WorkerResult
+from xingestion.xprotocol.evidence import FileRawEvidenceSink
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
+from xingestion.xprotocol.runtime import WebSessionAuth
 
 
 class FakeHandler(live_server.LiveAppHandler):
@@ -65,6 +69,24 @@ class StubOutboxWorker:
         return WorkerResult(processed=True, task_id=task.task_id, state=task.state)
 
 
+class ClaimingOutboxWorker:
+    def __init__(self, ledger):
+        self.ledger = ledger
+        self.processed_task_ids = []
+
+    def process_one(self):
+        event = self.ledger.claim_next_outbox_event()
+        if event is None:
+            return WorkerResult(processed=False)
+        task = self.ledger.transition_task(
+            event.task_id,
+            from_state=TaskState.CREATED,
+            to_state=TaskState.ENQUEUED,
+        )
+        self.processed_task_ids.append(task.task_id)
+        return WorkerResult(processed=True, task_id=task.task_id, state=task.state)
+
+
 class NorthboundApiTests(unittest.TestCase):
     def test_generic_capability_task_submission_queues_task(self):
         manifest = ProtocolReleaseManifest.from_file(
@@ -97,6 +119,74 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["status_url"], f"/api/tasks/{payload['task']['task_id']}")
             task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
             self.assertEqual(task.request_json["payload"]["max_pages"], 2)
+
+    def test_generic_capability_task_submission_processes_attached_worker(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            worker = ClaimingOutboxWorker(ledger)
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(max_active_tasks_per_capability=100),
+                planner=CapabilityPlanner(manifest),
+                ledger=ledger,
+                worker=worker,
+            )
+            handler = FakeHandler()
+
+            payload = handler._create_capability_task(
+                {
+                    "capability_id": "SEARCH_TWEETS",
+                    "contract_version": 1,
+                    "payload": {"query": "india lang:en", "page_size": 20},
+                    "idempotency_key": "northbound-autoprocess",
+                }
+            )
+
+            task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
+            self.assertEqual(handler.status, 202)
+            self.assertEqual(task.state, TaskState.ENQUEUED)
+            self.assertEqual(payload["outbox_process"]["processed_events"], 1)
+            self.assertEqual(worker.processed_task_ids, [task.task_id])
+
+    def test_replay_task_processes_attached_worker(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            origin = ledger.create_task(
+                idempotency_key="replay-origin-autoprocess",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            ledger.claim_next_outbox_event()
+            failed = ledger.transition_task(
+                origin.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={"message": "failed"},
+            )
+            worker = ClaimingOutboxWorker(ledger)
+            live_server.STATE = SimpleNamespace(ledger=ledger, worker=worker)
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._replay_task(failed.task_id)
+
+            replay = ledger.get_task(payload["task"]["task_id"])
+            self.assertEqual(handler.status, 201)
+            self.assertEqual(replay.state, TaskState.ENQUEUED)
+            self.assertEqual(payload["outbox_process"]["processed_events"], 1)
+            self.assertEqual(worker.processed_task_ids, [replay.task_id])
 
     def test_generic_capability_respects_backpressure_limit(self):
         manifest = ProtocolReleaseManifest.from_file(
@@ -137,37 +227,32 @@ class NorthboundApiTests(unittest.TestCase):
         self.assertEqual(handler.status, 400)
         self.assertIn("Unsupported capability", payload["message"])
 
-    def test_operator_route_requires_configured_admin_token(self):
+    def test_operator_route_allows_missing_admin_header(self):
         live_server.STATE = SimpleNamespace(
-            config=SimpleNamespace(admin_token="expected-token")
+            config=SimpleNamespace()
         )
         handler = HeaderBackedHandler(headers={})
 
-        result = handler._require_admin()
+        self.assertTrue(handler._require_admin())
+        self.assertIsNone(handler.status)
 
-        self.assertFalse(result)
-        self.assertEqual(handler.status, 401)
-        self.assertIn("Admin token required", handler.payload["message"])
-
-    def test_operator_route_accepts_matching_admin_token(self):
+    def test_operator_route_does_not_require_configured_token(self):
         live_server.STATE = SimpleNamespace(
-            config=SimpleNamespace(admin_token="expected-token")
+            config=SimpleNamespace()
         )
-        handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+        handler = HeaderBackedHandler(headers={})
 
         self.assertTrue(handler._require_admin())
+        self.assertIsNone(handler.status)
 
-    def test_operator_route_rejects_when_admin_token_unconfigured(self):
+    def test_operator_route_keeps_noop_guard_for_compatibility(self):
         live_server.STATE = SimpleNamespace(
-            config=SimpleNamespace(admin_token="")
+            config=SimpleNamespace()
         )
-        handler = HeaderBackedHandler(headers={"x-admin-token": "anything"})
+        handler = HeaderBackedHandler(headers={})
 
-        result = handler._require_admin()
-
-        self.assertFalse(result)
-        self.assertEqual(handler.status, 503)
-        self.assertIn("not configured", handler.payload["message"])
+        self.assertTrue(handler._require_admin())
+        self.assertIsNone(handler.status)
 
     def test_api_miss_returns_json_not_html(self):
         handler = FakeHandler()
@@ -249,12 +334,11 @@ class NorthboundApiTests(unittest.TestCase):
             store = SessionStore(root / "tasks.sqlite3")
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(
-                    admin_token="expected-token",
                     session_registry_path=registry,
                 ),
                 session_store=store,
             )
-            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+            handler = HeaderBackedHandler(headers={})
 
             payload = handler._import_sessions()
 
@@ -466,13 +550,15 @@ class NorthboundApiTests(unittest.TestCase):
             raw_dir.mkdir()
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(
-                    admin_token="expected-token",
                     data_dir=root / "data",
                     raw_evidence_dir=raw_dir,
                 ),
                 manifest=manifest,
+                auth=WebSessionAuth("auth-token", "csrf-token", "bearer-token"),
+                transport=object(),
+                evidence_sink=FileRawEvidenceSink(raw_dir),
             )
-            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+            handler = HeaderBackedHandler(headers={})
 
             payload = handler._run_protocol_validation()
 
@@ -486,7 +572,7 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 200)
             self.assertEqual(len(listing["reports"]), 1)
 
-    def test_outbox_process_route_requires_worker_and_admin(self):
+    def test_outbox_process_route_requires_worker(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"
         )
@@ -506,11 +592,11 @@ class NorthboundApiTests(unittest.TestCase):
                 plan_json=plan.public_dict(),
             )
             live_server.STATE = SimpleNamespace(
-                config=SimpleNamespace(admin_token="expected-token"),
+                config=SimpleNamespace(),
                 ledger=ledger,
                 worker=StubOutboxWorker(ledger, task.task_id),
             )
-            handler = HeaderBackedHandler(headers={"x-admin-token": "expected-token"})
+            handler = HeaderBackedHandler(headers={})
 
             payload = handler._process_outbox({"limit": 5})
 
@@ -674,6 +760,205 @@ class NorthboundApiTests(unittest.TestCase):
 
             self.assertEqual(risk["action"], "QUARANTINE_RECOMMENDED")
             self.assertEqual(risk["severity"], "HIGH")
+
+    def test_releases_inventory_route_lists_manifest_approval(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            store.approve_release(manifest.release_id, reason="test_approved")
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                    retention_days=1,
+                ),
+                manifest=manifest,
+                release_store=store,
+            )
+            handler = FakeHandler()
+            handler.path = "/api/releases"
+
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["approved_release"]["release_id"], manifest.release_id)
+            self.assertEqual(payload["active_release_id"], manifest.release_id)
+            self.assertGreaterEqual(len(payload["releases"]), 1)
+            self.assertTrue(payload["releases"][0]["approved"])
+
+    def test_approve_release_route_updates_pointer_and_reloads_state(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+
+        class ReloadingState(SimpleNamespace):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.reloads = 0
+
+            def reload_protocol_release(self):
+                self.reloads += 1
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            live_server.STATE = ReloadingState(
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                    retention_days=1,
+                ),
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+            )
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._approve_release(
+                {"release_id": manifest.release_id, "reason": "test_route"}
+            )
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["approved_release"]["release_id"], manifest.release_id)
+            self.assertEqual(payload["approved_release"]["reason"], "test_route")
+            self.assertEqual(store.approved_release_id(), manifest.release_id)
+            self.assertEqual(live_server.STATE.reloads, 1)
+            self.assertTrue(Path(payload["audit_path"]).exists())
+
+    def test_approve_release_route_blocks_failed_safety_without_force(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            store.set_health(
+                manifest.release_id,
+                health=live_server.ReleaseHealth.QUARANTINED,
+                reason="test",
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                ),
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+                reload_protocol_release=lambda: None,
+            )
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._approve_release(
+                {"release_id": manifest.release_id, "reason": "test_route"}
+            )
+
+            self.assertEqual(handler.status, 409)
+            self.assertEqual(payload["message"], "Promotion safety checks failed")
+            self.assertFalse(payload["promotion_safety"]["ok"])
+            self.assertTrue(Path(payload["audit_path"]).exists())
+            self.assertIsNone(store.approved_release_id())
+
+    def test_approve_release_route_allows_explicit_force(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            store.set_health(
+                manifest.release_id,
+                health=live_server.ReleaseHealth.QUARANTINED,
+                reason="test",
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                ),
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+                reload_protocol_release=lambda: None,
+            )
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._approve_release(
+                {
+                    "release_id": manifest.release_id,
+                    "reason": "test_force",
+                    "force": True,
+                }
+            )
+
+            self.assertEqual(handler.status, 200)
+            self.assertTrue(payload["forced"])
+            self.assertFalse(payload["promotion_safety"]["ok"])
+            self.assertTrue(Path(payload["audit_path"]).exists())
+            self.assertEqual(store.approved_release_id(), manifest.release_id)
+
+    def test_release_promotion_audit_routes_list_and_read(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+
+        class ReloadingState(SimpleNamespace):
+            def reload_protocol_release(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            live_server.STATE = ReloadingState(
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                    retention_days=1,
+                ),
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+            )
+            approval_handler = HeaderBackedHandler(headers={})
+            approval = approval_handler._approve_release(
+                {"release_id": manifest.release_id, "reason": "test_audit_route"}
+            )
+
+            list_handler = FakeHandler()
+            list_handler.path = "/api/releases/audits"
+            listing = list_handler.do_GET()
+            name = Path(approval["audit_path"]).name
+            detail_handler = FakeHandler()
+            detail_handler.path = f"/api/releases/audits/{name}"
+            detail = detail_handler.do_GET()
+
+            self.assertEqual(list_handler.status, 200)
+            self.assertEqual(listing["audits"][0]["name"], name)
+            self.assertIn("dry_run", listing)
+            self.assertEqual(detail_handler.status, 200)
+            self.assertEqual(detail["audit"]["package"]["reason"], "test_audit_route")
+
+            download_handler = HeaderBackedHandler(headers={})
+            download_handler._download_promotion_audit(name)
+
+            self.assertEqual(download_handler.status, 200)
+            self.assertEqual(download_handler.headers_sent["content-type"], "application/json; charset=utf-8")
+            self.assertEqual(
+                download_handler.headers_sent["content-disposition"],
+                f'attachment; filename="{name}"',
+            )
+            self.assertEqual(
+                download_handler.wfile.getvalue(),
+                Path(approval["audit_path"]).read_bytes(),
+            )
+
+            old_mtime = (datetime.now(UTC) - timedelta(days=3)).timestamp()
+            os.utime(approval["audit_path"], (old_mtime, old_mtime))
+            retention_handler = HeaderBackedHandler(headers={})
+            retention_handler.path = "/api/releases/audits/retention"
+            retention = retention_handler.do_POST()
+
+            self.assertEqual(retention_handler.status, 200)
+            self.assertEqual(retention["retention"]["deleted_audits"], 1)
+            self.assertFalse(Path(approval["audit_path"]).exists())
 
 
 if __name__ == "__main__":
