@@ -1722,3 +1722,31 @@ Verified:
 Next:
 
 - Add scheduled/operator reporting for promotion audit volume if deployment volume grows.
+
+## 2026-08-12 - Checkpoint 82: Task Ledger and Outbox on PostgreSQL + Redis Streams
+
+Implemented:
+
+- Added `PostgresTaskLedger`, a full port of `SQLiteTaskLedger`'s fenced-write behavior (lease token + delivery generation + state guards) onto PostgreSQL, using `RETURNING`-based writes and `FOR UPDATE SKIP LOCKED` claims. Widened the `TaskLedger` Protocol to the full method surface shared by both backends.
+- Added `docker-compose.yml` for local Postgres (port `55432`, avoiding a conflict with an existing native Postgres service on this machine) and Redis; the application processes (web, worker, dispatcher) stay uncontainerized.
+- Added a hand-rolled `PostgresMigrationRunner` (`psycopg`, no ORM/Alembic) and `run_postgres_migrations.py`.
+- Added `RedisOutboxDispatcher`: claims unpublished outbox rows, `XADD`s to a Redis stream, then marks published -- so a crash between the two produces a harmless duplicate delivery rather than a lost one.
+- Redesigned `LocalWorker.process_one()` around `XREADGROUP`/`XACK` with `XAUTOCLAIM`-based reclaim of stale deliveries (worker crash recovery), fenced through the same Postgres lease-acquisition check used before.
+- Swapped every remaining call site (`live_server.py`, `health_report.py`, `reprocessing.py`, `operator_tasks.py`, `support_export.py`, `investigation.py`, `preflight.py`, `run_outbox.py`, `run_task_actions.py`) off `SQLiteTaskLedger`, closing three raw-SQL bypasses in the process (`list_recent_task_errors`, `list_done_task_ids_for_release`, `list_recent_tasks`). `preflight.py` gained Postgres/Redis reachability checks; `run_supervisor_check.py` now expects `run_dispatcher.py` in the process table alongside web/worker.
+- Retired `SQLiteTaskLedger` entirely; `ledger.py` now holds only the shared `TaskLedger` Protocol and dataclasses.
+- Fixed a real bug found during end-to-end verification: `PostgresTaskLedger` and `PostgresMigrationRunner` sharing one `ConnectionPool` caused a `KeyError`, since `psycopg_pool` does not reset `row_factory` between checkouts and the migration runner assumed the default tuple factory. Added a regression test that forces connection reuse to make the failure mode deterministic.
+- Added a Postgres/Redis-backed CI job on Ubuntu (service containers, Python 3.11/3.12) alongside the existing Windows matrix; updated the deployment runbook, `CURRENT_STAGE.md`, and `process_supervision.md` to match.
+- Sessions, canonical tweet/engagement data, releases, protocol telemetry, and reprocess jobs stay on SQLite -- this migration is scoped to the task ledger, outbox, and dispatch layer only.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 171 tests, including 17 `PostgresTaskLedger` contract tests, 23 consumer-group worker tests (including a simulated crash/`XAUTOCLAIM` reclaim scenario), and 2 migration-runner tests (including the shared-pool regression test).
+- Live end-to-end run: `docker compose up -d`, `run_postgres_migrations.py` + `run_migrations.py`, then `run_app.py` + `run_worker.py` + `run_dispatcher.py` as real processes. Submitted a `SEARCH_TWEETS` task through the actual frontend; it flowed Postgres to dispatcher to Redis Streams to consumer-group worker to a real X API call to 24 parsed tweets to `DONE`, rendered live in the UI.
+- `run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes` passed all 9 checks against the running three-process stack.
+
+Next:
+
+- Consider `LISTEN`/`NOTIFY` for lower-latency outbox dispatch if the 1s poll interval becomes a bottleneck.
+- Add Redis consumer-group lag/pending-entry-count metrics to `run_supervisor_check.py`/health reporting (currently only Postgres outbox lag is surfaced).
+- Load/chaos-test the crash-recovery path before treating it as production-certified; move toward managed/clustered Postgres and Redis when genuine production deployment is the next priority.
