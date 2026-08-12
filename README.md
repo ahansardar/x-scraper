@@ -13,7 +13,7 @@ The original GraphQL scripts and local research artifacts now live under `playgr
 
 ## Current Checkpoint
 
-The current checkpoint defines immutable protocol revision models, a live `SEARCH_TWEETS` capability path, raw evidence persistence, a one-attempt transport boundary, a production-facing capability planner, a durable SQLite task ledger, transactional outbox events, worker leases with renewal, and a local worker dispatcher.
+The current checkpoint defines immutable protocol revision models, a live `SEARCH_TWEETS` capability path, raw evidence persistence, a one-attempt transport boundary, a production-facing capability planner, a PostgreSQL durable task ledger and transactional outbox, Redis Streams delivery, fenced worker leases, and a dedicated dispatcher process.
 
 Track the remaining implementation work in [docs/TASKS.md](docs/TASKS.md). That file uses markdown checkboxes and strikethrough so completed items can be marked as `- [x] ~~done item~~` while open items stay unchecked.
 
@@ -21,31 +21,45 @@ Track the remaining implementation work in [docs/TASKS.md](docs/TASKS.md). That 
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
+python -m compileall -q src tests run_app.py run_worker.py run_dispatcher.py run_migrations.py run_postgres_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 ```
 
-GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
+GitHub Actions runs these checks on Windows for Python 3.11 and 3.12, plus a dedicated Ubuntu Postgres/Redis service-container job for Python 3.11 and 3.12.
 
 ## Run Local Live App
 
-No Docker is required.
+Docker Compose is used only to start local Postgres and Redis infrastructure. The application itself still runs as plain Python processes: web app, dispatcher, and worker.
+
+Terminal 0, infrastructure:
+
+```powershell
+docker compose up -d
+docker compose ps
+python .\run_postgres_migrations.py
+python .\run_migrations.py
+```
 
 Terminal 1, web app:
 
 ```powershell
-python .\run_migrations.py
 python .\run_startup_check.py
 python .\run_preflight.py
 python .\run_app.py --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2, worker:
+Terminal 2, dispatcher:
+
+```powershell
+python .\run_dispatcher.py
+```
+
+Terminal 3, worker:
 
 ```powershell
 python .\run_worker.py
 ```
 
-Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The web app queues a task and the worker processes it from the transactional outbox. The app loads authorized X web session values from `.env`, writes task state to `data/tasks.sqlite3`, and stores raw evidence under `data/raw_evidence/`.
+Open `http://127.0.0.1:8000` and run a live `SEARCH_TWEETS` acquisition. The web app queues a task in Postgres, the dispatcher publishes the committed outbox row to Redis Streams, and the worker consumes it through the Redis consumer group with a fenced Postgres lease. The app loads authorized X web session values from `.env`, stores durable task/outbox state in Postgres, keeps session/release/canonical/telemetry state in SQLite, and stores raw evidence under `data/raw_evidence/`.
 
 Smoke-check a running deployment:
 
@@ -112,17 +126,27 @@ XINGESTION_LOG_DIR=
 XINGESTION_LOG_LEVEL=INFO
 XINGESTION_LOG_MAX_BYTES=5242880
 XINGESTION_LOG_BACKUP_COUNT=5
+XINGESTION_POSTGRES_DSN=postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion
+XINGESTION_POSTGRES_POOL_MIN=1
+XINGESTION_POSTGRES_POOL_MAX=10
+XINGESTION_REDIS_URL=redis://127.0.0.1:6379/0
+XINGESTION_REDIS_STREAM=xingestion:capability-tasks
+XINGESTION_REDIS_CONSUMER_GROUP=capability-workers
+XINGESTION_REDIS_CONSUMER_NAME=
+XINGESTION_REDIS_CLAIM_MIN_IDLE_MS=300000
 ```
 
 Storage locations:
 
-- Default task ledger: `./data/tasks.sqlite3`
+- Default task ledger and transactional outbox: PostgreSQL from `XINGESTION_POSTGRES_DSN`
+- Default Redis delivery stream: `XINGESTION_REDIS_STREAM` on `XINGESTION_REDIS_URL`
+- Default SQLite operational store: `./data/tasks.sqlite3` for sessions, release approvals, canonical records, telemetry, and reprocess jobs
 - Default raw evidence: `./data/raw_evidence/`
 - Default health reports: `./data/reports/`
 - Default protocol validation reports: `./data/protocol_validation/`
 - Default logs: `./data/logs/`
 
-The worker resolves `approved_protocol_release.release_id` from the SQLite task database and loads the exact matching manifest from `protocol_releases/`. If a checkout contains exactly one manifest and no approved pointer yet exists, startup bootstraps that single release as approved. With multiple manifests, startup fails until an approved release ID is set.
+The worker resolves `approved_protocol_release.release_id` from the SQLite operational database and loads the exact matching manifest from `protocol_releases/`. If a checkout contains exactly one manifest and no approved pointer yet exists, startup bootstraps that single release as approved. With multiple manifests, startup fails until an approved release ID is set.
 
 Inspect and approve staged protocol manifests without editing SQLite directly:
 
@@ -203,14 +227,14 @@ Release risk recommendations are advisory. Repeated operation or parser drift si
 
 The response includes task state counts, active/terminal totals, outbox pending depth and lag, canonical record counts, auth readiness, and storage paths.
 
-Inspect and process unpublished transactional outbox events without Docker:
+Inspect and process unpublished transactional outbox events manually:
 
 ```powershell
 python .\run_outbox.py --json
 python .\run_outbox.py --process --limit 5 --json
 ```
 
-`--process` uses the same local worker execution path as `run_worker.py`. It does not delete or force-publish queued events outside worker handling.
+In normal operation, `run_dispatcher.py` delivers committed Postgres outbox rows to Redis Streams and `run_worker.py` consumes them. The `--process` path is a bounded manual recovery drain that still uses the same worker execution path; it does not delete or force-publish queued events outside worker handling.
 
 Validate the pinned `SEARCH_TWEETS` parser against checked-in protocol fixtures and local raw evidence:
 
@@ -273,9 +297,9 @@ python .\run_health_report.py --base-url http://127.0.0.1:8000
 Reports are written to `XINGESTION_DATA_DIR\reports\health-report-*.json` unless `--output` is provided. The JSON includes preflight status, storage paths, migration status, task/outbox counts, canonical counts, telemetry summary, active-release network route health, route remediation recommendations, release risk, and safe session diagnostics. It does not export raw X secrets, credential references, or lease tokens.
 Health reports also include a `runtime_errors` section with recent task failures grouped by error class, severity, and scope, plus the recommended operator action.
 
-See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the no-Docker deployment checklist, health checks, storage paths, operator controls, and release verification commands.
+See [docs/deployment_runbook.md](docs/deployment_runbook.md) for the deployment checklist, local Postgres/Redis infrastructure setup, health checks, storage paths, operator controls, and release verification commands.
 
-For hosted operation, run the web and worker commands under a process supervisor and verify them with:
+For hosted operation, run the web, dispatcher, and worker commands under a process supervisor and verify them with:
 
 ```powershell
 python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --require-external-data-dir
@@ -319,7 +343,7 @@ The web console can also write the same safe failed-task support export from the
 POST /api/tasks/{task_id}/export
 ```
 
-Export a safe failed-task support package directly from local SQLite:
+Export a safe failed-task support package directly from local storage:
 
 ```powershell
 python .\run_failed_task_export.py <task_id>
