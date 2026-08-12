@@ -8,9 +8,11 @@ from .manifest_resolver import (
 )
 from .promotion import (
     PromotionAuditResult,
+    PromotionAuditRetentionResult,
     PromotionAuditSummary,
     PromotionSafetyCheck,
     PromotionSafetyReport,
+    apply_promotion_audit_retention,
     build_promotion_safety_report,
     list_promotion_audits,
     promotion_audit_dir,
@@ -24,6 +26,7 @@ __all__ = [
     "ApprovedReleaseRecord",
     "ManifestReleaseCandidate",
     "PromotionAuditResult",
+    "PromotionAuditRetentionResult",
     "PromotionAuditSummary",
     "PromotionSafetyCheck",
     "PromotionSafetyReport",
@@ -31,6 +34,7 @@ __all__ = [
     "ReleaseRecord",
     "ReleaseStore",
     "ResolvedProtocolRelease",
+    "apply_promotion_audit_retention",
     "build_promotion_safety_report",
     "list_manifest_releases",
     "list_promotion_audits",

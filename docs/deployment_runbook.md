@@ -229,6 +229,8 @@ python .\run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json
 python .\run_releases.py approve xrev-search-tweets-2026-08-10-candidate-1 --reason operator_approved --json
 python .\run_releases.py audits --json
 python .\run_releases.py audit promotion-...json --json
+python .\run_releases.py prune-audits --json
+python .\run_releases.py prune-audits --days 30 --apply --json
 ```
 
 Equivalent trusted-console routes:
@@ -238,11 +240,13 @@ GET /api/releases
 POST /api/releases/approve
 GET /api/releases/audits
 GET /api/releases/audits/{name}
+GET /api/releases/audits/{name}/download
+POST /api/releases/audits/retention
 ```
 
 Release approval first runs promotion safety checks: manifest presence, release health, binding presence, checked-in fixture validation, and browser-capture/direct-replay comparison when pairs exist. A failed safety report blocks normal approval; use `--force` or `force: true` only for an explicit emergency override. Release approval updates `approved_protocol_release` in SQLite and reloads the live process planner/worker so new tasks use the exact approved manifest. With more than one manifest in `protocol_releases`, startup requires this pointer to be present and resolvable.
 
-Every `run_releases.py check`, normal approval, blocked approval, and force approval writes a redacted `RELEASE_PROMOTION_AUDIT` package under `XINGESTION_DATA_DIR\release_promotions` by default. The package records the release ID, exact manifest path, approval pointer before/after, promotion safety report, force flag, and operator reason without raw X secrets or raw evidence bodies. Detail reads accept only `promotion-*.json` file names from that directory; they do not accept arbitrary paths.
+Every `run_releases.py check`, normal approval, blocked approval, and force approval writes a redacted `RELEASE_PROMOTION_AUDIT` package under `XINGESTION_DATA_DIR\release_promotions` by default. The package records the release ID, exact manifest path, approval pointer before/after, promotion safety report, force flag, and operator reason without raw X secrets or raw evidence bodies. Detail reads and downloads accept only `promotion-*.json` file names from that directory; they do not accept arbitrary paths. `prune-audits` dry-runs by default and deletes only matched `promotion-*.json` files when `--apply` is provided. The trusted console Promotion Trail uses `XINGESTION_RETENTION_DAYS` for its dry-run and cleanup count.
 
 Review advisory release-risk recommendations:
 

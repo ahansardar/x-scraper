@@ -29,6 +29,7 @@ const releaseSummary = document.querySelector("#releaseSummary");
 const releaseInventory = document.querySelector("#releaseInventory");
 const releaseAuditsSummary = document.querySelector("#releaseAuditsSummary");
 const releaseAuditsBody = document.querySelector("#releaseAudits");
+const runReleaseAuditRetention = document.querySelector("#runReleaseAuditRetention");
 
 function escapeHtml(value) {
   const text = value === null || value === undefined ? "" : String(value);
@@ -266,6 +267,7 @@ async function loadReleaseAudits() {
   releaseAuditsSummary.innerHTML = `
     <strong>${data.audits.length}</strong>
     recent promotion audits in <code>${escapeHtml(data.audit_dir)}</code>.
+    Cleanup currently matches <strong>${data.dry_run.matched_audits}</strong> files older than ${data.retention_days} days.
   `;
   if (!data.audits.length) {
     releaseAuditsBody.innerHTML = `<tr><td colspan="5">No promotion audits written yet.</td></tr>`;
@@ -281,7 +283,10 @@ async function loadReleaseAudits() {
         ${audit.forced ? `<br><span class="state warn">forced</span>` : ""}
       </td>
       <td>${formatDateTime(audit.modified_at)}</td>
-      <td><button class="small-button secondary" data-view-release-audit="${escapeHtml(audit.name)}">View</button></td>
+      <td>
+        <button class="small-button secondary" data-view-release-audit="${escapeHtml(audit.name)}">View</button>
+        <button class="small-button secondary" data-download-release-audit="${escapeHtml(audit.name)}">Download</button>
+      </td>
     </tr>
   `).join("");
 }
@@ -812,12 +817,26 @@ releaseInventory.addEventListener("click", async (event) => {
 });
 
 releaseAuditsBody.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-view-release-audit]");
+  const button = event.target.closest("[data-view-release-audit], [data-download-release-audit]");
   if (!button) {
     return;
   }
 
   button.disabled = true;
+  if (button.dataset.downloadReleaseAudit) {
+    summary.textContent = "Preparing promotion audit download...";
+    tweets.innerHTML = "";
+    try {
+      await downloadReleaseAudit(button.dataset.downloadReleaseAudit);
+      summary.innerHTML = `Promotion audit <code>${escapeHtml(button.dataset.downloadReleaseAudit)}</code> downloaded.`;
+    } catch (error) {
+      summary.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
   summary.textContent = "Loading promotion audit...";
   tweets.innerHTML = "";
   try {
@@ -829,6 +848,25 @@ releaseAuditsBody.addEventListener("click", async (event) => {
     button.disabled = false;
   }
 });
+
+async function downloadReleaseAudit(name) {
+  const response = await fetch(`/api/releases/audits/${encodeURIComponent(name)}/download`, {
+    headers: {}
+  });
+  if (!response.ok) {
+    const data = await parseJsonResponse(response, `/api/releases/audits/${name}/download`);
+    throw new Error(data.message || response.statusText);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 importSessions.addEventListener("click", async () => {
   importSessions.disabled = true;
@@ -888,6 +926,24 @@ runSupportExportRetention.addEventListener("click", async () => {
     supportExportsSummary.textContent = error.message;
   } finally {
     runSupportExportRetention.disabled = false;
+  }
+});
+
+runReleaseAuditRetention.addEventListener("click", async () => {
+  runReleaseAuditRetention.disabled = true;
+  try {
+    const data = await getJson("/api/releases/audits/retention", {
+      method: "POST"
+    });
+    releaseAuditsSummary.innerHTML = `
+      Deleted <strong>${data.retention.deleted_audits}</strong> promotion audits
+      older than <code>${escapeHtml(data.retention.cutoff)}</code>.
+    `;
+    await loadReleaseAudits();
+  } catch (error) {
+    releaseAuditsSummary.textContent = error.message;
+  } finally {
+    runReleaseAuditRetention.disabled = false;
   }
 });
 

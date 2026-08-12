@@ -2,6 +2,8 @@ import json
 from io import BytesIO
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
+import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -770,6 +772,7 @@ class NorthboundApiTests(unittest.TestCase):
                 config=SimpleNamespace(
                     data_dir=Path(temp_dir) / "data",
                     raw_evidence_dir=Path(temp_dir) / "raw",
+                    retention_days=1,
                 ),
                 manifest=manifest,
                 release_store=store,
@@ -804,6 +807,7 @@ class NorthboundApiTests(unittest.TestCase):
                 config=SimpleNamespace(
                     data_dir=Path(temp_dir) / "data",
                     raw_evidence_dir=Path(temp_dir) / "raw",
+                    retention_days=1,
                 ),
                 manifest=manifest,
                 release_store=store,
@@ -907,6 +911,7 @@ class NorthboundApiTests(unittest.TestCase):
                 config=SimpleNamespace(
                     data_dir=Path(temp_dir) / "data",
                     raw_evidence_dir=Path(temp_dir) / "raw",
+                    retention_days=1,
                 ),
                 manifest=manifest,
                 release_store=store,
@@ -927,8 +932,33 @@ class NorthboundApiTests(unittest.TestCase):
 
             self.assertEqual(list_handler.status, 200)
             self.assertEqual(listing["audits"][0]["name"], name)
+            self.assertIn("dry_run", listing)
             self.assertEqual(detail_handler.status, 200)
             self.assertEqual(detail["audit"]["package"]["reason"], "test_audit_route")
+
+            download_handler = HeaderBackedHandler(headers={})
+            download_handler._download_promotion_audit(name)
+
+            self.assertEqual(download_handler.status, 200)
+            self.assertEqual(download_handler.headers_sent["content-type"], "application/json; charset=utf-8")
+            self.assertEqual(
+                download_handler.headers_sent["content-disposition"],
+                f'attachment; filename="{name}"',
+            )
+            self.assertEqual(
+                download_handler.wfile.getvalue(),
+                Path(approval["audit_path"]).read_bytes(),
+            )
+
+            old_mtime = (datetime.now(UTC) - timedelta(days=3)).timestamp()
+            os.utime(approval["audit_path"], (old_mtime, old_mtime))
+            retention_handler = HeaderBackedHandler(headers={})
+            retention_handler.path = "/api/releases/audits/retention"
+            retention = retention_handler.do_POST()
+
+            self.assertEqual(retention_handler.status, 200)
+            self.assertEqual(retention["retention"]["deleted_audits"], 1)
+            self.assertFalse(Path(approval["audit_path"]).exists())
 
 
 if __name__ == "__main__":

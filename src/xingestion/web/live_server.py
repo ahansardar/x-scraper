@@ -40,9 +40,11 @@ from xingestion.sessions import SessionHealth, SessionStore, import_session_regi
 from xingestion.releases import (
     ReleaseHealth,
     ReleaseStore,
+    apply_promotion_audit_retention,
     build_promotion_safety_report,
     list_manifest_releases,
     list_promotion_audits,
+    promotion_audit_file,
     read_promotion_audit,
     resolve_approved_manifest,
     write_promotion_audit,
@@ -172,10 +174,17 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json(_releases_inventory_dict())
         if parsed.path == "/api/releases/audits":
             audits = list_promotion_audits(STATE.config, limit=25)
+            retention = apply_promotion_audit_retention(
+                STATE.config,
+                days=STATE.config.retention_days,
+                dry_run=True,
+            )
             return self._json(
                 {
                     "audit_dir": str(STATE.config.data_dir / "release_promotions"),
+                    "retention_days": STATE.config.retention_days,
                     "audits": [audit.public_dict() for audit in audits],
+                    "dry_run": retention.public_dict(),
                 }
             )
         if parsed.path == "/api/releases/current":
@@ -258,6 +267,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 return self._support_export_detail(unquote(parts[2]))
         if parsed.path.startswith("/api/releases/audits/"):
             parts = parsed.path.strip("/").split("/")
+            if len(parts) == 5 and parts[4] == "download":
+                if not self._require_admin():
+                    return
+                return self._download_promotion_audit(unquote(parts[3]))
             if len(parts) == 4:
                 return self._promotion_audit_detail(unquote(parts[3]))
         if parsed.path.startswith("/api/tasks/"):
@@ -314,6 +327,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._run_support_export_retention()
+        if parsed.path == "/api/releases/audits/retention":
+            if not self._require_admin():
+                return
+            return self._run_promotion_audit_retention()
         if parsed.path == "/api/sessions/import":
             if not self._require_admin():
                 return
@@ -495,6 +512,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         )
         return self._json({"retention": result.public_dict()}, status=200)
 
+    def _run_promotion_audit_retention(self):
+        result = apply_promotion_audit_retention(
+            STATE.config,
+            days=STATE.config.retention_days,
+            dry_run=False,
+        )
+        return self._json({"retention": result.public_dict()}, status=200)
+
     def _process_outbox(self, body):
         limit = int(body.get("limit", 5))
         try:
@@ -578,6 +603,21 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             status = 404 if "not found" in str(exc).lower() else 400
             return self._json({"message": str(exc)}, status=status)
         return self._json({"audit": audit}, status=200)
+
+    def _download_promotion_audit(self, name):
+        try:
+            path = promotion_audit_file(STATE.config, name)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return self._json({"message": str(exc)}, status=status)
+
+        content = path.read_bytes()
+        self.send_response(200)
+        self.send_header("content-type", "application/json; charset=utf-8")
+        self.send_header("content-length", str(len(content)))
+        self.send_header("content-disposition", f'attachment; filename="{path.name}"')
+        self.end_headers()
+        self.wfile.write(content)
 
     def _set_release_health(self, health, reason):
         release = STATE.release_store.set_health(

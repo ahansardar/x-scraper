@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 
@@ -88,6 +88,26 @@ class PromotionAuditSummary:
             "safety_ok": self.safety_ok,
             "readable": self.readable,
             "parse_error": self.parse_error,
+        }
+
+
+@dataclass(frozen=True)
+class PromotionAuditRetentionResult:
+    audit_dir: Path
+    cutoff: str
+    matched_audits: int
+    deleted_audits: int
+    dry_run: bool
+    audits: tuple[PromotionAuditSummary, ...]
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "audit_dir": str(self.audit_dir),
+            "cutoff": self.cutoff,
+            "matched_audits": self.matched_audits,
+            "deleted_audits": self.deleted_audits,
+            "dry_run": self.dry_run,
+            "audits": [item.public_dict() for item in self.audits],
         }
 
 
@@ -298,6 +318,51 @@ def promotion_audit_file(config: AppConfig, name: str) -> Path:
     if not summary.readable:
         raise ValueError(f"Promotion audit {name} is not readable JSON")
     return path
+
+
+def apply_promotion_audit_retention(
+    config: AppConfig,
+    *,
+    days: int,
+    dry_run: bool,
+) -> PromotionAuditRetentionResult:
+    if days < 1:
+        raise ValueError("promotion audit retention days must be at least 1")
+    audit_dir = promotion_audit_dir(config)
+    cutoff_dt = datetime.now(UTC) - timedelta(days=days)
+    cutoff = cutoff_dt.isoformat()
+    if not audit_dir.exists():
+        return PromotionAuditRetentionResult(
+            audit_dir=audit_dir,
+            cutoff=cutoff,
+            matched_audits=0,
+            deleted_audits=0,
+            dry_run=dry_run,
+            audits=(),
+        )
+
+    matched: list[PromotionAuditSummary] = []
+    deleted = 0
+    for path in audit_dir.glob("promotion-*.json"):
+        stat = path.stat()
+        modified_at = datetime.fromtimestamp(stat.st_mtime, UTC)
+        if modified_at >= cutoff_dt:
+            continue
+        summary = _summarize_audit(path)
+        matched.append(summary)
+        if not dry_run:
+            path.unlink()
+            deleted += 1
+
+    matched.sort(key=lambda item: item.modified_at)
+    return PromotionAuditRetentionResult(
+        audit_dir=audit_dir,
+        cutoff=cutoff,
+        matched_audits=len(matched),
+        deleted_audits=deleted,
+        dry_run=dry_run,
+        audits=tuple(matched),
+    )
 
 
 def promotion_audit_dir(config: AppConfig) -> Path:

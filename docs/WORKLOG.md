@@ -1695,3 +1695,30 @@ Verified:
 Next:
 
 - Add retention and export/download controls for promotion audit artifacts if audit volume grows.
+
+## 2026-08-12 - Checkpoint 81: Promotion Audit Lifecycle Controls
+
+Implemented:
+
+- Added promotion audit retention that deletes only old `promotion-*.json` files under `XINGESTION_DATA_DIR\release_promotions`.
+- Added a conservative `run_releases.py prune-audits` command that dry-runs by default and requires `--apply` to delete.
+- Added protected `POST /api/releases/audits/retention` for live cleanup using `XINGESTION_RETENTION_DAYS`.
+- Added safe `GET /api/releases/audits/{name}/download` responses with attachment headers.
+- Extended the Promotion Trail frontend with dry-run cleanup counts, Clean old, View, and Download controls.
+- Added CI/frontend/docs assertions for promotion audit lifecycle visibility.
+
+Verified:
+
+- `python -m compileall -q src tests run_releases.py` passed.
+- `python -m unittest discover -s tests -p "test_release_promotion.py"` passed 4 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 28 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `node --check src\xingestion\web\static\app.js` passed.
+- `python -m unittest discover -s tests` passed 165 tests.
+- `python .\run_releases.py prune-audits --json` dry-ran promotion audit cleanup with `deleted_audits=0`.
+- `python .\run_releases.py audits --limit 5 --json` listed the existing promotion audit.
+- Live `GET /api/health`, `GET /api/releases/audits`, `GET /api/releases/audits/{name}/download`, and `POST /api/releases/audits/retention` passed on `http://127.0.0.1:8023`.
+
+Next:
+
+- Add scheduled/operator reporting for promotion audit volume if deployment volume grows.

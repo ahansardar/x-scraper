@@ -12,6 +12,7 @@ from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.releases import (
     ReleaseStore,
+    apply_promotion_audit_retention,
     build_promotion_safety_report,
     list_manifest_releases,
     list_promotion_audits,
@@ -176,6 +177,14 @@ def main(argv=None):
         payload = read_promotion_audit(config, args.name)
         return _print(payload, json_output=args.json)
 
+    if args.command == "prune-audits":
+        retention = apply_promotion_audit_retention(
+            config,
+            days=args.days or config.retention_days,
+            dry_run=not args.apply,
+        )
+        return _print({"retention": retention.public_dict()}, json_output=args.json)
+
     candidates = list_manifest_releases(
         release_store=store,
         manifest_dir=manifest_dir,
@@ -237,6 +246,10 @@ def _parser() -> argparse.ArgumentParser:
     audit = subparsers.add_parser("audit")
     audit.add_argument("name")
     audit.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    prune_audits = subparsers.add_parser("prune-audits")
+    prune_audits.add_argument("--days", type=int, default=None)
+    prune_audits.add_argument("--apply", action="store_true")
+    prune_audits.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     parser.set_defaults(command="list")
     return parser
 

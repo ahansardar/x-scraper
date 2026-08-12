@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
+import os
 from pathlib import Path
 import sys
 
@@ -9,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from xingestion.releases import (
     ReleaseHealth,
     ReleaseStore,
+    apply_promotion_audit_retention,
     build_promotion_safety_report,
     list_promotion_audits,
     promotion_audit_file,
@@ -118,6 +121,75 @@ class ReleasePromotionTests(unittest.TestCase):
                 read_promotion_audit(config, "..\\secrets.json")
             with self.assertRaises(ValueError):
                 read_promotion_audit(config, "failed-task-safe.json")
+
+    def test_promotion_audit_retention_deletes_only_old_audit_files(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            config = type(
+                "Config",
+                (),
+                {
+                    "data_dir": data_dir,
+                    "raw_evidence_dir": Path(temp_dir) / "raw",
+                },
+            )()
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            report = build_promotion_safety_report(
+                release_id=manifest.release_id,
+                manifest=manifest,
+                release_store=store,
+                manifest_dir=ROOT / "protocol_releases",
+                raw_evidence_dir=config.raw_evidence_dir,
+            )
+            old_path = data_dir / "release_promotions" / "promotion-old.json"
+            new_path = data_dir / "release_promotions" / "promotion-new.json"
+            ignored_path = data_dir / "release_promotions" / "health-report.json"
+            write_promotion_audit(
+                config=config,
+                action="CHECK",
+                release_id=manifest.release_id,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+                reason="old",
+                safety=report,
+                approved=False,
+                forced=False,
+                approval_before=None,
+                approval_after=None,
+                message="old audit",
+                output_path=old_path,
+            )
+            write_promotion_audit(
+                config=config,
+                action="CHECK",
+                release_id=manifest.release_id,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+                reason="new",
+                safety=report,
+                approved=False,
+                forced=False,
+                approval_before=None,
+                approval_after=None,
+                message="new audit",
+                output_path=new_path,
+            )
+            ignored_path.write_text("{}", encoding="utf-8")
+            old_mtime = (datetime.now(UTC) - timedelta(days=3)).timestamp()
+            os.utime(old_path, (old_mtime, old_mtime))
+            os.utime(ignored_path, (old_mtime, old_mtime))
+
+            dry_run = apply_promotion_audit_retention(config, days=1, dry_run=True)
+            result = apply_promotion_audit_retention(config, days=1, dry_run=False)
+
+            self.assertEqual(dry_run.matched_audits, 1)
+            self.assertEqual(dry_run.deleted_audits, 0)
+            self.assertEqual(result.matched_audits, 1)
+            self.assertEqual(result.deleted_audits, 1)
+            self.assertFalse(old_path.exists())
+            self.assertTrue(new_path.exists())
+            self.assertTrue(ignored_path.exists())
 
 
 if __name__ == "__main__":
