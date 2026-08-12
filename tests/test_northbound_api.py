@@ -767,7 +767,10 @@ class NorthboundApiTests(unittest.TestCase):
             store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
             store.approve_release(manifest.release_id, reason="test_approved")
             live_server.STATE = SimpleNamespace(
-                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                ),
                 manifest=manifest,
                 release_store=store,
             )
@@ -798,7 +801,10 @@ class NorthboundApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
             live_server.STATE = ReloadingState(
-                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                ),
                 manifest=manifest,
                 release_store=store,
                 manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
@@ -814,6 +820,7 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["approved_release"]["reason"], "test_route")
             self.assertEqual(store.approved_release_id(), manifest.release_id)
             self.assertEqual(live_server.STATE.reloads, 1)
+            self.assertTrue(Path(payload["audit_path"]).exists())
 
     def test_approve_release_route_blocks_failed_safety_without_force(self):
         manifest = ProtocolReleaseManifest.from_file(
@@ -827,7 +834,10 @@ class NorthboundApiTests(unittest.TestCase):
                 reason="test",
             )
             live_server.STATE = SimpleNamespace(
-                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                ),
                 manifest=manifest,
                 release_store=store,
                 manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
@@ -842,6 +852,7 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 409)
             self.assertEqual(payload["message"], "Promotion safety checks failed")
             self.assertFalse(payload["promotion_safety"]["ok"])
+            self.assertTrue(Path(payload["audit_path"]).exists())
             self.assertIsNone(store.approved_release_id())
 
     def test_approve_release_route_allows_explicit_force(self):
@@ -856,7 +867,10 @@ class NorthboundApiTests(unittest.TestCase):
                 reason="test",
             )
             live_server.STATE = SimpleNamespace(
-                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                ),
                 manifest=manifest,
                 release_store=store,
                 manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
@@ -875,7 +889,46 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 200)
             self.assertTrue(payload["forced"])
             self.assertFalse(payload["promotion_safety"]["ok"])
+            self.assertTrue(Path(payload["audit_path"]).exists())
             self.assertEqual(store.approved_release_id(), manifest.release_id)
+
+    def test_release_promotion_audit_routes_list_and_read(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+
+        class ReloadingState(SimpleNamespace):
+            def reload_protocol_release(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            live_server.STATE = ReloadingState(
+                config=SimpleNamespace(
+                    data_dir=Path(temp_dir) / "data",
+                    raw_evidence_dir=Path(temp_dir) / "raw",
+                ),
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+            )
+            approval_handler = HeaderBackedHandler(headers={})
+            approval = approval_handler._approve_release(
+                {"release_id": manifest.release_id, "reason": "test_audit_route"}
+            )
+
+            list_handler = FakeHandler()
+            list_handler.path = "/api/releases/audits"
+            listing = list_handler.do_GET()
+            name = Path(approval["audit_path"]).name
+            detail_handler = FakeHandler()
+            detail_handler.path = f"/api/releases/audits/{name}"
+            detail = detail_handler.do_GET()
+
+            self.assertEqual(list_handler.status, 200)
+            self.assertEqual(listing["audits"][0]["name"], name)
+            self.assertEqual(detail_handler.status, 200)
+            self.assertEqual(detail["audit"]["package"]["reason"], "test_audit_route")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ const supportExportsBody = document.querySelector("#supportExports");
 const runSupportExportRetention = document.querySelector("#runSupportExportRetention");
 const releaseSummary = document.querySelector("#releaseSummary");
 const releaseInventory = document.querySelector("#releaseInventory");
+const releaseAuditsSummary = document.querySelector("#releaseAuditsSummary");
+const releaseAuditsBody = document.querySelector("#releaseAudits");
 
 function escapeHtml(value) {
   const text = value === null || value === undefined ? "" : String(value);
@@ -259,6 +261,31 @@ async function loadReleases() {
   `).join("");
 }
 
+async function loadReleaseAudits() {
+  const data = await getJson("/api/releases/audits");
+  releaseAuditsSummary.innerHTML = `
+    <strong>${data.audits.length}</strong>
+    recent promotion audits in <code>${escapeHtml(data.audit_dir)}</code>.
+  `;
+  if (!data.audits.length) {
+    releaseAuditsBody.innerHTML = `<tr><td colspan="5">No promotion audits written yet.</td></tr>`;
+    return;
+  }
+  releaseAuditsBody.innerHTML = data.audits.map((audit) => `
+    <tr>
+      <td><code>${escapeHtml(audit.name)}</code><br><span class="muted-cell">${shortId(audit.release_id, 24)}</span></td>
+      <td>${escapeHtml(audit.action || "UNKNOWN")}</td>
+      <td>
+        <span class="${severityClass(audit.safety_ok ? "LOW" : "HIGH")}">${audit.safety_ok ? "safe" : "blocked"}</span>
+        ${audit.approved ? `<br><span class="state">approved</span>` : ""}
+        ${audit.forced ? `<br><span class="state warn">forced</span>` : ""}
+      </td>
+      <td>${formatDateTime(audit.modified_at)}</td>
+      <td><button class="small-button secondary" data-view-release-audit="${escapeHtml(audit.name)}">View</button></td>
+    </tr>
+  `).join("");
+}
+
 async function loadSessions() {
   const data = await getJson("/api/sessions");
   sessions.innerHTML = data.sessions.map((session) => `
@@ -479,6 +506,20 @@ function renderSupportExportDetail(data) {
   summary.innerHTML = `
     <strong>${escapeHtml(item.summary.package_type)}</strong>
     ${escapeHtml(item.summary.name)} for task ${item.summary.task_id ? shortId(item.summary.task_id) : "unknown"}.
+  `;
+  tweets.innerHTML = "";
+  const packageView = document.createElement("pre");
+  packageView.className = "diagnostic-pre";
+  packageView.textContent = JSON.stringify(item.package, null, 2);
+  tweets.appendChild(packageView);
+}
+
+function renderPromotionAuditDetail(data) {
+  const item = data.audit;
+  summary.innerHTML = `
+    <strong>${escapeHtml(item.summary.package_type)}</strong>
+    ${escapeHtml(item.summary.name)}
+    ${item.summary.approved ? "approved" : "recorded"} release ${escapeHtml(item.summary.release_id || "unknown")}.
   `;
   tweets.innerHTML = "";
   const packageView = document.createElement("pre");
@@ -760,9 +801,30 @@ releaseInventory.addEventListener("click", async (event) => {
     `;
     await loadHealth();
     await loadReleases();
+    await loadReleaseAudits();
     await loadMetrics();
   } catch (error) {
     releaseSummary.textContent = error.message;
+    await loadReleaseAudits();
+  } finally {
+    button.disabled = false;
+  }
+});
+
+releaseAuditsBody.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-view-release-audit]");
+  if (!button) {
+    return;
+  }
+
+  button.disabled = true;
+  summary.textContent = "Loading promotion audit...";
+  tweets.innerHTML = "";
+  try {
+    const data = await getJson(`/api/releases/audits/${encodeURIComponent(button.dataset.viewReleaseAudit)}`);
+    renderPromotionAuditDetail(data);
+  } catch (error) {
+    summary.textContent = error.message;
   } finally {
     button.disabled = false;
   }
@@ -970,6 +1032,10 @@ loadMetrics().catch((error) => {
 loadReleases().catch((error) => {
   releaseSummary.textContent = error.message;
   releaseInventory.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+});
+loadReleaseAudits().catch((error) => {
+  releaseAuditsSummary.textContent = error.message;
+  releaseAuditsBody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
 });
 loadSessions().catch((error) => {
   sessions.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;

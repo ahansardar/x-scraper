@@ -36,6 +36,7 @@ Important runtime locations:
 - Logs: `F:\x-scraper\data\logs`
 - Health reports: `F:\x-scraper\data\reports`
 - Support exports: `F:\x-scraper\data\support_exports`
+- Release promotion audits: `F:\x-scraper\data\release_promotions`
 
 Known current operational signal:
 
@@ -55,6 +56,7 @@ Implemented:
 - Approved protocol release pointer in SQLite, resolved to one exact manifest from `protocol_releases/`.
 - Operator release inventory and approval through `run_releases.py`, `GET /api/releases`, and `POST /api/releases/approve`.
 - Promotion safety checks before normal approval, including manifest sanity, release health, fixture validation, and capture/replay comparison.
+- Redacted release promotion audit packages for checks, blocked approvals, normal approvals, and forced approvals, exposed through `run_releases.py audits`, `GET /api/releases/audits`, and the frontend Promotion Trail.
 - Backpressure before task creation through `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`.
 
 Spec relevance:

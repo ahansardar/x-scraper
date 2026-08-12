@@ -42,7 +42,10 @@ from xingestion.releases import (
     ReleaseStore,
     build_promotion_safety_report,
     list_manifest_releases,
+    list_promotion_audits,
+    read_promotion_audit,
     resolve_approved_manifest,
+    write_promotion_audit,
 )
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.secrets import (
@@ -167,6 +170,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json(_network_health_dict())
         if parsed.path == "/api/releases":
             return self._json(_releases_inventory_dict())
+        if parsed.path == "/api/releases/audits":
+            audits = list_promotion_audits(STATE.config, limit=25)
+            return self._json(
+                {
+                    "audit_dir": str(STATE.config.data_dir / "release_promotions"),
+                    "audits": [audit.public_dict() for audit in audits],
+                }
+            )
         if parsed.path == "/api/releases/current":
             return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
         if parsed.path == "/api/releases/current/risk":
@@ -245,6 +256,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 return self._download_support_export(unquote(parts[2]))
             if len(parts) == 3:
                 return self._support_export_detail(unquote(parts[2]))
+        if parsed.path.startswith("/api/releases/audits/"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 4:
+                return self._promotion_audit_detail(unquote(parts[3]))
         if parsed.path.startswith("/api/tasks/"):
             parts = parsed.path.strip("/").split("/")
             if len(parts) == 3:
@@ -556,6 +571,14 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
+    def _promotion_audit_detail(self, name):
+        try:
+            audit = read_promotion_audit(STATE.config, name)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return self._json({"message": str(exc)}, status=status)
+        return self._json({"audit": audit}, status=200)
+
     def _set_release_health(self, health, reason):
         release = STATE.release_store.set_health(
             STATE.manifest.release_id,
@@ -586,23 +609,53 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             raw_evidence_dir=STATE.config.raw_evidence_dir,
         )
         forced = bool(body.get("force"))
+        approval_before = STATE.release_store.approved_release()
         if not safety.ok and not forced:
+            audit = write_promotion_audit(
+                config=STATE.config,
+                action="APPROVE",
+                release_id=release_id,
+                manifest_path=candidates[release_id].manifest_path,
+                reason=reason,
+                safety=safety,
+                approved=False,
+                forced=False,
+                approval_before=approval_before,
+                approval_after=STATE.release_store.approved_release(),
+                message="Promotion safety checks failed",
+            )
             return self._json(
                 {
                     "message": "Promotion safety checks failed",
                     "promotion_safety": safety.public_dict(),
+                    "audit_path": str(audit.path),
                 },
                 status=409,
             )
         release = STATE.release_store.approve_release(release_id, reason=reason)
+        approval_after = STATE.release_store.approved_release()
         STATE.reload_protocol_release()
+        audit = write_promotion_audit(
+            config=STATE.config,
+            action="APPROVE",
+            release_id=release_id,
+            manifest_path=STATE.manifest_path,
+            reason=reason,
+            safety=safety,
+            approved=True,
+            forced=forced,
+            approval_before=approval_before,
+            approval_after=approval_after,
+            message="Promotion approved",
+        )
         return self._json(
             {
-                "approved_release": _approved_release_dict(STATE.release_store.approved_release()),
+                "approved_release": _approved_release_dict(approval_after),
                 "release": _release_dict(release),
                 "manifest_path": str(STATE.manifest_path),
                 "forced": forced,
                 "promotion_safety": safety.public_dict(),
+                "audit_path": str(audit.path),
                 "releases": _releases_inventory_dict()["releases"],
             },
             status=200,

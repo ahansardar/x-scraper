@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+import json
 from pathlib import Path
 
+from xingestion.config import AppConfig
 from xingestion.protocol_validation import (
     CaptureReplayComparisonReport,
     ProtocolValidationReport,
@@ -10,7 +13,7 @@ from xingestion.protocol_validation import (
     build_protocol_validation_report,
 )
 from xingestion.releases.manifest_resolver import list_manifest_releases
-from xingestion.releases.store import ReleaseHealth, ReleaseStore
+from xingestion.releases.store import ApprovedReleaseRecord, ReleaseHealth, ReleaseStore
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 
@@ -45,6 +48,46 @@ class PromotionSafetyReport:
             "checks": [check.public_dict() for check in self.checks],
             "fixture_validation": self.fixture_validation.public_dict(),
             "capture_replay_comparison": self.capture_replay_comparison.public_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class PromotionAuditResult:
+    path: Path
+    package: dict[str, object]
+
+
+@dataclass(frozen=True)
+class PromotionAuditSummary:
+    path: Path
+    name: str
+    size_bytes: int
+    modified_at: str
+    package_type: str
+    action: str | None
+    release_id: str | None
+    generated_at: str | None
+    approved: bool | None
+    forced: bool | None
+    safety_ok: bool | None
+    readable: bool
+    parse_error: str | None = None
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "path": str(self.path),
+            "name": self.name,
+            "size_bytes": self.size_bytes,
+            "modified_at": self.modified_at,
+            "package_type": self.package_type,
+            "action": self.action,
+            "release_id": self.release_id,
+            "generated_at": self.generated_at,
+            "approved": self.approved,
+            "forced": self.forced,
+            "safety_ok": self.safety_ok,
+            "readable": self.readable,
+            "parse_error": self.parse_error,
         }
 
 
@@ -148,3 +191,203 @@ def build_promotion_safety_report(
         fixture_validation=fixture_report,
         capture_replay_comparison=comparison,
     )
+
+
+def write_promotion_audit(
+    *,
+    config: AppConfig,
+    action: str,
+    release_id: str,
+    manifest_path: Path,
+    reason: str,
+    safety: PromotionSafetyReport,
+    approved: bool,
+    forced: bool,
+    approval_before: ApprovedReleaseRecord | None,
+    approval_after: ApprovedReleaseRecord | None,
+    message: str,
+    output_path: str | Path | None = None,
+) -> PromotionAuditResult:
+    package = build_promotion_audit_package(
+        action=action,
+        release_id=release_id,
+        manifest_path=manifest_path,
+        reason=reason,
+        safety=safety,
+        approved=approved,
+        forced=forced,
+        approval_before=approval_before,
+        approval_after=approval_after,
+        message=message,
+    )
+    path = Path(output_path) if output_path else _default_audit_output_path(
+        config,
+        release_id=release_id,
+        action=action,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(package, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return PromotionAuditResult(path=path, package=package)
+
+
+def build_promotion_audit_package(
+    *,
+    action: str,
+    release_id: str,
+    manifest_path: Path,
+    reason: str,
+    safety: PromotionSafetyReport,
+    approved: bool,
+    forced: bool,
+    approval_before: ApprovedReleaseRecord | None,
+    approval_after: ApprovedReleaseRecord | None,
+    message: str,
+) -> dict[str, object]:
+    return {
+        "package_type": "RELEASE_PROMOTION_AUDIT",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "action": action.strip().upper(),
+        "release_id": release_id,
+        "manifest_path": str(manifest_path),
+        "reason": reason,
+        "approved": approved,
+        "forced": forced,
+        "message": message,
+        "approval_before": _approved_release_dict(approval_before),
+        "approval_after": _approved_release_dict(approval_after),
+        "promotion_safety": safety.public_dict(),
+        "redaction": {
+            "raw_x_secrets_included": False,
+            "raw_evidence_body_included": False,
+            "raw_evidence_references_only": True,
+        },
+    }
+
+
+def list_promotion_audits(
+    config: AppConfig,
+    *,
+    limit: int = 25,
+) -> list[PromotionAuditSummary]:
+    audit_dir = promotion_audit_dir(config)
+    if not audit_dir.exists():
+        return []
+    summaries = [_summarize_audit(path) for path in audit_dir.glob("promotion-*.json")]
+    summaries.sort(key=lambda item: item.modified_at, reverse=True)
+    return summaries[:limit]
+
+
+def read_promotion_audit(config: AppConfig, name: str) -> dict[str, object]:
+    path = promotion_audit_file(config, name)
+    summary = _summarize_audit(path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "summary": summary.public_dict(),
+        "package": payload,
+    }
+
+
+def promotion_audit_file(config: AppConfig, name: str) -> Path:
+    path = _promotion_audit_path(config, name)
+    if not path.exists():
+        raise ValueError(f"Promotion audit {name} not found")
+    summary = _summarize_audit(path)
+    if not summary.readable:
+        raise ValueError(f"Promotion audit {name} is not readable JSON")
+    return path
+
+
+def promotion_audit_dir(config: AppConfig) -> Path:
+    return config.data_dir / "release_promotions"
+
+
+def _default_audit_output_path(config: AppConfig, *, release_id: str, action: str) -> Path:
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    safe_release_id = _safe_name(release_id)
+    safe_action = _safe_name(action.lower())
+    return promotion_audit_dir(config) / f"promotion-{safe_release_id}-{safe_action}-{stamp}.json"
+
+
+def _promotion_audit_path(config: AppConfig, name: str) -> Path:
+    if Path(name).name != name:
+        raise ValueError("Promotion audit name must be a file name")
+    if not name.startswith("promotion-") or not name.endswith(".json"):
+        raise ValueError("Promotion audit name must match promotion-*.json")
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+    if any(char not in allowed for char in name):
+        raise ValueError("Promotion audit name contains unsupported characters")
+    return promotion_audit_dir(config) / name
+
+
+def _summarize_audit(path: Path) -> PromotionAuditSummary:
+    stat = path.stat()
+    modified_at = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat()
+    base = {
+        "path": path,
+        "name": path.name,
+        "size_bytes": stat.st_size,
+        "modified_at": modified_at,
+    }
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return PromotionAuditSummary(
+            **base,
+            package_type="UNKNOWN",
+            action=None,
+            release_id=None,
+            generated_at=None,
+            approved=None,
+            forced=None,
+            safety_ok=None,
+            readable=False,
+            parse_error=str(exc),
+        )
+    if not isinstance(payload, dict):
+        return PromotionAuditSummary(
+            **base,
+            package_type="UNKNOWN",
+            action=None,
+            release_id=None,
+            generated_at=None,
+            approved=None,
+            forced=None,
+            safety_ok=None,
+            readable=False,
+            parse_error="promotion audit root is not an object",
+        )
+    safety = payload.get("promotion_safety")
+    return PromotionAuditSummary(
+        **base,
+        package_type=str(payload.get("package_type") or "UNKNOWN"),
+        action=payload.get("action") if isinstance(payload.get("action"), str) else None,
+        release_id=(
+            payload.get("release_id") if isinstance(payload.get("release_id"), str) else None
+        ),
+        generated_at=(
+            payload.get("generated_at") if isinstance(payload.get("generated_at"), str) else None
+        ),
+        approved=payload.get("approved") if isinstance(payload.get("approved"), bool) else None,
+        forced=payload.get("forced") if isinstance(payload.get("forced"), bool) else None,
+        safety_ok=(
+            safety.get("ok")
+            if isinstance(safety, dict) and isinstance(safety.get("ok"), bool)
+            else None
+        ),
+        readable=True,
+        parse_error=None,
+    )
+
+
+def _approved_release_dict(
+    record: ApprovedReleaseRecord | None,
+) -> dict[str, object] | None:
+    return record.__dict__ if record is not None else None
+
+
+def _safe_name(value: str) -> str:
+    safe = "".join(char for char in value if char.isalnum() or char in {"-", "_"})
+    return safe or "release"

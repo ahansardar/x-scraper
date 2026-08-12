@@ -1666,3 +1666,32 @@ Verified:
 Next:
 
 - Persist promotion reports as audit artifacts before approval/force approval.
+
+## 2026-08-12 - Checkpoint 80: Promotion Audit Artifacts
+
+Implemented:
+
+- Added redacted `RELEASE_PROMOTION_AUDIT` packages for release safety checks, blocked approvals, normal approvals, and forced approvals.
+- Promotion audits write to `XINGESTION_DATA_DIR\release_promotions\promotion-*.json` by default.
+- Added safe audit listing/detail helpers that reject arbitrary paths and unreadable JSON.
+- Extended `run_releases.py` with audit writing for `check` and `approve`, plus `audits` and `audit <name>` commands.
+- Added `GET /api/releases/audits` and `GET /api/releases/audits/{name}` to the trusted console API.
+- Added a frontend Promotion Trail panel with audit history and JSON detail viewing.
+- Documented promotion audit storage and read paths in the deployment runbook and current-stage report.
+
+Verified:
+
+- `python -m compileall -q src tests run_releases.py` passed.
+- `python -m unittest discover -s tests -p "test_release_promotion.py"` passed 3 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 28 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `node --check src\xingestion\web\static\app.js` passed.
+- `python -m unittest discover -s tests` passed 164 tests.
+- `python .\run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json` wrote a promotion audit under `data\release_promotions`.
+- `python .\run_releases.py audits --limit 5 --json` listed the generated promotion audit.
+- `python .\run_releases.py audit promotion-xrev-search-tweets-2026-08-10-candidate-1-check-20260812T072318Z.json --json` read the generated audit detail.
+- Live `GET /api/health`, `GET /api/releases`, `GET /api/releases/audits`, and `GET /api/releases/audits/{name}` passed on `http://127.0.0.1:8023`.
+
+Next:
+
+- Add retention and export/download controls for promotion audit artifacts if audit volume grows.

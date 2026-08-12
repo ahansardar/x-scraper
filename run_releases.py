@@ -14,7 +14,10 @@ from xingestion.releases import (
     ReleaseStore,
     build_promotion_safety_report,
     list_manifest_releases,
+    list_promotion_audits,
+    read_promotion_audit,
     resolve_approved_manifest,
+    write_promotion_audit,
 )
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import load_env_file
@@ -65,7 +68,22 @@ def main(argv=None):
             manifest_dir=manifest_dir,
             raw_evidence_dir=config.raw_evidence_dir,
         )
-        return _print(report.public_dict(), json_output=args.json)
+        audit = write_promotion_audit(
+            config=config,
+            action="CHECK",
+            release_id=args.release_id,
+            manifest_path=candidates[args.release_id].manifest_path,
+            reason="operator_check",
+            safety=report,
+            approved=False,
+            forced=False,
+            approval_before=store.approved_release(),
+            approval_after=store.approved_release(),
+            message="Promotion safety checked",
+        )
+        payload = report.public_dict()
+        payload["audit_path"] = str(audit.path)
+        return _print(payload, json_output=args.json)
 
     if args.command == "approve":
         candidates = {
@@ -87,23 +105,52 @@ def main(argv=None):
             manifest_dir=manifest_dir,
             raw_evidence_dir=config.raw_evidence_dir,
         )
+        approval_before = store.approved_release()
         if not safety.ok and not args.force:
+            audit = write_promotion_audit(
+                config=config,
+                action="APPROVE",
+                release_id=args.release_id,
+                manifest_path=candidates[args.release_id].manifest_path,
+                reason=args.reason,
+                safety=safety,
+                approved=False,
+                forced=False,
+                approval_before=approval_before,
+                approval_after=store.approved_release(),
+                message="Promotion safety checks failed",
+            )
             payload = {
                 "approved": False,
                 "message": "promotion safety checks failed; rerun with --force to override",
                 "promotion_safety": safety.public_dict(),
+                "audit_path": str(audit.path),
             }
             if args.json:
                 print(json.dumps(payload, indent=2, sort_keys=True))
                 return 1
             raise SystemExit(payload["message"])
         release = store.approve_release(args.release_id, reason=args.reason)
+        approval_after = store.approved_release()
         resolved = resolve_approved_manifest(
             release_store=store,
             manifest_dir=manifest_dir,
         )
+        audit = write_promotion_audit(
+            config=config,
+            action="APPROVE",
+            release_id=args.release_id,
+            manifest_path=resolved.manifest_path,
+            reason=args.reason,
+            safety=safety,
+            approved=True,
+            forced=bool(args.force),
+            approval_before=approval_before,
+            approval_after=approval_after,
+            message="Promotion approved",
+        )
         payload = {
-            "approved": store.approved_release().__dict__,
+            "approved": approval_after.__dict__ if approval_after is not None else None,
             "release": {
                 "release_id": release.release_id,
                 "health": release.health.value,
@@ -113,7 +160,20 @@ def main(argv=None):
             "manifest_path": str(resolved.manifest_path),
             "forced": bool(args.force),
             "promotion_safety": safety.public_dict(),
+            "audit_path": str(audit.path),
         }
+        return _print(payload, json_output=args.json)
+
+    if args.command == "audits":
+        audits = list_promotion_audits(config, limit=args.limit)
+        payload = {
+            "audit_dir": str(config.data_dir / "release_promotions"),
+            "audits": [audit.public_dict() for audit in audits],
+        }
+        return _print(payload, json_output=args.json)
+
+    if args.command == "audit":
+        payload = read_promotion_audit(config, args.name)
         return _print(payload, json_output=args.json)
 
     candidates = list_manifest_releases(
@@ -171,6 +231,12 @@ def _parser() -> argparse.ArgumentParser:
     approve.add_argument("--reason", default="operator_approved")
     approve.add_argument("--force", action="store_true")
     approve.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    audits = subparsers.add_parser("audits")
+    audits.add_argument("--limit", type=int, default=25)
+    audits.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    audit = subparsers.add_parser("audit")
+    audit.add_argument("name")
+    audit.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     parser.set_defaults(command="list")
     return parser
 

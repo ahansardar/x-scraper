@@ -26,6 +26,7 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("Startup Readiness", html)
         self.assertIn("Network Health", html)
         self.assertIn("Protocol Governance", html)
+        self.assertIn("Promotion Trail", html)
         self.assertNotIn("mock", html.lower())
 
     def test_frontend_reports_non_json_api_responses(self):
@@ -83,8 +84,12 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("operator_action", js)
         self.assertIn("/api/releases", js)
         self.assertIn("/api/releases/approve", js)
+        self.assertIn("/api/releases/audits", js)
         self.assertIn("loadReleases", js)
+        self.assertIn("loadReleaseAudits", js)
         self.assertIn("data-approve-release", js)
+        self.assertIn("data-view-release-audit", js)
+        self.assertIn("renderPromotionAuditDetail", js)
         self.assertIn("releaseHealthClass", js)
         self.assertIn("formatPromotionSafety", js)
         self.assertIn("safety blocked", js)
