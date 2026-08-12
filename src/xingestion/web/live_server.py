@@ -40,6 +40,7 @@ from xingestion.sessions import SessionHealth, SessionStore, import_session_regi
 from xingestion.releases import (
     ReleaseHealth,
     ReleaseStore,
+    build_promotion_safety_report,
     list_manifest_releases,
     resolve_approved_manifest,
 )
@@ -60,7 +61,7 @@ from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.tasks import SQLiteTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xingestion.xprotocol.evidence import FileRawEvidenceSink
-from xingestion.xprotocol.protocol import CapabilityId
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import (
     UrllibJsonTransport,
     load_env_file,
@@ -577,6 +578,22 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         }
         if release_id not in candidates:
             return self._json({"message": f"Release manifest not found: {release_id}"}, status=404)
+        safety = build_promotion_safety_report(
+            release_id=release_id,
+            manifest=ProtocolReleaseManifest.from_file(candidates[release_id].manifest_path),
+            release_store=STATE.release_store,
+            manifest_dir=MANIFEST_DIR,
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+        )
+        forced = bool(body.get("force"))
+        if not safety.ok and not forced:
+            return self._json(
+                {
+                    "message": "Promotion safety checks failed",
+                    "promotion_safety": safety.public_dict(),
+                },
+                status=409,
+            )
         release = STATE.release_store.approve_release(release_id, reason=reason)
         STATE.reload_protocol_release()
         return self._json(
@@ -584,6 +601,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 "approved_release": _approved_release_dict(STATE.release_store.approved_release()),
                 "release": _release_dict(release),
                 "manifest_path": str(STATE.manifest_path),
+                "forced": forced,
+                "promotion_safety": safety.public_dict(),
                 "releases": _releases_inventory_dict()["releases"],
             },
             status=200,
@@ -877,11 +896,24 @@ def _releases_inventory_dict():
         release_store=STATE.release_store,
         manifest_dir=MANIFEST_DIR,
     )
+    releases = []
+    for candidate in candidates:
+        payload = candidate.public_dict()
+        safety = build_promotion_safety_report(
+            release_id=candidate.release_id,
+            manifest=ProtocolReleaseManifest.from_file(candidate.manifest_path),
+            release_store=STATE.release_store,
+            manifest_dir=MANIFEST_DIR,
+            raw_evidence_dir=STATE.config.raw_evidence_dir,
+        )
+        payload["promotion_safety"] = safety.public_dict()
+        payload["approval_allowed"] = safety.ok
+        releases.append(payload)
     return {
         "approved_release": _approved_release_dict(approval),
         "active_release_id": STATE.manifest.release_id,
         "manifest_dir": str(MANIFEST_DIR),
-        "releases": [candidate.public_dict() for candidate in candidates],
+        "releases": releases,
     }
 
 

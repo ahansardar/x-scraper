@@ -12,9 +12,11 @@ from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.releases import (
     ReleaseStore,
+    build_promotion_safety_report,
     list_manifest_releases,
     resolve_approved_manifest,
 )
+from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import load_env_file
 
 
@@ -43,6 +45,28 @@ def main(argv=None):
         }
         return _print(payload, json_output=args.json)
 
+    if args.command == "check":
+        candidates = {
+            candidate.release_id: candidate
+            for candidate in list_manifest_releases(
+                release_store=store,
+                manifest_dir=manifest_dir,
+            )
+        }
+        if args.release_id not in candidates:
+            raise SystemExit(f"Release manifest not found: {args.release_id}")
+        manifest = ProtocolReleaseManifest.from_file(
+            candidates[args.release_id].manifest_path
+        )
+        report = build_promotion_safety_report(
+            release_id=args.release_id,
+            manifest=manifest,
+            release_store=store,
+            manifest_dir=manifest_dir,
+            raw_evidence_dir=config.raw_evidence_dir,
+        )
+        return _print(report.public_dict(), json_output=args.json)
+
     if args.command == "approve":
         candidates = {
             candidate.release_id: candidate
@@ -53,6 +77,26 @@ def main(argv=None):
         }
         if args.release_id not in candidates:
             raise SystemExit(f"Release manifest not found: {args.release_id}")
+        manifest = ProtocolReleaseManifest.from_file(
+            candidates[args.release_id].manifest_path
+        )
+        safety = build_promotion_safety_report(
+            release_id=args.release_id,
+            manifest=manifest,
+            release_store=store,
+            manifest_dir=manifest_dir,
+            raw_evidence_dir=config.raw_evidence_dir,
+        )
+        if not safety.ok and not args.force:
+            payload = {
+                "approved": False,
+                "message": "promotion safety checks failed; rerun with --force to override",
+                "promotion_safety": safety.public_dict(),
+            }
+            if args.json:
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                return 1
+            raise SystemExit(payload["message"])
         release = store.approve_release(args.release_id, reason=args.reason)
         resolved = resolve_approved_manifest(
             release_store=store,
@@ -67,6 +111,8 @@ def main(argv=None):
                 "updated_at": release.updated_at,
             },
             "manifest_path": str(resolved.manifest_path),
+            "forced": bool(args.force),
+            "promotion_safety": safety.public_dict(),
         }
         return _print(payload, json_output=args.json)
 
@@ -117,9 +163,13 @@ def _parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     current = subparsers.add_parser("current")
     current.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    check = subparsers.add_parser("check")
+    check.add_argument("release_id")
+    check.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     approve = subparsers.add_parser("approve")
     approve.add_argument("release_id")
     approve.add_argument("--reason", default="operator_approved")
+    approve.add_argument("--force", action="store_true")
     approve.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     parser.set_defaults(command="list")
     return parser

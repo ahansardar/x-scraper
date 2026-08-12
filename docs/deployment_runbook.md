@@ -225,6 +225,7 @@ List and approve staged protocol manifests:
 ```powershell
 python .\run_releases.py --json
 python .\run_releases.py current --json
+python .\run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json
 python .\run_releases.py approve xrev-search-tweets-2026-08-10-candidate-1 --reason operator_approved --json
 ```
 
@@ -235,7 +236,7 @@ GET /api/releases
 POST /api/releases/approve
 ```
 
-Release approval updates `approved_protocol_release` in SQLite and reloads the live process planner/worker so new tasks use the exact approved manifest. With more than one manifest in `protocol_releases`, startup requires this pointer to be present and resolvable.
+Release approval first runs promotion safety checks: manifest presence, release health, binding presence, checked-in fixture validation, and browser-capture/direct-replay comparison when pairs exist. A failed safety report blocks normal approval; use `--force` or `force: true` only for an explicit emergency override. Release approval updates `approved_protocol_release` in SQLite and reloads the live process planner/worker so new tasks use the exact approved manifest. With more than one manifest in `protocol_releases`, startup requires this pointer to be present and resolvable.
 
 Review advisory release-risk recommendations:
 

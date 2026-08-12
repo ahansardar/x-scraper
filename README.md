@@ -126,10 +126,11 @@ Inspect and approve staged protocol manifests without editing SQLite directly:
 ```powershell
 python .\run_releases.py --json
 python .\run_releases.py current --json
+python .\run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json
 python .\run_releases.py approve xrev-search-tweets-2026-08-10-candidate-1 --reason operator_approved --json
 ```
 
-The live console exposes the same inventory through `GET /api/releases` and can approve a staged manifest through `POST /api/releases/approve`. Approval reloads the in-process planner and local worker so new tasks bind to the approved manifest immediately.
+The live console exposes the same inventory through `GET /api/releases` and can approve a staged manifest through `POST /api/releases/approve`. Approval runs promotion safety checks first: manifest presence, release health, binding presence, checked-in fixture validation, and browser-capture/direct-replay comparison when pairs exist. Use `--force` only for an explicit emergency override. Approval reloads the in-process planner and local worker so new tasks bind to the approved manifest immediately.
 
 Secret providers:
 

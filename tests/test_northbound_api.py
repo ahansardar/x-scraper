@@ -767,6 +767,7 @@ class NorthboundApiTests(unittest.TestCase):
             store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
             store.approve_release(manifest.release_id, reason="test_approved")
             live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
                 manifest=manifest,
                 release_store=store,
             )
@@ -797,6 +798,7 @@ class NorthboundApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
             live_server.STATE = ReloadingState(
+                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
                 manifest=manifest,
                 release_store=store,
                 manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
@@ -812,6 +814,68 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(payload["approved_release"]["reason"], "test_route")
             self.assertEqual(store.approved_release_id(), manifest.release_id)
             self.assertEqual(live_server.STATE.reloads, 1)
+
+    def test_approve_release_route_blocks_failed_safety_without_force(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            store.set_health(
+                manifest.release_id,
+                health=live_server.ReleaseHealth.QUARANTINED,
+                reason="test",
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+                reload_protocol_release=lambda: None,
+            )
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._approve_release(
+                {"release_id": manifest.release_id, "reason": "test_route"}
+            )
+
+            self.assertEqual(handler.status, 409)
+            self.assertEqual(payload["message"], "Promotion safety checks failed")
+            self.assertFalse(payload["promotion_safety"]["ok"])
+            self.assertIsNone(store.approved_release_id())
+
+    def test_approve_release_route_allows_explicit_force(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            store.set_health(
+                manifest.release_id,
+                health=live_server.ReleaseHealth.QUARANTINED,
+                reason="test",
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(raw_evidence_dir=Path(temp_dir) / "raw"),
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+                reload_protocol_release=lambda: None,
+            )
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._approve_release(
+                {
+                    "release_id": manifest.release_id,
+                    "reason": "test_force",
+                    "force": True,
+                }
+            )
+
+            self.assertEqual(handler.status, 200)
+            self.assertTrue(payload["forced"])
+            self.assertFalse(payload["promotion_safety"]["ok"])
+            self.assertEqual(store.approved_release_id(), manifest.release_id)
 
 
 if __name__ == "__main__":

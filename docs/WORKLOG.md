@@ -1647,3 +1647,22 @@ Verified:
 Next:
 
 - Add promotion safety checks that require passing fixture/raw/capture-replay validation before approving a staged release.
+
+## 2026-08-12 - Checkpoint 79: Promotion Safety Gates
+
+Implemented:
+
+- Added reusable promotion safety reports for staged protocol releases.
+- Safety checks cover manifest presence, manifest release ID match, release health, binding presence, checked-in fixture parser validation, and browser-capture/direct-replay comparison when pairs exist.
+- Added `run_releases.py check ... --json`.
+- Normal `run_releases.py approve ...` now blocks failed promotion safety unless `--force` is explicitly supplied.
+- `POST /api/releases/approve` now returns HTTP `409` with the failed safety report unless `force: true` is explicitly supplied.
+- Release inventory API and frontend Protocol Governance panel now surface safety pass/blocked state.
+
+Verified:
+
+- Focused promotion, release-store, API, and frontend tests pass.
+
+Next:
+
+- Persist promotion reports as audit artifacts before approval/force approval.

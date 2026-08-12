@@ -250,8 +250,11 @@ async function loadReleases() {
       </td>
       <td>${escapeHtml(release.manifest_status)}</td>
       <td><span class="${releaseHealthClass(release.health)}">${escapeHtml(release.health)}</span></td>
-      <td><code>${escapeHtml((release.recipe_revision_ids || []).join(", "))}</code></td>
-      <td>${release.approved ? "" : `<button class="small-button" data-approve-release="${escapeHtml(release.release_id)}">Approve</button>`}</td>
+      <td>
+        <code>${escapeHtml((release.recipe_revision_ids || []).join(", "))}</code>
+        <br>${formatPromotionSafety(release.promotion_safety)}
+      </td>
+      <td>${release.approved ? "" : release.approval_allowed ? `<button class="small-button" data-approve-release="${escapeHtml(release.release_id)}">Approve</button>` : `<span class="state bad">Blocked</span>`}</td>
     </tr>
   `).join("");
 }
@@ -405,6 +408,20 @@ function formatRouteRecommendation(recommendation) {
   return `
     <span class="${severityClass(recommendation.severity)}">${escapeHtml(recommendation.action)}</span>
     <br>${escapeHtml(recommendation.operator_action)}
+  `;
+}
+
+function formatPromotionSafety(report) {
+  if (!report) {
+    return "";
+  }
+  const failed = (report.checks || []).filter((check) => !check.ok);
+  if (!failed.length) {
+    return `<span class="state">safety pass</span>`;
+  }
+  return `
+    <span class="state bad">safety blocked</span>
+    ${escapeHtml(failed.map((check) => check.name).join(", "))}
   `;
 }
 
@@ -733,7 +750,8 @@ releaseInventory.addEventListener("click", async (event) => {
       headers: {"content-type": "application/json"},
       body: JSON.stringify({
         release_id: button.dataset.approveRelease,
-        reason: "operator_console_approved"
+        reason: "operator_console_approved",
+        force: false
       })
     });
     releaseSummary.innerHTML = `

@@ -86,6 +86,8 @@ class FrontendCopyTests(unittest.TestCase):
         self.assertIn("loadReleases", js)
         self.assertIn("data-approve-release", js)
         self.assertIn("releaseHealthClass", js)
+        self.assertIn("formatPromotionSafety", js)
+        self.assertIn("safety blocked", js)
 
 
 if __name__ == "__main__":
