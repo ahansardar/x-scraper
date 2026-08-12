@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import psycopg
 from psycopg_pool import ConnectionPool
 
 from xingestion.migrations import PostgresMigrationRunner
@@ -16,13 +17,25 @@ def test_dsn() -> str:
     return os.getenv("XINGESTION_TEST_POSTGRES_DSN", DEFAULT_TEST_DSN)
 
 
+def probe_reachable(dsn: str) -> None:
+    # A single direct connect attempt fails on a refused connection far
+    # faster than letting ConnectionPool's background retry/backoff loop
+    # run out its full wait() timeout -- matters a lot when dozens of
+    # tests share this fixture on a host with no Postgres at all (e.g. the
+    # Windows CI job, which deliberately has no service containers).
+    with psycopg.connect(dsn, connect_timeout=2) as conn:
+        conn.execute("SELECT 1")
+
+
 def make_postgres_ledger() -> PostgresTaskLedger:
     """Return a PostgresTaskLedger backed by a freshly-migrated, truncated database.
 
     Raises if Postgres is unreachable; callers should catch and skip.
     """
+    dsn = test_dsn()
+    probe_reachable(dsn)
     pool = ConnectionPool(
-        test_dsn(),
+        dsn,
         min_size=1,
         max_size=5,
         open=True,

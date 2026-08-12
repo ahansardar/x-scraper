@@ -8,7 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from postgres_fixture import make_postgres_ledger
+import psycopg
+import redis as redis_lib
+
+from postgres_fixture import make_postgres_ledger, test_dsn as postgres_test_dsn
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.config import AppConfig
@@ -39,8 +42,32 @@ class FakeApiPreflight(DeploymentPreflight):
         return self.responses[path]
 
 
+def _skip_unless_postgres_and_redis_reachable(test: unittest.TestCase) -> None:
+    # These two tests assert an overall-PASS preflight result, which now
+    # genuinely depends on Postgres/Redis being reachable. That's true on
+    # the Ubuntu CI job (service containers) but false by design on the
+    # Windows job, which has none -- skip there rather than assert a result
+    # this environment cannot produce.
+    try:
+        with psycopg.connect(postgres_test_dsn(), connect_timeout=2) as conn:
+            conn.execute("SELECT 1")
+    except Exception as exc:  # pragma: no cover - environment dependent
+        test.skipTest(f"Postgres unavailable: {exc}")
+    try:
+        client = redis_lib.Redis.from_url(
+            "redis://127.0.0.1:6379/0", socket_connect_timeout=2
+        )
+        try:
+            client.ping()
+        finally:
+            client.close()
+    except Exception as exc:  # pragma: no cover - environment dependent
+        test.skipTest(f"Redis unavailable: {exc}")
+
+
 class PreflightTests(unittest.TestCase):
     def test_preflight_passes_ready_local_state_without_api(self):
+        _skip_unless_postgres_and_redis_reachable(self)
         manifest = load_manifest()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -143,7 +170,7 @@ class PreflightTests(unittest.TestCase):
                 )
                 failed = ledger.transition_task(
                     task.task_id,
-                    from_state=TaskState.CREATED,
+                    from_state=task.state,
                     to_state=TaskState.DEAD_LETTER,
                     error_json={"error_class": "OPERATION_NOT_FOUND"},
                 )
@@ -227,6 +254,7 @@ class PreflightTests(unittest.TestCase):
             self.assertEqual(statuses["redis"], "FAIL")
 
     def test_api_shape_probe_requires_expected_keys(self):
+        _skip_unless_postgres_and_redis_reachable(self)
         manifest = load_manifest()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

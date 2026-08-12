@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from psycopg_pool import ConnectionPool
 
-from postgres_fixture import test_dsn
+from postgres_fixture import probe_reachable, test_dsn
 
 from xingestion.migrations import PostgresMigrationRunner
 from xingestion.tasks import PostgresTaskLedger
@@ -19,6 +19,7 @@ EXPECTED_MIGRATIONS = ("001",)
 class PostgresMigrationRunnerTests(unittest.TestCase):
     def setUp(self):
         try:
+            probe_reachable(test_dsn())
             # max_size=1 makes connection reuse across consumers deterministic,
             # which matters for test_status_survives_a_pool_connection_previously_used_with_dict_row.
             self.pool = ConnectionPool(test_dsn(), min_size=1, max_size=1, open=True, timeout=3)
