@@ -8,11 +8,14 @@ The original GraphQL scripts and local research artifacts now live under `playgr
 - `src/xingestion/xprotocol/`: internal X protocol research/runtime models and validated protocol release bindings.
 - `protocol_releases/`: approved or candidate protocol release manifests.
 - `docs/WORKLOG.md`: incremental implementation ledger.
+- `docs/TASKS.md`: living checklist of remaining work, with completed items struck through.
 - `docs/CURRENT_STAGE.md`: current implementation stage versus `FINAL_PRODUCT_SPEC.md`.
 
 ## Current Checkpoint
 
 The current checkpoint defines immutable protocol revision models, a live `SEARCH_TWEETS` capability path, raw evidence persistence, a one-attempt transport boundary, a production-facing capability planner, a durable SQLite task ledger, transactional outbox events, worker leases with renewal, and a local worker dispatcher.
+
+Track the remaining implementation work in [docs/TASKS.md](docs/TASKS.md). That file uses markdown checkboxes and strikethrough so completed items can be marked as `- [x] ~~done item~~` while open items stay unchecked.
 
 ## Verify
 
