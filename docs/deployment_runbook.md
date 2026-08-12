@@ -125,6 +125,20 @@ Wait until both services report `healthy` before continuing.
 
 ## Start
 
+For local development, the launcher starts the whole stack in one command:
+
+```powershell
+.\run_all.ps1
+```
+
+It starts Docker Compose infrastructure, waits for Postgres/Redis health, applies Postgres and SQLite migrations, starts the web frontend/backend, dispatcher, and worker, writes logs under `data\run_all\logs`, and runs live preflight. Stop the Python processes with:
+
+```powershell
+.\run_all.ps1 -Stop
+```
+
+The manual production-equivalent process layout is:
+
 Apply migrations to both stores:
 
 ```powershell

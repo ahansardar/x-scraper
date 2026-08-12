@@ -136,6 +136,26 @@ jobs:
             throw "Frontend does not expose release promotion audit retention"
           }
 
+      - name: Check stack launcher script
+        shell: pwsh
+        run: |
+          if (-not (Test-Path .\run_all.ps1)) {
+            throw "Missing run_all.ps1 launcher"
+          }
+          $null = [scriptblock]::Create((Get-Content -Raw .\run_all.ps1))
+          if (-not (Select-String -Path .\run_all.ps1 -Pattern "compose.*up" -Quiet)) {
+            throw "Launcher must start Docker Compose infrastructure"
+          }
+          if (-not (Select-String -Path .\run_all.ps1 -Pattern "run_dispatcher.py" -Quiet)) {
+            throw "Launcher must start the Redis Streams dispatcher"
+          }
+          if (-not (Select-String -Path .\run_all.ps1 -Pattern "run_worker.py" -Quiet)) {
+            throw "Launcher must start the worker"
+          }
+          if (-not (Select-String -Path .\run_all.ps1 -Pattern "run_app.py" -Quiet)) {
+            throw "Launcher must start the web frontend/backend"
+          }
+
       - name: Check deployment runbook
         shell: pwsh
         run: |

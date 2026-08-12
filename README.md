@@ -30,6 +30,24 @@ GitHub Actions runs these checks on Windows for Python 3.11 and 3.12, plus a ded
 
 Docker Compose is used only to start local Postgres and Redis infrastructure. The application itself still runs as plain Python processes: web app, dispatcher, and worker.
 
+Preferred local launcher:
+
+```powershell
+.\run_all.ps1
+```
+
+That command starts Docker Compose infrastructure, waits for Postgres/Redis health, runs both migration sets, starts the web frontend/backend, dispatcher, and worker, then runs live preflight against the web API. It writes process logs under `data/run_all/logs` and records process IDs in `data/run_all/pids.json`.
+
+Stop the Python processes started by the launcher:
+
+```powershell
+.\run_all.ps1 -Stop
+```
+
+Use `.\run_all.ps1 -Visible` if you want separate visible PowerShell windows for the web, dispatcher, and worker logs. Use `.\run_all.ps1 -SkipDocker` only when Postgres and Redis are already running.
+
+Manual equivalent:
+
 Terminal 0, infrastructure:
 
 ```powershell
