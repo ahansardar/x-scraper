@@ -245,7 +245,7 @@ def support_export_dir(config: AppConfig) -> Path:
 
 
 def _support_export_path(config: AppConfig, name: str) -> Path:
-    if Path(name).name != name:
+    if "/" in name or "\\" in name or Path(name).name != name:
         raise ValueError("Support export name must be a file name")
     if not name.startswith("failed-task-") or not name.endswith(".json"):
         raise ValueError("Support export name must match failed-task-*.json")

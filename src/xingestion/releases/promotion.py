@@ -377,7 +377,7 @@ def _default_audit_output_path(config: AppConfig, *, release_id: str, action: st
 
 
 def _promotion_audit_path(config: AppConfig, name: str) -> Path:
-    if Path(name).name != name:
+    if "/" in name or "\\" in name or Path(name).name != name:
         raise ValueError("Promotion audit name must be a file name")
     if not name.startswith("promotion-") or not name.endswith(".json"):
         raise ValueError("Promotion audit name must match promotion-*.json")
