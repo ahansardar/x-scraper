@@ -1625,3 +1625,25 @@ Verified:
 Next:
 
 - Add an explicit operator command/API for approving a newly staged release when more than one manifest exists.
+
+## 2026-08-12 - Checkpoint 78: Operator Release Approval Controls
+
+Implemented:
+
+- Added release inventory objects that combine staged manifests, approved-release pointer state, release health, capability bindings, and recipe revisions.
+- Added `run_releases.py` for no-Docker release listing, current approved release inspection, and explicit release approval.
+- Added `GET /api/releases` and `POST /api/releases/approve` to the trusted console API.
+- Reloaded the live planner and local worker after approval so future tasks bind to the exact newly approved manifest without a server restart.
+- Added a frontend Protocol Governance panel for release inventory and approval actions.
+- Documented the release approval flow in README, the deployment runbook, and the current-stage report.
+
+Verified:
+
+- `python -m unittest discover -s tests -p "test_release_store.py"` passed 6 tests.
+- `python -m unittest discover -s tests -p "test_northbound_api.py"` passed 25 tests.
+- `python -m unittest discover -s tests -p "test_frontend_copy.py"` passed 3 tests.
+- `node --check src\xingestion\web\static\app.js` passed.
+
+Next:
+
+- Add promotion safety checks that require passing fixture/raw/capture-replay validation before approving a staged release.

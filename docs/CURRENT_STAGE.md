@@ -53,6 +53,7 @@ Implemented:
 - UI shortcut `POST /api/search-tweets`.
 - Capability planner boundary.
 - Approved protocol release pointer in SQLite, resolved to one exact manifest from `protocol_releases/`.
+- Operator release inventory and approval through `run_releases.py`, `GET /api/releases`, and `POST /api/releases/approve`.
 - Backpressure before task creation through `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`.
 
 Spec relevance:
@@ -136,6 +137,7 @@ Implemented:
 - Current release health storage.
 - Release risk recommendations.
 - Quarantine and activate controls.
+- Approval controls that reload the live planner/worker for future tasks.
 - Protocol telemetry attempts.
 - Runtime error classification by class, severity, scope, retryability, and operator action.
 - Investigation packages for failed tasks.

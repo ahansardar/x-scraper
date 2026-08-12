@@ -141,6 +141,7 @@ GET /api/migrations
 GET /api/telemetry
 GET /api/network-health
 GET /api/sessions
+GET /api/releases
 GET /api/releases/current
 GET /api/releases/current/risk
 ```
@@ -218,6 +219,23 @@ Reactivate it after investigation:
 ```text
 POST /api/releases/current/activate
 ```
+
+List and approve staged protocol manifests:
+
+```powershell
+python .\run_releases.py --json
+python .\run_releases.py current --json
+python .\run_releases.py approve xrev-search-tweets-2026-08-10-candidate-1 --reason operator_approved --json
+```
+
+Equivalent trusted-console routes:
+
+```text
+GET /api/releases
+POST /api/releases/approve
+```
+
+Release approval updates `approved_protocol_release` in SQLite and reloads the live process planner/worker so new tasks use the exact approved manifest. With more than one manifest in `protocol_releases`, startup requires this pointer to be present and resolvable.
 
 Review advisory release-risk recommendations:
 
@@ -354,7 +372,7 @@ Run locally:
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 ```
 
 After starting web and worker:

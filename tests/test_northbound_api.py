@@ -759,6 +759,60 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(risk["action"], "QUARANTINE_RECOMMENDED")
             self.assertEqual(risk["severity"], "HIGH")
 
+    def test_releases_inventory_route_lists_manifest_approval(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            store.approve_release(manifest.release_id, reason="test_approved")
+            live_server.STATE = SimpleNamespace(
+                manifest=manifest,
+                release_store=store,
+            )
+            handler = FakeHandler()
+            handler.path = "/api/releases"
+
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["approved_release"]["release_id"], manifest.release_id)
+            self.assertEqual(payload["active_release_id"], manifest.release_id)
+            self.assertGreaterEqual(len(payload["releases"]), 1)
+            self.assertTrue(payload["releases"][0]["approved"])
+
+    def test_approve_release_route_updates_pointer_and_reloads_state(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+
+        class ReloadingState(SimpleNamespace):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.reloads = 0
+
+            def reload_protocol_release(self):
+                self.reloads += 1
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ReleaseStore(Path(temp_dir) / "tasks.sqlite3")
+            live_server.STATE = ReloadingState(
+                manifest=manifest,
+                release_store=store,
+                manifest_path=ROOT / "protocol_releases" / "search_tweets.candidate.json",
+            )
+            handler = HeaderBackedHandler(headers={})
+
+            payload = handler._approve_release(
+                {"release_id": manifest.release_id, "reason": "test_route"}
+            )
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["approved_release"]["release_id"], manifest.release_id)
+            self.assertEqual(payload["approved_release"]["reason"], "test_route")
+            self.assertEqual(store.approved_release_id(), manifest.release_id)
+            self.assertEqual(live_server.STATE.reloads, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

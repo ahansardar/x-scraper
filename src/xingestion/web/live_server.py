@@ -37,7 +37,12 @@ from xingestion.protocol_validation import (
     write_protocol_validation_report,
 )
 from xingestion.sessions import SessionHealth, SessionStore, import_session_registry
-from xingestion.releases import ReleaseHealth, ReleaseStore, resolve_approved_manifest
+from xingestion.releases import (
+    ReleaseHealth,
+    ReleaseStore,
+    list_manifest_releases,
+    resolve_approved_manifest,
+)
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.secrets import (
     build_secret_provider,
@@ -84,13 +89,6 @@ class LiveAppState:
         self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
         self.canonical_store = CanonicalStore(self.config.sqlite_path)
         self.release_store = ReleaseStore(self.config.sqlite_path)
-        self.resolved_release = resolve_approved_manifest(
-            release_store=self.release_store,
-            manifest_dir=MANIFEST_DIR,
-        )
-        self.manifest = self.resolved_release.manifest
-        self.manifest_path = self.resolved_release.manifest_path
-        self.planner = CapabilityPlanner(self.manifest)
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
         self.transport = UrllibJsonTransport()
         self.auth = resolve_web_session_auth(self.config)
@@ -98,6 +96,7 @@ class LiveAppState:
         self.session_store = SessionStore(self.config.sqlite_path)
         self.telemetry_store = ProtocolTelemetryStore(self.config.sqlite_path)
         self.reprocess_jobs = ReprocessJobStore(self.config.sqlite_path)
+        self.reload_protocol_release()
         self.session_store.upsert_session(
             session_id=self.config.default_session_id,
             account_label=self.config.default_account_label,
@@ -114,6 +113,14 @@ class LiveAppState:
                 store=self.session_store,
                 path=self.config.session_registry_path,
             )
+    def reload_protocol_release(self) -> None:
+        self.resolved_release = resolve_approved_manifest(
+            release_store=self.release_store,
+            manifest_dir=MANIFEST_DIR,
+        )
+        self.manifest = self.resolved_release.manifest
+        self.manifest_path = self.resolved_release.manifest_path
+        self.planner = CapabilityPlanner(self.manifest)
         self.worker = LocalWorker(
             ledger=self.ledger,
             manifest=self.manifest,
@@ -157,6 +164,8 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             return self._json({"telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary())})
         if parsed.path == "/api/network-health":
             return self._json(_network_health_dict())
+        if parsed.path == "/api/releases":
+            return self._json(_releases_inventory_dict())
         if parsed.path == "/api/releases/current":
             return self._json({"release": _release_dict(STATE.release_store.ensure_release(STATE.manifest.release_id))})
         if parsed.path == "/api/releases/current/risk":
@@ -309,6 +318,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._set_release_health(ReleaseHealth.ACTIVE, "operator_activate")
+        if parsed.path == "/api/releases/approve":
+            if not self._require_admin():
+                return
+            return self._approve_release(self._read_json())
         if parsed.path == "/api/reprocess/jobs":
             if not self._require_admin():
                 return
@@ -549,6 +562,32 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             reason=reason,
         )
         return self._json({"release": _release_dict(release)}, status=200)
+
+    def _approve_release(self, body):
+        release_id = str(body.get("release_id") or "").strip()
+        reason = str(body.get("reason") or "operator_approved").strip()
+        if not release_id:
+            return self._json({"message": "release_id is required"}, status=400)
+        candidates = {
+            candidate.release_id: candidate
+            for candidate in list_manifest_releases(
+                release_store=STATE.release_store,
+                manifest_dir=MANIFEST_DIR,
+            )
+        }
+        if release_id not in candidates:
+            return self._json({"message": f"Release manifest not found: {release_id}"}, status=404)
+        release = STATE.release_store.approve_release(release_id, reason=reason)
+        STATE.reload_protocol_release()
+        return self._json(
+            {
+                "approved_release": _approved_release_dict(STATE.release_store.approved_release()),
+                "release": _release_dict(release),
+                "manifest_path": str(STATE.manifest_path),
+                "releases": _releases_inventory_dict()["releases"],
+            },
+            status=200,
+        )
 
     def _restore_session(self, session_id):
         try:
@@ -832,6 +871,20 @@ def _storage_dict():
     }
 
 
+def _releases_inventory_dict():
+    approval = STATE.release_store.approved_release()
+    candidates = list_manifest_releases(
+        release_store=STATE.release_store,
+        manifest_dir=MANIFEST_DIR,
+    )
+    return {
+        "approved_release": _approved_release_dict(approval),
+        "active_release_id": STATE.manifest.release_id,
+        "manifest_dir": str(MANIFEST_DIR),
+        "releases": [candidate.public_dict() for candidate in candidates],
+    }
+
+
 def _startup_dict():
     result = DeploymentPreflight(
         config=STATE.config,
@@ -1003,6 +1056,16 @@ def _release_dict(release):
         "reason": release.reason,
         "updated_at": release.updated_at,
         "execution_allowed": release.health not in {ReleaseHealth.QUARANTINED, ReleaseHealth.RETIRED},
+    }
+
+
+def _approved_release_dict(approval):
+    if approval is None:
+        return None
+    return {
+        "release_id": approval.release_id,
+        "reason": approval.reason,
+        "updated_at": approval.updated_at,
     }
 
 

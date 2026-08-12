@@ -200,7 +200,7 @@
               <span class="mark accent"></span>
               <div>
                 <p class="section-kicker">Recovery</p>
-                <h2>Outbox</h2>
+                <h2>Outbox Recovery</h2>
               </div>
               <div class="title-actions">
                 <button id="refreshOutbox" class="secondary inline-action" type="button">Refresh</button>
@@ -282,6 +282,31 @@
         </div>
 
         <div class="section-band governance-band">
+          <section class="panel release-panel">
+            <div class="section-title">
+              <span class="mark success"></span>
+              <div>
+                <p class="section-kicker">Release</p>
+                <h2>Protocol Governance</h2>
+              </div>
+            </div>
+            <div id="releaseSummary" class="summary">Loading release inventory...</div>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Release</th>
+                    <th>Status</th>
+                    <th>Health</th>
+                    <th>Recipe</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="releaseInventory"></tbody>
+              </table>
+            </div>
+          </section>
+
           <section class="panel ops-panel">
             <div class="section-title panel-action-title">
               <span class="mark neutral"></span>

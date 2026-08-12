@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 
       - name: Validate protocol parser fixtures
         shell: pwsh
@@ -116,6 +116,12 @@ jobs:
           if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/api/sessions/import" -Quiet)) {
             throw "Frontend does not expose session registry import"
           }
+          if (-not (Select-String -Path .\src\xingestion\web\static\index.html -Pattern "Protocol Governance" -Quiet)) {
+            throw "Frontend does not expose protocol release governance"
+          }
+          if (-not (Select-String -Path .\src\xingestion\web\static\app.js -Pattern "/api/releases/approve" -Quiet)) {
+            throw "Frontend does not expose release approval"
+          }
 
       - name: Check deployment runbook
         shell: pwsh
@@ -179,4 +185,10 @@ jobs:
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_sessions.py" -Quiet)) {
             throw "Deployment runbook must document session CLI"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_releases.py" -Quiet)) {
+            throw "Deployment runbook must document release CLI"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "/api/releases/approve" -Quiet)) {
+            throw "Deployment runbook must document release approval"
           }

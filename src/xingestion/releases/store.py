@@ -25,6 +25,13 @@ class ReleaseRecord:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class ApprovedReleaseRecord:
+    release_id: str
+    reason: str
+    updated_at: str
+
+
 class ReleaseStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
@@ -111,11 +118,21 @@ class ReleaseStore:
         return release
 
     def approved_release_id(self) -> str | None:
+        record = self.approved_release()
+        return record.release_id if record else None
+
+    def approved_release(self) -> ApprovedReleaseRecord | None:
         with closing(self._connect()) as conn:
             row = conn.execute(
-                "SELECT release_id FROM approved_protocol_release WHERE id = 'current'"
+                "SELECT release_id, reason, updated_at FROM approved_protocol_release WHERE id = 'current'"
             ).fetchone()
-        return str(row["release_id"]) if row else None
+        if row is None:
+            return None
+        return ApprovedReleaseRecord(
+            release_id=str(row["release_id"]),
+            reason=str(row["reason"]),
+            updated_at=str(row["updated_at"]),
+        )
 
     def _initialize(self) -> None:
         with closing(self._connect()) as conn:

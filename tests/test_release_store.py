@@ -7,7 +7,12 @@ import json
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from xingestion.releases import ReleaseHealth, ReleaseStore, resolve_approved_manifest
+from xingestion.releases import (
+    ReleaseHealth,
+    ReleaseStore,
+    list_manifest_releases,
+    resolve_approved_manifest,
+)
 
 
 class ReleaseStoreTests(unittest.TestCase):
@@ -81,6 +86,34 @@ class ReleaseStoreTests(unittest.TestCase):
                     release_store=store,
                     manifest_dir=manifest_dir,
                 )
+
+    def test_manifest_inventory_marks_approved_release_and_health(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_dir = root / "manifests"
+            manifest_dir.mkdir()
+            _write_manifest(manifest_dir / "one.json", release_id="release-1")
+            _write_manifest(manifest_dir / "two.json", release_id="release-2")
+            store = ReleaseStore(root / "releases.sqlite3")
+            store.approve_release("release-2", reason="operator_approved")
+            store.set_health(
+                "release-1",
+                health=ReleaseHealth.QUARANTINED,
+                reason="stale",
+            )
+
+            inventory = list_manifest_releases(
+                release_store=store,
+                manifest_dir=manifest_dir,
+            )
+
+            by_id = {item.release_id: item for item in inventory}
+            self.assertFalse(by_id["release-1"].approved)
+            self.assertEqual(by_id["release-1"].health, ReleaseHealth.QUARANTINED)
+            self.assertTrue(by_id["release-2"].approved)
+            self.assertEqual(by_id["release-2"].approval_reason, "operator_approved")
+            self.assertEqual(by_id["release-2"].binding_count, 1)
+            self.assertEqual(by_id["release-2"].capabilities, ("SEARCH_TWEETS",))
 
 
 def _write_manifest(path, *, release_id):

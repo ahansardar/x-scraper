@@ -25,6 +25,8 @@ const taskActionsBody = document.querySelector("#taskActions");
 const supportExportsSummary = document.querySelector("#supportExportsSummary");
 const supportExportsBody = document.querySelector("#supportExports");
 const runSupportExportRetention = document.querySelector("#runSupportExportRetention");
+const releaseSummary = document.querySelector("#releaseSummary");
+const releaseInventory = document.querySelector("#releaseInventory");
 
 function escapeHtml(value) {
   const text = value === null || value === undefined ? "" : String(value);
@@ -227,6 +229,31 @@ async function loadMetrics() {
     <div><strong>${data.auth_ready ? "ready" : "missing"}</strong><span>auth state</span></div>
     <div><strong>${data.storage.secret_backend.configured ? escapeHtml(data.storage.secret_backend.provider) : "check"}</strong><span>secret backend</span></div>
   `;
+}
+
+async function loadReleases() {
+  const data = await getJson("/api/releases");
+  const approved = data.approved_release?.release_id || "none";
+  releaseSummary.innerHTML = `
+    Approved release <strong>${escapeHtml(approved)}</strong>
+    from <code>${escapeHtml(shortPath(data.manifest_dir))}</code>.
+  `;
+  if (!data.releases.length) {
+    releaseInventory.innerHTML = `<tr><td colspan="5">No protocol release manifests found.</td></tr>`;
+    return;
+  }
+  releaseInventory.innerHTML = data.releases.map((release) => `
+    <tr>
+      <td>
+        <code>${escapeHtml(release.release_id)}</code>
+        ${release.approved ? `<br><span class="state">APPROVED</span>` : ""}
+      </td>
+      <td>${escapeHtml(release.manifest_status)}</td>
+      <td><span class="${releaseHealthClass(release.health)}">${escapeHtml(release.health)}</span></td>
+      <td><code>${escapeHtml((release.recipe_revision_ids || []).join(", "))}</code></td>
+      <td>${release.approved ? "" : `<button class="small-button" data-approve-release="${escapeHtml(release.release_id)}">Approve</button>`}</td>
+    </tr>
+  `).join("");
 }
 
 async function loadSessions() {
@@ -447,6 +474,16 @@ function formatViews(value) {
   return value === null || value === undefined || value === ""
     ? "views unavailable"
     : `${escapeHtml(value)} views`;
+}
+
+function releaseHealthClass(health) {
+  if (health === "ACTIVE") {
+    return "state";
+  }
+  if (health === "DEGRADED" || health === "STALE") {
+    return "state warn";
+  }
+  return "state bad";
 }
 
 function formatDateTime(value) {
@@ -682,6 +719,37 @@ sessions.addEventListener("click", async (event) => {
   }
 });
 
+releaseInventory.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-approve-release]");
+  if (!button) {
+    return;
+  }
+
+  button.disabled = true;
+  releaseSummary.textContent = "Approving protocol release...";
+  try {
+    const data = await getJson("/api/releases/approve", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({
+        release_id: button.dataset.approveRelease,
+        reason: "operator_console_approved"
+      })
+    });
+    releaseSummary.innerHTML = `
+      Approved <strong>${escapeHtml(data.approved_release.release_id)}</strong>
+      from <code>${escapeHtml(shortPath(data.manifest_path))}</code>.
+    `;
+    await loadHealth();
+    await loadReleases();
+    await loadMetrics();
+  } catch (error) {
+    releaseSummary.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 importSessions.addEventListener("click", async () => {
   importSessions.disabled = true;
   summary.textContent = "Importing session registry...";
@@ -880,6 +948,10 @@ loadProtocolValidationReports().catch((error) => {
 });
 loadMetrics().catch((error) => {
   metrics.innerHTML = `<div><strong>error</strong><span>${escapeHtml(error.message)}</span></div>`;
+});
+loadReleases().catch((error) => {
+  releaseSummary.textContent = error.message;
+  releaseInventory.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
 });
 loadSessions().catch((error) => {
   sessions.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message)}</td></tr>`;

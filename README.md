@@ -18,7 +18,7 @@ The current checkpoint defines immutable protocol revision models, a live `SEARC
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py
+python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 ```
 
 GitHub Actions also runs these checks on Windows for Python 3.11 and 3.12.
@@ -121,6 +121,16 @@ Storage locations:
 
 The worker resolves `approved_protocol_release.release_id` from the SQLite task database and loads the exact matching manifest from `protocol_releases/`. If a checkout contains exactly one manifest and no approved pointer yet exists, startup bootstraps that single release as approved. With multiple manifests, startup fails until an approved release ID is set.
 
+Inspect and approve staged protocol manifests without editing SQLite directly:
+
+```powershell
+python .\run_releases.py --json
+python .\run_releases.py current --json
+python .\run_releases.py approve xrev-search-tweets-2026-08-10-candidate-1 --reason operator_approved --json
+```
+
+The live console exposes the same inventory through `GET /api/releases` and can approve a staged manifest through `POST /api/releases/approve`. Approval reloads the in-process planner and local worker so new tasks bind to the approved manifest immediately.
+
 Secret providers:
 
 - `XINGESTION_SECRET_PROVIDER=env` resolves `env:X_AUTH_TOKEN,X_CT0,X_BEARER` from environment variables. This is the local fallback.
@@ -214,8 +224,10 @@ Protocol release health is operator-controlled:
 
 ```text
 GET /api/releases/current
+GET /api/releases
 POST /api/releases/current/quarantine
 POST /api/releases/current/activate
+POST /api/releases/approve
 ```
 
 A quarantined release is not executed by the worker; queued work is moved to `DEAD_LETTER` with a `PROTOCOL_RELEASE_BLOCKED` error.
