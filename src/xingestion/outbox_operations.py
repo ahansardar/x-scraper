@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, UTC
 from typing import Protocol
 
-from xingestion.tasks import CapabilityTask, OutboxEvent, SQLiteTaskLedger
+from xingestion.tasks import CapabilityTask, OutboxEvent, TaskLedger
 from xingestion.workers import WorkerResult
 
 
@@ -57,7 +57,7 @@ class ProcessOneWorker(Protocol):
 
 
 def list_outbox_queue(
-    ledger: SQLiteTaskLedger,
+    ledger: TaskLedger,
     *,
     limit: int = 25,
     now: str | None = None,
@@ -82,7 +82,7 @@ def list_outbox_queue(
 
 def process_outbox(
     *,
-    ledger: SQLiteTaskLedger,
+    ledger: TaskLedger,
     worker: ProcessOneWorker,
     limit: int,
 ) -> OutboxProcessResult:

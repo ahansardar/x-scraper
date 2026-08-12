@@ -8,10 +8,12 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from psycopg_pool import ConnectionPool
+
 from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
-from xingestion.tasks import SQLiteTaskLedger
+from xingestion.tasks import PostgresTaskLedger
 from xingestion.workers.worker_app import build_worker
 from xingestion.xprotocol.runtime import load_env_file
 
@@ -22,14 +24,17 @@ def main(argv=None):
     args = _parser().parse_args(argv)
     config = load_app_config(ROOT, argv)
     configure_logging(config=config, component="outbox", console=False)
-    ledger = SQLiteTaskLedger(config.sqlite_path)
 
     if args.process:
         worker = build_worker(config=config, root=ROOT)
-        result = process_outbox(ledger=ledger, worker=worker, limit=args.limit)
+        result = process_outbox(ledger=worker.ledger, worker=worker, limit=args.limit)
         payload = result.public_dict()
     else:
-        payload = list_outbox_queue(ledger, limit=args.limit)
+        pool = ConnectionPool(config.postgres_dsn, min_size=1, max_size=1, open=True)
+        try:
+            payload = list_outbox_queue(PostgresTaskLedger(pool), limit=args.limit)
+        finally:
+            pool.close()
 
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))

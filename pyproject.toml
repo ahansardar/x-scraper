@@ -3,6 +3,10 @@ name = "x-protocol-ingestion"
 version = "0.1.0"
 description = "Capability-driven X protocol ingestion foundation."
 requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary,pool]>=3.2,<4",
+    "redis>=5.0,<6",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

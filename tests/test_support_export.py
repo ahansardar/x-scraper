@@ -8,6 +8,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from postgres_fixture import make_postgres_ledger
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.config import AppConfig
@@ -21,7 +24,7 @@ from xingestion.support_export import (
     support_export_file,
     write_failed_task_export,
 )
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import TaskLedger, TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
@@ -33,13 +36,22 @@ def load_manifest():
 
 
 class SupportExportTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.ledger = make_postgres_ledger()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Postgres unavailable: {exc}")
+
+    def tearDown(self):
+        self.ledger.pool.close()
+
     def test_write_failed_task_support_export(self):
         manifest = load_manifest()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             config = _config(root)
             config.data_dir.mkdir(parents=True, exist_ok=True)
-            ledger = SQLiteTaskLedger(config.sqlite_path)
+            ledger = self.ledger
             sessions = SessionStore(config.sqlite_path)
             releases = ReleaseStore(config.sqlite_path)
             telemetry = ProtocolTelemetryStore(config.sqlite_path)
@@ -92,7 +104,7 @@ class SupportExportTests(unittest.TestCase):
         manifest = load_manifest()
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "tasks.sqlite3"
-            ledger = SQLiteTaskLedger(db_path)
+            ledger = self.ledger
             request = CapabilityRequest(
                 capability_id=CapabilityId.SEARCH_TWEETS,
                 contract_version=1,
@@ -122,7 +134,7 @@ class SupportExportTests(unittest.TestCase):
             root = Path(temp_dir)
             config = _config(root)
             config.data_dir.mkdir(parents=True, exist_ok=True)
-            ledger = SQLiteTaskLedger(config.sqlite_path)
+            ledger = self.ledger
             failed = _failed_task(ledger, manifest)
             export_dir = config.data_dir / "support_exports"
             old_path = export_dir / "failed-task-old.json"
@@ -164,7 +176,7 @@ class SupportExportTests(unittest.TestCase):
             root = Path(temp_dir)
             config = _config(root)
             config.data_dir.mkdir(parents=True, exist_ok=True)
-            ledger = SQLiteTaskLedger(config.sqlite_path)
+            ledger = self.ledger
             failed = _failed_task(ledger, manifest)
             result = write_failed_task_export(
                 task_id=failed.task_id,
@@ -184,7 +196,7 @@ class SupportExportTests(unittest.TestCase):
                 read_support_export(config, "health-report.json")
 
 
-def _failed_task(ledger: SQLiteTaskLedger, manifest: ProtocolReleaseManifest):
+def _failed_task(ledger: TaskLedger, manifest: ProtocolReleaseManifest):
     request = CapabilityRequest(
         capability_id=CapabilityId.SEARCH_TWEETS,
         contract_version=1,
@@ -227,6 +239,16 @@ def _config(root: Path) -> AppConfig:
         session_registry_path=None,
         require_migrations=True,
         max_active_tasks_per_capability=100,
+        postgres_dsn="postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion",
+        postgres_pool_min_size=1,
+        postgres_pool_max_size=10,
+        redis_url="redis://127.0.0.1:6379/0",
+        redis_stream_key="xingestion:capability-tasks",
+        redis_consumer_group="capability-workers",
+        redis_consumer_name="",
+        dispatcher_poll_interval_seconds=1.0,
+        worker_lease_heartbeat_seconds=100,
+        redis_claim_min_idle_ms=300000,
     )
 
 

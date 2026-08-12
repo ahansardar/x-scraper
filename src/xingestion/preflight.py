@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from urllib import request
 
+import psycopg
+import redis
+
 from xingestion.config import AppConfig
 from xingestion.investigation import build_release_risk_recommendation
 from xingestion.logging_config import load_logging_settings
@@ -52,6 +55,8 @@ class DeploymentPreflight:
     def run(self) -> PreflightResult:
         checks = [
             self._check_migrations(),
+            self._check_postgres(),
+            self._check_redis(),
             self._check_storage(),
             self._check_startup_directories(),
             self._check_secret_backend(),
@@ -78,6 +83,29 @@ class DeploymentPreflight:
             "FAIL",
             f"pending versions={','.join(status.pending_versions)}; run run_migrations.py",
         )
+
+    def _check_postgres(self) -> PreflightCheck:
+        try:
+            with psycopg.connect(self.config.postgres_dsn, connect_timeout=5) as conn:
+                conn.execute("SELECT 1")
+        except Exception as exc:
+            return PreflightCheck("postgres", "FAIL", f"Postgres unreachable: {exc}")
+        return PreflightCheck(
+            "postgres",
+            "PASS",
+            f"connected dsn={_redact_dsn(self.config.postgres_dsn)}",
+        )
+
+    def _check_redis(self) -> PreflightCheck:
+        try:
+            client = redis.Redis.from_url(self.config.redis_url, socket_connect_timeout=5)
+            try:
+                client.ping()
+            finally:
+                client.close()
+        except Exception as exc:
+            return PreflightCheck("redis", "FAIL", f"Redis unreachable: {exc}")
+        return PreflightCheck("redis", "PASS", f"connected url={self.config.redis_url}")
 
     def _check_storage(self) -> PreflightCheck:
         try:
@@ -229,6 +257,15 @@ class DeploymentPreflight:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             raise RuntimeError(f"GET {url} failed: {exc}") from exc
+
+
+def _redact_dsn(dsn: str) -> str:
+    if "@" not in dsn or "://" not in dsn:
+        return dsn
+    scheme, rest = dsn.split("://", 1)
+    credentials, _, host_part = rest.partition("@")
+    user = credentials.split(":", 1)[0] if credentials else ""
+    return f"{scheme}://{user}:***@{host_part}"
 
 
 def _session_available(session: SessionRecord) -> bool:

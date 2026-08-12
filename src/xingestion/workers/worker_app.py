@@ -5,6 +5,9 @@ import logging
 import sys
 import time
 
+import redis
+from psycopg_pool import ConnectionPool
+
 from xingestion.config import load_app_config
 from xingestion.canonical import CanonicalStore
 from xingestion.logging_config import configure_logging
@@ -12,7 +15,7 @@ from xingestion.releases import ReleaseStore, resolve_approved_manifest
 from xingestion.secrets import build_secret_provider, resolve_web_session_auth
 from xingestion.sessions import SessionHealth, SessionStore, import_session_registry
 from xingestion.telemetry import ProtocolTelemetryStore
-from xingestion.tasks import SQLiteTaskLedger
+from xingestion.tasks import PostgresTaskLedger
 from xingestion.workers import LocalWorker
 from xingestion.xprotocol.evidence import FileRawEvidenceSink
 from xingestion.xprotocol.runtime import UrllibJsonTransport, load_env_file
@@ -41,9 +44,16 @@ def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
         release_store=release_store,
         manifest_dir=root / "protocol_releases",
     )
+    pool = ConnectionPool(
+        config.postgres_dsn,
+        min_size=config.postgres_pool_min_size,
+        max_size=config.postgres_pool_max_size,
+        open=True,
+    )
+    redis_client = redis.Redis.from_url(config.redis_url, decode_responses=True)
     return LocalWorker(
         release_store=release_store,
-        ledger=SQLiteTaskLedger(config.sqlite_path),
+        ledger=PostgresTaskLedger(pool),
         manifest=resolved_release.manifest,
         auth=auth,
         transport=UrllibJsonTransport(),
@@ -53,6 +63,11 @@ def build_worker(*, config, root: Path = ROOT) -> LocalWorker:
         telemetry_store=ProtocolTelemetryStore(config.sqlite_path),
         secret_provider=secret_provider,
         required_network_context=config.worker_network_context or None,
+        redis_client=redis_client,
+        redis_stream_key=config.redis_stream_key,
+        redis_consumer_group=config.redis_consumer_group,
+        redis_consumer_name=config.redis_consumer_name or None,
+        redis_claim_min_idle_ms=config.redis_claim_min_idle_ms,
     )
 
 
@@ -68,14 +83,16 @@ def main(argv=None):
 
     once = "--once" in argv
     sleep_seconds = _float_arg(argv, "--sleep", 2.0)
-    print(f"X ingestion worker using SQLite: {config.sqlite_path}")
+    print(f"X ingestion worker using Postgres: {config.postgres_dsn}")
+    print(f"Redis stream: {config.redis_stream_key} ({config.redis_url})")
     print(f"Raw evidence directory: {config.raw_evidence_dir}")
     if config.worker_network_context:
         print(f"Worker network context: {config.worker_network_context}")
     print(f"Log file: {logging_settings.log_file}")
     LOGGER.info(
-        "worker starting sqlite=%s raw_evidence=%s network_context=%s once=%s sleep_seconds=%s",
-        config.sqlite_path,
+        "worker starting postgres=%s redis=%s raw_evidence=%s network_context=%s once=%s sleep_seconds=%s",
+        config.postgres_dsn,
+        config.redis_url,
         config.raw_evidence_dir,
         config.worker_network_context or "any",
         once,
@@ -92,8 +109,8 @@ def main(argv=None):
             print(message)
             LOGGER.info(message)
         elif once:
-            print("no pending outbox events")
-            LOGGER.info("no pending outbox events")
+            print("no pending deliveries")
+            LOGGER.info("no pending deliveries")
             return 0
 
         if once:

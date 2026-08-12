@@ -9,7 +9,7 @@ from contextlib import closing
 from uuid import uuid4
 
 from xingestion.canonical import CanonicalStore
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import TaskLedger, TaskState
 from xingestion.xprotocol.evidence import RawEvidenceRef
 from xingestion.xprotocol.runtime import parse_search_tweets_page
 
@@ -44,7 +44,7 @@ class ReprocessJobStore:
         self,
         *,
         release_id: str,
-        ledger: SQLiteTaskLedger,
+        ledger: TaskLedger,
         canonical_store: CanonicalStore,
         limit: int = 100,
     ) -> ReprocessJob:
@@ -200,7 +200,7 @@ class ReprocessJobStore:
 def reprocess_task_evidence(
     *,
     task_id: str,
-    ledger: SQLiteTaskLedger,
+    ledger: TaskLedger,
     canonical_store: CanonicalStore,
 ) -> ReprocessResult:
     task = ledger.get_task(task_id)
@@ -244,25 +244,12 @@ def reprocess_task_evidence(
 
 
 def _completed_task_ids_for_release(
-    ledger: SQLiteTaskLedger,
+    ledger: TaskLedger,
     *,
     release_id: str,
     limit: int,
 ) -> tuple[str, ...]:
-    with closing(ledger._connect()) as conn:
-        rows = conn.execute(
-            """
-            SELECT task_id
-            FROM capability_tasks
-            WHERE state = ?
-              AND json_extract(plan_json, '$.release_id') = ?
-              AND result_json IS NOT NULL
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (TaskState.DONE.value, release_id, limit),
-        ).fetchall()
-    return tuple(row["task_id"] for row in rows)
+    return ledger.list_done_task_ids_for_release(release_id=release_id, limit=limit)
 
 
 def _job_from_row(row: sqlite3.Row) -> ReprocessJob:

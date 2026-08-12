@@ -5,10 +5,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from postgres_fixture import make_postgres_ledger
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import TaskState
 from xingestion.workers import WorkerResult
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
@@ -57,9 +60,18 @@ class StubWorker:
 
 
 class OutboxOperationsTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.ledger = make_postgres_ledger()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Postgres unavailable: {exc}")
+
+    def tearDown(self):
+        self.ledger.pool.close()
+
     def test_list_outbox_queue_includes_task_state_and_age(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             task = make_task(ledger)
 
             payload = list_outbox_queue(
@@ -75,7 +87,7 @@ class OutboxOperationsTests(unittest.TestCase):
 
     def test_process_outbox_uses_worker_until_limit_or_empty(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             task = make_task(ledger)
             worker = StubWorker(ledger, task.task_id)
 

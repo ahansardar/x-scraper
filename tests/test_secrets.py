@@ -114,6 +114,16 @@ def _config(root: Path, *, secret_provider: str = "env") -> AppConfig:
         session_registry_path=None,
         require_migrations=True,
         max_active_tasks_per_capability=100,
+        postgres_dsn="postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion",
+        postgres_pool_min_size=1,
+        postgres_pool_max_size=10,
+        redis_url="redis://127.0.0.1:6379/0",
+        redis_stream_key="xingestion:capability-tasks",
+        redis_consumer_group="capability-workers",
+        redis_consumer_name="",
+        dispatcher_poll_interval_seconds=1.0,
+        worker_lease_heartbeat_seconds=100,
+        redis_claim_min_idle_ms=300000,
     )
 
 

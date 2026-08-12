@@ -12,6 +12,9 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+import redis
+from psycopg_pool import ConnectionPool
+
 from xingestion.capabilities import (
     CapabilityPlanner,
     CapabilityRequest,
@@ -25,7 +28,7 @@ from xingestion.investigation import (
     build_release_risk_recommendation,
 )
 from xingestion.logging_config import configure_logging
-from xingestion.migrations import MigrationRunner
+from xingestion.migrations import MigrationRunner, PostgresMigrationRunner
 from xingestion.operator_tasks import list_operator_task_actions
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.preflight import DeploymentPreflight
@@ -63,7 +66,7 @@ from xingestion.support_export import (
     write_failed_task_export,
 )
 from xingestion.telemetry import ProtocolTelemetryStore
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import PostgresTaskLedger, TaskState
 from xingestion.workers import LocalWorker
 from xingestion.xprotocol.evidence import FileRawEvidenceSink
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
@@ -92,7 +95,25 @@ class LiveAppState:
             if self.config.require_migrations
             else self.migration_runner.status()
         )
-        self.ledger = SQLiteTaskLedger(self.config.sqlite_path)
+        self.postgres_pool = ConnectionPool(
+            self.config.postgres_dsn,
+            min_size=self.config.postgres_pool_min_size,
+            max_size=self.config.postgres_pool_max_size,
+            open=True,
+        )
+        self.postgres_migration_runner = PostgresMigrationRunner(
+            self.postgres_pool,
+            ROOT / "src" / "xingestion" / "migrations" / "postgres_sql",
+        )
+        self.postgres_migration_status = (
+            self.postgres_migration_runner.require_current()
+            if self.config.require_migrations
+            else self.postgres_migration_runner.status()
+        )
+        self.redis_client = redis.Redis.from_url(
+            self.config.redis_url, decode_responses=True
+        )
+        self.ledger = PostgresTaskLedger(self.postgres_pool)
         self.canonical_store = CanonicalStore(self.config.sqlite_path)
         self.release_store = ReleaseStore(self.config.sqlite_path)
         self.evidence_sink = FileRawEvidenceSink(self.config.raw_evidence_dir)
@@ -139,6 +160,11 @@ class LiveAppState:
             telemetry_store=self.telemetry_store,
             secret_provider=self.secret_provider,
             required_network_context=self.config.worker_network_context or None,
+            redis_client=self.redis_client,
+            redis_stream_key=self.config.redis_stream_key,
+            redis_consumer_group=self.config.redis_consumer_group,
+            redis_consumer_name=self.config.redis_consumer_name or None,
+            redis_claim_min_idle_ms=self.config.redis_claim_min_idle_ms,
         )
 
 
@@ -158,14 +184,21 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                     "release_id": STATE.manifest.release_id,
                     "mode": "live",
                     "auth_ready": not STATE.auth.missing_fields(),
-                    "dispatch": "outbox-local-worker",
+                    "dispatch": "redis-streams",
                     "storage": _storage_dict(),
                 }
             )
         if parsed.path == "/api/metrics":
             return self._json(_metrics_dict())
         if parsed.path == "/api/migrations":
-            return self._json({"migrations": _migration_status_dict(STATE.migration_runner.status())})
+            return self._json(
+                {
+                    "migrations": _migration_status_dict(STATE.migration_runner.status()),
+                    "postgres_migrations": _migration_status_dict(
+                        STATE.postgres_migration_runner.status()
+                    ),
+                }
+            )
         if parsed.path == "/api/telemetry":
             return self._json({"telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary())})
         if parsed.path == "/api/network-health":
@@ -235,7 +268,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/tasks":
             return self._json({"tasks": self._list_tasks()})
         if parsed.path == "/api/task-actions":
-            actions = list_operator_task_actions(STATE.config.sqlite_path, limit=25)
+            actions = list_operator_task_actions(STATE.postgres_pool, limit=25)
             return self._json({"actions": [_task_action_dict(action) for action in actions]})
         if parsed.path == "/api/outbox":
             try:
@@ -837,27 +870,17 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def _list_tasks(self):
-        import sqlite3
-
-        path = STATE.config.sqlite_path
-        if not path.exists():
-            return []
-        with sqlite3.connect(path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM capability_tasks ORDER BY created_at DESC LIMIT 25"
-            ).fetchall()
         return [
             {
-                "task_id": row["task_id"],
-                "idempotency_key": row["idempotency_key"],
-                "capability_id": row["capability_id"],
-                "state": row["state"],
-                "replay_origin_task_id": row["replay_origin_task_id"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
+                "task_id": task.task_id,
+                "idempotency_key": task.idempotency_key,
+                "capability_id": task.capability_id.value,
+                "state": task.state.value,
+                "replay_origin_task_id": task.replay_origin_task_id,
+                "created_at": task.created_at,
+                "updated_at": task.updated_at,
             }
-            for row in rows
+            for task in STATE.ledger.list_recent_tasks(limit=25)
         ]
 
     def _task_detail(self, task_id):
@@ -961,10 +984,21 @@ def _raw_evidence_ref_from_json(raw_evidence):
     )
 
 
+def _redact_dsn(dsn: str) -> str:
+    if "@" not in dsn or "://" not in dsn:
+        return dsn
+    scheme, rest = dsn.split("://", 1)
+    credentials, _, host_part = rest.partition("@")
+    user = credentials.split(":", 1)[0] if credentials else ""
+    return f"{scheme}://{user}:***@{host_part}"
+
+
 def _storage_dict():
     return {
         "data_dir": str(STATE.config.data_dir),
         "sqlite_path": str(STATE.config.sqlite_path),
+        "postgres_dsn": _redact_dsn(STATE.config.postgres_dsn),
+        "redis_url": STATE.config.redis_url,
         "raw_evidence_dir": str(STATE.config.raw_evidence_dir),
         "approved_release_id": STATE.release_store.approved_release_id(),
         "manifest_path": str(STATE.manifest_path),
@@ -1251,14 +1285,18 @@ def main(argv=None):
 
     server = ThreadingHTTPServer((config.host, config.port), LiveAppHandler)
     print(f"X ingestion live app running at http://{config.host}:{config.port}")
-    print(f"SQLite task ledger: {config.sqlite_path}")
+    print(f"Postgres task ledger: {config.postgres_dsn}")
+    print(f"Redis stream: {config.redis_stream_key} ({config.redis_url})")
+    print(f"SQLite (sessions/canonical/releases/telemetry): {config.sqlite_path}")
     print(f"Raw evidence directory: {config.raw_evidence_dir}")
     print(f"Log file: {logging_settings.log_file}")
     print("Press Ctrl+C to stop.")
     LOGGER.info(
-        "web starting host=%s port=%s sqlite=%s raw_evidence=%s",
+        "web starting host=%s port=%s postgres=%s redis=%s sqlite=%s raw_evidence=%s",
         config.host,
         config.port,
+        config.postgres_dsn,
+        config.redis_url,
         config.sqlite_path,
         config.raw_evidence_dir,
     )

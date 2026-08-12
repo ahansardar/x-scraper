@@ -35,6 +35,7 @@ class SupervisionTests(unittest.TestCase):
                 [
                     r"python F:\x-scraper\run_app.py --host 0.0.0.0 --port 8000",
                     r"python F:\x-scraper\run_worker.py",
+                    r"python F:\x-scraper\run_dispatcher.py",
                 ]
             ),
             expect_processes=True,

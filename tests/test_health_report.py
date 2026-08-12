@@ -6,12 +6,15 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from postgres_fixture import make_postgres_ledger
 
 from xingestion.config import AppConfig
 from xingestion.health_report import build_health_report, write_health_report
 from xingestion.migrations import MigrationRunner
 from xingestion.sessions import SessionStore
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import WebSessionAuth
@@ -24,6 +27,15 @@ def load_manifest():
 
 
 class HealthReportTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.ledger = make_postgres_ledger()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Postgres unavailable: {exc}")
+
+    def tearDown(self):
+        self.ledger.pool.close()
+
     def test_health_report_writes_safe_operator_snapshot(self):
         manifest = load_manifest()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -37,7 +49,7 @@ class HealthReportTests(unittest.TestCase):
                 credential_ref="secret:x/session-1",
                 network_context="direct",
             )
-            ledger = SQLiteTaskLedger(config.sqlite_path)
+            ledger = self.ledger
             ledger.create_task(
                 idempotency_key="report-task",
                 capability_id=CapabilityId.SEARCH_TWEETS,
@@ -149,6 +161,16 @@ def _config(root: Path) -> AppConfig:
         session_registry_path=None,
         require_migrations=True,
         max_active_tasks_per_capability=100,
+        postgres_dsn="postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion",
+        postgres_pool_min_size=1,
+        postgres_pool_max_size=10,
+        redis_url="redis://127.0.0.1:6379/0",
+        redis_stream_key="xingestion:capability-tasks",
+        redis_consumer_group="capability-workers",
+        redis_consumer_name="",
+        dispatcher_poll_interval_seconds=1.0,
+        worker_lease_heartbeat_seconds=100,
+        redis_claim_min_idle_ms=300000,
     )
 
 

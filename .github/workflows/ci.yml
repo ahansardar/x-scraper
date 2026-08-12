@@ -28,6 +28,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install dependencies
+        shell: pwsh
+        run: python -m pip install -r requirements.txt
+
       - name: Show Python version
         shell: pwsh
         run: python --version
@@ -38,7 +42,7 @@ jobs:
 
       - name: Compile source and tests
         shell: pwsh
-        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
+        run: python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_postgres_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 
       - name: Validate protocol parser fixtures
         shell: pwsh
@@ -138,8 +142,14 @@ jobs:
           if (-not (Test-Path .\docs\deployment_runbook.md)) {
             throw "Missing deployment runbook"
           }
-          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "No-Docker|no-Docker|no-docker" -Quiet)) {
-            throw "Deployment runbook must state the no-Docker deployment model"
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "docker compose up" -Quiet)) {
+            throw "Deployment runbook must document starting Postgres/Redis via docker compose"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_dispatcher.py" -Quiet)) {
+            throw "Deployment runbook must document the Redis Streams dispatcher"
+          }
+          if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_postgres_migrations.py" -Quiet)) {
+            throw "Deployment runbook must document Postgres migrations"
           }
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "run_preflight.py" -Quiet)) {
             throw "Deployment runbook must document preflight"
@@ -210,3 +220,68 @@ jobs:
           if (-not (Select-String -Path .\docs\deployment_runbook.md -Pattern "prune-audits" -Quiet)) {
             throw "Deployment runbook must document promotion audit retention"
           }
+
+  test-postgres-redis:
+    name: Postgres/Redis task ledger (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: xingestion
+          POSTGRES_PASSWORD: xingestion
+          POSTGRES_DB: xingestion
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U xingestion"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      XINGESTION_TEST_POSTGRES_DSN: postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion
+      PYTHONPATH: src
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Show Python version
+        run: python --version
+
+      - name: Run Postgres/Redis-backed tests
+        run: |
+          python -m unittest discover -s tests -p "test_postgres_task_ledger.py" -v
+          python -m unittest discover -s tests -p "test_postgres_migration_runner.py" -v
+          python -m unittest discover -s tests -p "test_local_worker.py" -v
+          python -m unittest discover -s tests -p "test_operator_tasks.py" -v
+          python -m unittest discover -s tests -p "test_reprocessing.py" -v
+          python -m unittest discover -s tests -p "test_health_report.py" -v
+          python -m unittest discover -s tests -p "test_support_export.py" -v
+          python -m unittest discover -s tests -p "test_northbound_api.py" -v
+          python -m unittest discover -s tests -p "test_preflight.py" -v
+          python -m unittest discover -s tests -p "test_investigation.py" -v
+          python -m unittest discover -s tests -p "test_outbox_operations.py" -v

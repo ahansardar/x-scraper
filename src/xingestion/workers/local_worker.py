@@ -5,7 +5,9 @@ from datetime import UTC, datetime, timedelta
 import logging
 from time import monotonic
 
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+import redis as redis_lib
+
+from xingestion.tasks import TaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.errors import RuntimeErrorEnvelope, classify_error, classify_exception
 from xingestion.releases import ReleaseStore
@@ -48,7 +50,7 @@ class LocalWorker:
     def __init__(
         self,
         *,
-        ledger: SQLiteTaskLedger,
+        ledger: TaskLedger,
         manifest: ProtocolReleaseManifest,
         auth: WebSessionAuth,
         transport: OneAttemptTransport,
@@ -61,6 +63,12 @@ class LocalWorker:
         required_network_context: str | None = None,
         owner: str | None = None,
         lease_seconds: int = 300,
+        redis_client: "redis_lib.Redis | None" = None,
+        redis_stream_key: str = "xingestion:capability-tasks",
+        redis_consumer_group: str = "capability-workers",
+        redis_consumer_name: str | None = None,
+        redis_claim_min_idle_ms: int = 300000,
+        redis_read_block_ms: int = 1000,
     ) -> None:
         self.ledger = ledger
         self.manifest = manifest
@@ -76,15 +84,29 @@ class LocalWorker:
         self.planner = CapabilityPlanner(self.manifest)
         self.owner = owner or f"worker-{uuid4().hex[:12]}"
         self.lease_seconds = lease_seconds
+        self.redis_client = redis_client
+        self.redis_stream_key = redis_stream_key
+        self.redis_consumer_group = redis_consumer_group
+        self.redis_consumer_name = redis_consumer_name or self.owner
+        self.redis_claim_min_idle_ms = redis_claim_min_idle_ms
+        self.redis_read_block_ms = redis_read_block_ms
+        self._consumer_group_ready = False
 
     def process_one(self) -> WorkerResult:
         self.ledger.enqueue_due_retries()
         self.ledger.recover_expired_leases()
-        event = self.ledger.claim_next_outbox_event()
-        if event is None:
+        delivery = self._read_next_delivery()
+        if delivery is None:
             return WorkerResult(processed=False)
 
-        task = self.ledger.get_task(event.task_id)
+        task_id, message_id = delivery
+        try:
+            return self._process_delivery(task_id)
+        finally:
+            self._ack(message_id)
+
+    def _process_delivery(self, task_id: str) -> WorkerResult:
+        task = self.ledger.get_task(task_id)
         if task is None:
             envelope = classify_error(
                 "TASK_NOT_FOUND",
@@ -93,7 +115,7 @@ class LocalWorker:
             LOGGER.error("worker task missing %s", envelope.log_fields())
             return WorkerResult(
                 processed=True,
-                task_id=event.task_id,
+                task_id=task_id,
                 error_class=envelope.error_class,
                 message=envelope.message,
             )
@@ -289,6 +311,22 @@ class LocalWorker:
                 owner=self.owner,
                 lease_expires_at=lease_expires_at,
             )
+        except ValueError:
+            # Another delivery of this task (at-least-once Redis Streams delivery,
+            # or a lease-recovery re-enqueue) already claimed or finished it.
+            if session is not None and session.lease_token:
+                self.session_store.release_session(session.session_id, session.lease_token)
+            current = self.ledger.get_task(task.task_id)
+            return WorkerResult(
+                processed=True,
+                task_id=task.task_id,
+                state=current.state if current else task.state,
+                message="Task already claimed by another delivery",
+                session_id=session.session_id if session else None,
+                network_context=session.network_context if session else self.required_network_context,
+            )
+
+        try:
             task = self._renew_lease(task)
             lease_renewals += 1
             if session is not None and self.session_store is not None:
@@ -410,6 +448,72 @@ class LocalWorker:
         finally:
             if session is not None and session.lease_token:
                 self.session_store.release_session(session.session_id, session.lease_token)
+
+    def _read_next_delivery(self) -> tuple[str, str] | None:
+        if self.redis_client is None:
+            return None
+        self._ensure_consumer_group()
+
+        reclaimed = self._reclaim_stale_delivery()
+        if reclaimed is not None:
+            return reclaimed
+
+        response = self.redis_client.xreadgroup(
+            self.redis_consumer_group,
+            self.redis_consumer_name,
+            {self.redis_stream_key: ">"},
+            count=1,
+            block=self.redis_read_block_ms,
+        )
+        if not response:
+            return None
+        _, messages = response[0]
+        if not messages:
+            return None
+        message_id, fields = messages[0]
+        task_id = fields.get("task_id")
+        if not task_id:
+            self._ack(message_id)
+            return None
+        return task_id, message_id
+
+    def _reclaim_stale_delivery(self) -> tuple[str, str] | None:
+        _cursor, messages, *_rest = self.redis_client.xautoclaim(
+            self.redis_stream_key,
+            self.redis_consumer_group,
+            self.redis_consumer_name,
+            min_idle_time=self.redis_claim_min_idle_ms,
+            start_id="0-0",
+            count=1,
+        )
+        if not messages:
+            return None
+        message_id, fields = messages[0]
+        task_id = fields.get("task_id")
+        if not task_id:
+            self._ack(message_id)
+            return None
+        return task_id, message_id
+
+    def _ensure_consumer_group(self) -> None:
+        if self._consumer_group_ready:
+            return
+        try:
+            self.redis_client.xgroup_create(
+                self.redis_stream_key,
+                self.redis_consumer_group,
+                id="0",
+                mkstream=True,
+            )
+        except redis_lib.ResponseError as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+        self._consumer_group_ready = True
+
+    def _ack(self, message_id: str) -> None:
+        if self.redis_client is None:
+            return
+        self.redis_client.xack(self.redis_stream_key, self.redis_consumer_group, message_id)
 
     def _record_telemetry(
         self,

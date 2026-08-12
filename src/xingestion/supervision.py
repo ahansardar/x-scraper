@@ -81,7 +81,11 @@ class DeploymentSupervisorCheck:
         root: Path,
         process_probe: ProcessProbe | None = None,
         expect_processes: bool = False,
-        required_process_fragments: tuple[str, ...] = ("run_app.py", "run_worker.py"),
+        required_process_fragments: tuple[str, ...] = (
+            "run_app.py",
+            "run_worker.py",
+            "run_dispatcher.py",
+        ),
         max_unpublished_events: int = 100,
         max_outbox_lag_seconds: int = 300,
         require_external_data_dir: bool = False,

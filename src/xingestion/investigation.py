@@ -5,7 +5,7 @@ from typing import Mapping
 
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionStore
-from xingestion.tasks import SQLiteTaskLedger
+from xingestion.tasks import TaskLedger
 from xingestion.telemetry import ProtocolAttempt, ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
@@ -17,7 +17,7 @@ NETWORK_ROUTE_MAX_FAILURE_RATE = 0.8
 def build_protocol_drift_package(
     *,
     task_id: str,
-    ledger: SQLiteTaskLedger,
+    ledger: TaskLedger,
     manifest: ProtocolReleaseManifest,
     release_store: ReleaseStore,
     session_store: SessionStore,

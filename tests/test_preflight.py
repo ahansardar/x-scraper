@@ -6,6 +6,9 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from postgres_fixture import make_postgres_ledger
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.config import AppConfig
@@ -13,7 +16,7 @@ from xingestion import preflight as preflight_module
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight
 from xingestion.sessions import SessionHealth, SessionStore
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import WebSessionAuth
@@ -64,6 +67,8 @@ class PreflightTests(unittest.TestCase):
             statuses = {check.name: check.status for check in result.checks}
             self.assertTrue(result.ok)
             self.assertEqual(statuses["migrations"], "PASS")
+            self.assertEqual(statuses["postgres"], "PASS")
+            self.assertEqual(statuses["redis"], "PASS")
             self.assertEqual(statuses["storage"], "PASS")
             self.assertEqual(statuses["startup_directories"], "PASS")
             self.assertEqual(statuses["secret_backend"], "WARN")
@@ -99,6 +104,12 @@ class PreflightTests(unittest.TestCase):
             self.assertEqual(statuses["startup_directories"], "PASS")
 
     def test_preflight_fails_release_risk_quarantine_recommendation(self):
+        try:
+            pg_ledger = make_postgres_ledger()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Postgres unavailable: {exc}")
+        self.addCleanup(pg_ledger.pool.close)
+
         manifest = load_manifest()
         request = CapabilityRequest(
             capability_id=CapabilityId.SEARCH_TWEETS,
@@ -120,7 +131,7 @@ class PreflightTests(unittest.TestCase):
                 account_label="account",
                 credential_ref="secret:x/session-1",
             )
-            ledger = SQLiteTaskLedger(config.sqlite_path)
+            ledger = pg_ledger
             telemetry = ProtocolTelemetryStore(config.sqlite_path)
             for index in range(3):
                 task = ledger.create_task(
@@ -157,6 +168,63 @@ class PreflightTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(release_check.status, "FAIL")
             self.assertIn("QUARANTINE_RECOMMENDED", release_check.message)
+
+    def test_preflight_fails_when_postgres_unreachable(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _config(
+                root,
+                postgres_dsn="postgresql://nobody:nobody@127.0.0.1:1/nowhere",
+            )
+            runner = MigrationRunner(
+                config.sqlite_path,
+                ROOT / "src" / "xingestion" / "migrations" / "sql",
+            )
+            runner.apply()
+            SessionStore(config.sqlite_path).upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+
+            result = DeploymentPreflight(
+                config=config,
+                migration_runner=runner,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+            ).run()
+
+            statuses = {check.name: check.status for check in result.checks}
+            self.assertFalse(result.ok)
+            self.assertEqual(statuses["postgres"], "FAIL")
+
+    def test_preflight_fails_when_redis_unreachable(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = _config(root, redis_url="redis://127.0.0.1:1/0")
+            runner = MigrationRunner(
+                config.sqlite_path,
+                ROOT / "src" / "xingestion" / "migrations" / "sql",
+            )
+            runner.apply()
+            SessionStore(config.sqlite_path).upsert_session(
+                session_id="session-1",
+                account_label="account",
+                credential_ref="secret:x/session-1",
+            )
+
+            result = DeploymentPreflight(
+                config=config,
+                migration_runner=runner,
+                manifest=manifest,
+                auth=WebSessionAuth("auth", "csrf", "bearer"),
+            ).run()
+
+            statuses = {check.name: check.status for check in result.checks}
+            self.assertFalse(result.ok)
+            self.assertEqual(statuses["redis"], "FAIL")
 
     def test_api_shape_probe_requires_expected_keys(self):
         manifest = load_manifest()
@@ -229,7 +297,12 @@ class PreflightTests(unittest.TestCase):
             self.assertIn("support export directory is read-only", startup.message)
 
 
-def _config(root: Path) -> AppConfig:
+def _config(
+    root: Path,
+    *,
+    postgres_dsn: str = "postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion",
+    redis_url: str = "redis://127.0.0.1:6379/0",
+) -> AppConfig:
     return AppConfig(
         root=root,
         data_dir=root / "data",
@@ -248,6 +321,16 @@ def _config(root: Path) -> AppConfig:
         session_registry_path=None,
         require_migrations=True,
         max_active_tasks_per_capability=100,
+        postgres_dsn=postgres_dsn,
+        postgres_pool_min_size=1,
+        postgres_pool_max_size=10,
+        redis_url=redis_url,
+        redis_stream_key="xingestion:capability-tasks",
+        redis_consumer_group="capability-workers",
+        redis_consumer_name="",
+        dispatcher_poll_interval_seconds=1.0,
+        worker_lease_heartbeat_seconds=100,
+        redis_claim_min_idle_ms=300000,
     )
 
 

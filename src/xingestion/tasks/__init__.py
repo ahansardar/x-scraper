@@ -4,16 +4,16 @@ from .ledger import (
     CapabilityTask,
     OutboxEvent,
     RetentionResult,
-    SQLiteTaskLedger,
     TaskLedger,
     TaskState,
 )
+from .postgres_ledger import PostgresTaskLedger
 
 __all__ = [
     "CapabilityTask",
     "OutboxEvent",
+    "PostgresTaskLedger",
     "RetentionResult",
-    "SQLiteTaskLedger",
     "TaskLedger",
     "TaskState",
 ]

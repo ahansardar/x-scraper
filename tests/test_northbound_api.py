@@ -10,12 +10,15 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from postgres_fixture import make_postgres_ledger, test_dsn as postgres_test_dsn
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.migrations import MigrationRunner
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.web import live_server
 from xingestion.workers import WorkerResult
@@ -88,6 +91,15 @@ class ClaimingOutboxWorker:
 
 
 class NorthboundApiTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.ledger = make_postgres_ledger()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Postgres unavailable: {exc}")
+
+    def tearDown(self):
+        self.ledger.pool.close()
+
     def test_generic_capability_task_submission_queues_task(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"
@@ -96,7 +108,7 @@ class NorthboundApiTests(unittest.TestCase):
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(max_active_tasks_per_capability=100),
                 planner=CapabilityPlanner(manifest),
-                ledger=SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3"),
+                ledger=self.ledger,
             )
             handler = FakeHandler()
 
@@ -125,7 +137,7 @@ class NorthboundApiTests(unittest.TestCase):
             ROOT / "protocol_releases" / "search_tweets.candidate.json"
         )
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             worker = ClaimingOutboxWorker(ledger)
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(max_active_tasks_per_capability=100),
@@ -161,7 +173,7 @@ class NorthboundApiTests(unittest.TestCase):
         )
         plan = CapabilityPlanner(manifest).plan(request)
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             origin = ledger.create_task(
                 idempotency_key="replay-origin-autoprocess",
                 capability_id=request.capability_id,
@@ -193,7 +205,7 @@ class NorthboundApiTests(unittest.TestCase):
             ROOT / "protocol_releases" / "search_tweets.candidate.json"
         )
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(max_active_tasks_per_capability=1),
                 planner=CapabilityPlanner(manifest),
@@ -403,7 +415,7 @@ class NorthboundApiTests(unittest.TestCase):
         plan = CapabilityPlanner(manifest).plan(request)
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "tasks.sqlite3"
-            ledger = SQLiteTaskLedger(db_path)
+            ledger = self.ledger
             telemetry = ProtocolTelemetryStore(db_path)
             sessions = SessionStore(db_path)
             sessions.upsert_session(
@@ -463,7 +475,7 @@ class NorthboundApiTests(unittest.TestCase):
         plan = CapabilityPlanner(manifest).plan(request)
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "tasks.sqlite3"
-            ledger = SQLiteTaskLedger(db_path)
+            ledger = self.ledger
             task = ledger.create_task(
                 idempotency_key="task-actions-route",
                 capability_id=request.capability_id,
@@ -479,6 +491,7 @@ class NorthboundApiTests(unittest.TestCase):
             )
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(sqlite_path=db_path),
+                postgres_pool=ledger.pool,
             )
             handler = FakeHandler()
             handler.path = "/api/task-actions"
@@ -501,7 +514,7 @@ class NorthboundApiTests(unittest.TestCase):
         )
         plan = CapabilityPlanner(manifest).plan(request)
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             task = ledger.create_task(
                 idempotency_key="outbox-route",
                 capability_id=request.capability_id,
@@ -583,7 +596,7 @@ class NorthboundApiTests(unittest.TestCase):
         )
         plan = CapabilityPlanner(manifest).plan(request)
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             task = ledger.create_task(
                 idempotency_key="outbox-process-route",
                 capability_id=request.capability_id,
@@ -621,7 +634,7 @@ class NorthboundApiTests(unittest.TestCase):
             root = Path(temp_dir)
             db_path = root / "data" / "tasks.sqlite3"
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            ledger = SQLiteTaskLedger(db_path)
+            ledger = self.ledger
             sessions = SessionStore(db_path)
             sessions.upsert_session(
                 session_id="session-1",
@@ -646,6 +659,7 @@ class NorthboundApiTests(unittest.TestCase):
                     data_dir=root / "data",
                     sqlite_path=db_path,
                     retention_days=30,
+                    postgres_dsn=postgres_test_dsn(),
                 ),
                 manifest=manifest,
             )
@@ -717,6 +731,8 @@ class NorthboundApiTests(unittest.TestCase):
                     default_credential_ref="env:X_AUTH_TOKEN,X_CT0,X_BEARER",
                     secret_provider="env",
                     secret_dir=root / "data" / "secrets",
+                    postgres_dsn=postgres_test_dsn(),
+                    redis_url="redis://127.0.0.1:6379/0",
                 ),
                 migration_runner=runner,
                 manifest=manifest,

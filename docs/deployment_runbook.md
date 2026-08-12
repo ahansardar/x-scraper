@@ -1,6 +1,6 @@
 # Deployment Runbook
 
-This runbook covers the current no-Docker deployment shape.
+This runbook covers local Postgres and Redis infrastructure started via Docker Compose, with the application itself (web, worker, dispatcher) running as plain OS processes -- not containerized. Sessions, canonical tweets/observations, releases, telemetry, and reprocess jobs stay on SQLite; the durable task ledger and transactional outbox live in PostgreSQL, delivered to workers over Redis Streams.
 
 ## Required Environment
 
@@ -28,6 +28,20 @@ XINGESTION_LOG_DIR=
 XINGESTION_LOG_LEVEL=INFO
 XINGESTION_LOG_MAX_BYTES=5242880
 XINGESTION_LOG_BACKUP_COUNT=5
+
+# Task ledger + outbox dispatch (PostgreSQL + Redis Streams).
+# Local defaults match docker-compose.yml; port 55432 avoids clashing with
+# any locally-installed Postgres service.
+XINGESTION_POSTGRES_DSN=postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion
+XINGESTION_POSTGRES_POOL_MIN=1
+XINGESTION_POSTGRES_POOL_MAX=10
+XINGESTION_REDIS_URL=redis://127.0.0.1:6379/0
+XINGESTION_REDIS_STREAM=xingestion:capability-tasks
+XINGESTION_REDIS_CONSUMER_GROUP=capability-workers
+XINGESTION_REDIS_CONSUMER_NAME=
+XINGESTION_DISPATCHER_POLL_SECONDS=1.0
+XINGESTION_WORKER_LEASE_HEARTBEAT_SECONDS=100
+XINGESTION_REDIS_CLAIM_MIN_IDLE_MS=300000
 ```
 
 Use a persistent disk for `XINGESTION_DATA_DIR`. Do not use the build checkout as production storage.
@@ -98,11 +112,23 @@ POST /api/sessions/import
 
 The `POST` route is available from the trusted console without an admin-token header. Import output shows session IDs, account labels, network contexts, health, and reference schemes; it does not return `credential_ref` values.
 
-## Start
+## Start Infrastructure
 
-Apply migrations first:
+Bring up local Postgres and Redis via Docker Compose (the only containerized pieces -- the application itself is never containerized):
 
 ```powershell
+docker compose up -d
+docker compose ps
+```
+
+Wait until both services report `healthy` before continuing.
+
+## Start
+
+Apply migrations to both stores:
+
+```powershell
+python .\run_postgres_migrations.py
 python .\run_migrations.py
 python .\run_startup_check.py
 python .\run_preflight.py
@@ -120,6 +146,14 @@ Terminal 2:
 ```powershell
 python .\run_worker.py
 ```
+
+Terminal 3:
+
+```powershell
+python .\run_dispatcher.py
+```
+
+The dispatcher publishes committed-but-undelivered outbox rows from Postgres to the Redis stream; the worker consumes that stream via a consumer group. Both are required, always-on processes alongside the web app -- see [process_supervision.md](process_supervision.md) for supervising all three.
 
 After the web process is listening, verify the deployed API shape:
 
@@ -164,7 +198,9 @@ python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-proce
 
 The app stores:
 
-- task ledger: `XINGESTION_DATA_DIR\tasks.sqlite3`
+- task ledger and transactional outbox: PostgreSQL (`XINGESTION_POSTGRES_DSN`)
+- outbox delivery: Redis Streams (`XINGESTION_REDIS_URL`, stream `XINGESTION_REDIS_STREAM`) -- reconstructable from Postgres; never the authority
+- sessions, releases, telemetry, reprocess jobs: `XINGESTION_DATA_DIR\tasks.sqlite3`
 - raw evidence: `XINGESTION_DATA_DIR\raw_evidence`
 - canonical tweets and observations: `tasks.sqlite3`
 - health report exports: `XINGESTION_DATA_DIR\reports\health-report-*.json`
@@ -335,7 +371,7 @@ GET /api/outbox
 POST /api/outbox/process
 ```
 
-The `POST` route does not require an admin-token header. Processing does not delete rows or manually force acknowledgements; it claims events via the ledger and executes `LocalWorker.process_one()`, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
+The `POST` route does not require an admin-token header. In normal operation, outbox delivery goes through `run_dispatcher.py` and Redis Streams; this manual route/CLI path still exists as a direct drain and executes `LocalWorker.process_one()` against a pending stream delivery, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
 
 Validate the pinned `SEARCH_TWEETS` parser before and after protocol changes:
 
@@ -379,14 +415,14 @@ The `runtime_errors` section groups recent task failures by class, severity, sco
 
 ## Verification Before Release
 
-Run locally:
+Run locally (requires `docker compose up -d` for the Postgres/Redis-backed suites; unreachable services cause those tests to skip rather than fail):
 
 ```powershell
 python -m unittest discover -s tests
-python -m compileall -q src tests run_app.py run_worker.py run_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
+python -m compileall -q src tests run_app.py run_worker.py run_dispatcher.py run_migrations.py run_postgres_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 ```
 
-After starting web and worker:
+After starting infrastructure, web, worker, and dispatcher:
 
 ```powershell
 python .\run_startup_check.py
@@ -397,7 +433,7 @@ python .\run_smoke.py --base-url http://127.0.0.1:8000 --submit "india lang:en" 
 python .\run_health_report.py --base-url http://127.0.0.1:8000
 ```
 
-CI runs the same checks on Windows Python 3.11 and 3.12, including frontend and secret-hygiene checks.
+CI runs the same checks on Windows Python 3.11 and 3.12 (including frontend and secret-hygiene checks) plus a dedicated Postgres/Redis-backed job on Ubuntu with service containers.
 
 See [process_supervision.md](process_supervision.md) for Windows Task Scheduler/NSSM examples and restart verification.
 See [logging.md](logging.md) for rotating log file configuration.

@@ -5,11 +5,13 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from postgres_fixture import make_postgres_ledger
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.canonical import CanonicalStore
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
-from xingestion.tasks import SQLiteTaskLedger
 from xingestion.workers import LocalWorker
 from xingestion.xprotocol.evidence import FileRawEvidenceSink
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
@@ -63,6 +65,15 @@ def load_manifest():
 
 
 class ReprocessingTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.ledger = make_postgres_ledger()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Postgres unavailable: {exc}")
+
+    def tearDown(self):
+        self.ledger.pool.close()
+
     def test_reprocess_completed_task_from_raw_evidence_without_network(self):
         manifest = load_manifest()
         request = CapabilityRequest(
@@ -74,7 +85,7 @@ class ReprocessingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "tasks.sqlite3"
-            ledger = SQLiteTaskLedger(db_path)
+            ledger = self.ledger
             store = CanonicalStore(db_path)
             task = ledger.create_task(
                 idempotency_key="reprocess-key",
@@ -91,7 +102,7 @@ class ReprocessingTests(unittest.TestCase):
                 raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
                 canonical_store=store,
             )
-            worker.process_one()
+            worker._process_delivery(task.task_id)
 
             result = reprocess_task_evidence(
                 task_id=task.task_id,
@@ -113,7 +124,7 @@ class ReprocessingTests(unittest.TestCase):
         plan = CapabilityPlanner(manifest).plan(request)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            ledger = SQLiteTaskLedger(Path(temp_dir) / "tasks.sqlite3")
+            ledger = self.ledger
             store = CanonicalStore(Path(temp_dir) / "tasks.sqlite3")
             task = ledger.create_task(
                 idempotency_key="reprocess-incomplete-key",
@@ -141,7 +152,7 @@ class ReprocessingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "tasks.sqlite3"
-            ledger = SQLiteTaskLedger(db_path)
+            ledger = self.ledger
             store = CanonicalStore(db_path)
             jobs = ReprocessJobStore(db_path)
             task = ledger.create_task(
@@ -159,7 +170,7 @@ class ReprocessingTests(unittest.TestCase):
                 raw_evidence_sink=FileRawEvidenceSink(Path(temp_dir) / "raw"),
                 canonical_store=store,
             )
-            worker.process_one()
+            worker._process_delivery(task.task_id)
 
             job = jobs.run_for_release(
                 release_id=manifest.release_id,

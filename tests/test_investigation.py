@@ -5,6 +5,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from postgres_fixture import make_postgres_ledger
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.investigation import (
@@ -14,7 +17,7 @@ from xingestion.investigation import (
 )
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
-from xingestion.tasks import SQLiteTaskLedger, TaskState
+from xingestion.tasks import TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
@@ -26,6 +29,15 @@ def load_manifest():
 
 
 class InvestigationTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.ledger = make_postgres_ledger()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Postgres unavailable: {exc}")
+
+    def tearDown(self):
+        self.ledger.pool.close()
+
     def test_builds_safe_protocol_drift_package_for_failed_task(self):
         manifest = load_manifest()
         request = CapabilityRequest(
@@ -37,7 +49,7 @@ class InvestigationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "tasks.sqlite3"
-            ledger = SQLiteTaskLedger(db_path)
+            ledger = self.ledger
             releases = ReleaseStore(db_path)
             sessions = SessionStore(db_path)
             telemetry = ProtocolTelemetryStore(db_path)
@@ -112,7 +124,7 @@ class InvestigationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not found"):
                 build_protocol_drift_package(
                     task_id="task-missing",
-                    ledger=SQLiteTaskLedger(db_path),
+                    ledger=self.ledger,
                     manifest=manifest,
                     release_store=ReleaseStore(db_path),
                     session_store=SessionStore(db_path),

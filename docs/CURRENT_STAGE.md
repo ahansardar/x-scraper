@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-12
+Date: 2026-08-12 (updated: task ledger + outbox migrated to PostgreSQL + Redis Streams)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -24,14 +24,16 @@ This repository keeps both responsibilities in one visible source package:
 Latest verified state:
 
 - See `docs/WORKLOG.md` for the latest checkpoint-level verification and commit history.
-- GitHub Actions CI runs on Windows for Python 3.11 and 3.12.
+- GitHub Actions CI runs the main suite on Windows for Python 3.11 and 3.12, plus a dedicated Postgres/Redis-backed job on Ubuntu (service containers) for Python 3.11 and 3.12.
 - Local startup directory readiness passes.
-- The working implementation uses no Docker.
+- Local Postgres and Redis run via `docker compose up -d` (see `docker-compose.yml`); the application itself (web, worker, dispatcher) is never containerized.
 - Default local storage is under `F:\x-scraper\data`.
 
 Important runtime locations:
 
-- SQLite task/canonical/session state: `F:\x-scraper\data\tasks.sqlite3`
+- Task ledger and transactional outbox: PostgreSQL (`XINGESTION_POSTGRES_DSN`, default local port `55432`)
+- Outbox delivery: Redis Streams (`XINGESTION_REDIS_URL`) -- reconstructable from Postgres, never authoritative
+- SQLite session/canonical/release/telemetry/reprocess state: `F:\x-scraper\data\tasks.sqlite3`
 - Raw evidence: `F:\x-scraper\data\raw_evidence`
 - Logs: `F:\x-scraper\data\logs`
 - Health reports: `F:\x-scraper\data\reports`
@@ -40,8 +42,8 @@ Important runtime locations:
 
 Known current operational signal:
 
-- `run_supervisor_check.py --base-url http://127.0.0.1:8000` confirmed startup readiness, but reported existing queue lag: `oldest_unpublished_lag_seconds` exceeded the default threshold.
-- The next operational step should address old unpublished outbox events with queue drain/redrive guidance or operator controls.
+- The task ledger/outbox migration to PostgreSQL + Redis Streams (this document's prior "next infrastructure step") is complete: `PostgresTaskLedger`, `RedisOutboxDispatcher`, and a consumer-group-based `LocalWorker` are live end to end, verified against a real `run_dispatcher.py` process plus a simulated worker-crash/PEL-reclaim scenario.
+- `run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes` now also requires `run_dispatcher.py` in the process table alongside `run_app.py`/`run_worker.py`.
 
 ## What Is Implemented
 
@@ -83,20 +85,21 @@ Spec relevance:
 
 ### Production Control Plane
 
-Implemented locally:
+Implemented:
 
-- Durable task ledger using SQLite.
+- Durable task ledger using PostgreSQL (`PostgresTaskLedger`), single-node local instance via Docker Compose.
 - Task states including created, enqueued, running, retry scheduled, done, dead letter, cancelled.
-- Transactional outbox table.
-- Local worker that dispatches from outbox.
+- Transactional outbox table in Postgres, committed atomically with task creation/replay.
+- `RedisOutboxDispatcher`: publishes committed-but-undelivered outbox rows to a Redis stream (XADD before marking published, so a crash between the two produces a harmless duplicate delivery, never a lost one).
+- Consumer-group-based `LocalWorker`: reads via `XREADGROUP`, acquires a fenced Postgres execution lease, executes, and only `XACK`s after the Postgres transition commits. Stale pending deliveries (crashed workers) are reclaimed via periodic `XAUTOCLAIM`, independent of Postgres lease expiry as a second, deliberately uncoordinated safety net.
 - Idempotent task creation.
 - Replay lineage for dead-letter tasks.
 - Cancel, replay, reprocess, investigate, and export controls.
 
 Spec relevance:
 
-- Implements the shape of the spec's durable task lifecycle and outbox model.
-- The final spec calls for PostgreSQL as durable authority and Redis Streams as delivery infrastructure. This repository currently uses SQLite plus a local outbox worker, so it is a local production candidate, not the final distributed control plane.
+- Implements the spec's durable task lifecycle, transactional outbox, PostgreSQL-as-durable-authority, and Redis-Streams-as-reconstructable-delivery model, with fencing by task identity, delivery generation, and lease token.
+- This is a single-node local Postgres/Redis instance (Docker Compose), not a managed/clustered/HA production deployment -- no connection pooling tuned for scale, no Postgres replication, no Redis Sentinel/Cluster.
 
 ### Sessions, Auth, and Network
 
@@ -194,18 +197,18 @@ Spec relevance:
 
 Implemented:
 
-- No-Docker local deployment path.
+- Docker Compose for local Postgres + Redis infrastructure only; the application processes (web, worker, dispatcher) remain plain, uncontainerized Python.
 - `.env`-driven configuration.
 - Persistent data directory override via `XINGESTION_DATA_DIR`.
-- Migrations.
+- Migrations for both stores: `run_migrations.py` (SQLite), `run_postgres_migrations.py` (Postgres, hand-rolled runner using `psycopg`, no ORM/Alembic dependency).
 - Startup check command: `run_startup_check.py`.
-- Preflight command: `run_preflight.py`.
+- Preflight command: `run_preflight.py`, now including Postgres and Redis reachability checks.
 - Smoke command: `run_smoke.py`.
-- Supervisor check command: `run_supervisor_check.py`.
+- Supervisor check command: `run_supervisor_check.py`, now expecting `run_dispatcher.py` in the process table alongside web/worker.
 - Health report export: `run_health_report.py`.
 - Rotating logs.
 - Retention controls.
-- GitHub Actions CI on Python 3.11 and 3.12.
+- GitHub Actions CI: Windows matrix (Python 3.11/3.12) for the main suite, plus an Ubuntu job with Postgres/Redis service containers (Python 3.11/3.12) for the Postgres/Redis-backed test suites.
 
 Spec relevance:
 
@@ -246,15 +249,14 @@ Implemented under `src/xingestion/`:
 
 - capability requests;
 - planner;
-- SQLite task ledger;
-- transactional outbox;
-- local worker;
+- task ledger and transactional outbox, initially on SQLite, then migrated to PostgreSQL (`PostgresTaskLedger`);
+- local worker, initially polling the outbox directly, then redesigned around a Redis Streams consumer group with a dedicated `RedisOutboxDispatcher`;
 - task state transitions;
 - replay/cancel/dead-letter behavior.
 
 Reason:
 
-- The spec requires durable, auditable, retryable production work rather than direct one-off scraping calls.
+- The spec requires durable, auditable, retryable production work rather than direct one-off scraping calls, with PostgreSQL as durable authority and Redis Streams as reconstructable delivery infrastructure.
 
 ### 4. Added Raw Evidence and Canonical Storage
 
@@ -344,12 +346,12 @@ Reason:
 | Approved protocol release manifest | Present for current search path |
 | Raw evidence before parsing | Implemented |
 | One-attempt runtime | Implemented |
-| Durable task lifecycle | Implemented locally with SQLite |
-| Transactional outbox | Implemented locally |
-| Redis Streams delivery | Not implemented |
-| PostgreSQL durable authority | Not implemented |
-| Worker leases/fencing | Partial local implementation |
-| Production retries | Partial local implementation |
+| Durable task lifecycle | Implemented, PostgreSQL-backed (single-node local) |
+| Transactional outbox | Implemented, PostgreSQL-backed |
+| Redis Streams delivery | Implemented, single-node local (consumer group, XACK, XAUTOCLAIM reclaim) |
+| PostgreSQL durable authority | Implemented, single-node local (Docker Compose, not managed/clustered/HA) |
+| Worker leases/fencing | Implemented (task identity + delivery generation + lease token, fenced via `RETURNING`-based Postgres writes) |
+| Production retries | Implemented locally (backoff scheduling, retry disposition classification) |
 | Dead-letter/replay | Implemented locally |
 | Session health and leases | Implemented locally |
 | Secret backend | Not implemented; env references only |
@@ -372,8 +374,8 @@ Do not call the current repository the complete final product.
 
 Do not claim:
 
-- full PostgreSQL/Redis production architecture;
-- distributed worker recovery through Redis consumer groups;
+- managed/clustered/HA PostgreSQL or Redis (this is a single-node local Docker Compose instance, not production infrastructure certification);
+- distributed worker recovery validated at production scale (the consumer-group/XAUTOCLAIM reclaim path is verified functionally, including a genuine crash scenario, but not load- or chaos-tested);
 - full protocol runtime validation lifecycle;
 - all capability families;
 - complete account/secret/network subsystem;
@@ -385,12 +387,12 @@ Do not claim:
 
 The accurate claim is:
 
-> This repository is a no-Docker, production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. It has durable local tasks, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports, secret-provider abstraction with file-backed deployment support, session registry import, per-session credential resolution, startup readiness checks, a real frontend, deployment runbook, and passing CI. It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
+> This repository is a production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. Local Postgres and Redis run via Docker Compose; the application itself (web, worker, dispatcher) is plain, uncontainerized Python. It has a PostgreSQL-backed durable task ledger and transactional outbox, Redis-Streams-based delivery with consumer-group fencing and crash recovery, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports, secret-provider abstraction with file-backed deployment support, session registry import, per-session credential resolution, startup readiness checks (including Postgres/Redis reachability), a real frontend, deployment runbook, and passing CI (Windows matrix plus a Postgres/Redis-backed Ubuntu job). It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
 
 ## Next Recommended Work
 
-1. Decide whether the next infrastructure step is:
-   - continue no-Docker local SQLite hardening, or
-   - begin migration toward PostgreSQL and Redis Streams as specified.
+1. Decide whether to invest next in:
+   - hardening this single-node Postgres/Redis setup (connection pool tuning, `LISTEN`/`NOTIFY` for lower dispatch latency, structured migration tooling beyond the hand-rolled runner), or
+   - moving toward managed/clustered Postgres and Redis (replication, Sentinel/Cluster) for genuine production deployment.
 2. Add more capabilities only after the `SEARCH_TWEETS` vertical slice has validation tightened.
-3. Move from local SQLite/outbox to PostgreSQL plus Redis Streams when distributed deployment becomes the next priority.
+3. Extend `run_supervisor_check.py`/health reporting with explicit Redis consumer-group lag and pending-entry-count metrics (currently only Postgres outbox lag is surfaced), and add load/chaos testing for the crash-recovery path before treating it as production-certified.

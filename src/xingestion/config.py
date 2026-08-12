@@ -24,6 +24,16 @@ class AppConfig:
     session_registry_path: Path | None
     require_migrations: bool
     max_active_tasks_per_capability: int
+    postgres_dsn: str
+    postgres_pool_min_size: int
+    postgres_pool_max_size: int
+    redis_url: str
+    redis_stream_key: str
+    redis_consumer_group: str
+    redis_consumer_name: str
+    dispatcher_poll_interval_seconds: float
+    worker_lease_heartbeat_seconds: int
+    redis_claim_min_idle_ms: int
 
 
 def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
@@ -52,6 +62,27 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
     max_active_tasks_per_capability = int(
         os.getenv("XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY", "100")
     )
+    postgres_dsn = os.getenv(
+        "XINGESTION_POSTGRES_DSN",
+        "postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion",
+    )
+    postgres_pool_min_size = int(os.getenv("XINGESTION_POSTGRES_POOL_MIN", "1"))
+    postgres_pool_max_size = int(os.getenv("XINGESTION_POSTGRES_POOL_MAX", "10"))
+    redis_url = os.getenv("XINGESTION_REDIS_URL", "redis://127.0.0.1:6379/0")
+    redis_stream_key = os.getenv("XINGESTION_REDIS_STREAM", "xingestion:capability-tasks")
+    redis_consumer_group = os.getenv(
+        "XINGESTION_REDIS_CONSUMER_GROUP", "capability-workers"
+    )
+    redis_consumer_name = os.getenv("XINGESTION_REDIS_CONSUMER_NAME", "").strip()
+    dispatcher_poll_interval_seconds = float(
+        os.getenv("XINGESTION_DISPATCHER_POLL_SECONDS", "1.0")
+    )
+    worker_lease_heartbeat_seconds = int(
+        os.getenv("XINGESTION_WORKER_LEASE_HEARTBEAT_SECONDS", "100")
+    )
+    redis_claim_min_idle_ms = int(
+        os.getenv("XINGESTION_REDIS_CLAIM_MIN_IDLE_MS", "300000")
+    )
 
     return AppConfig(
         root=root,
@@ -71,6 +102,16 @@ def load_app_config(root: Path, argv: list[str] | None = None) -> AppConfig:
         session_registry_path=session_registry_path,
         require_migrations=require_migrations,
         max_active_tasks_per_capability=max_active_tasks_per_capability,
+        postgres_dsn=postgres_dsn,
+        postgres_pool_min_size=postgres_pool_min_size,
+        postgres_pool_max_size=postgres_pool_max_size,
+        redis_url=redis_url,
+        redis_stream_key=redis_stream_key,
+        redis_consumer_group=redis_consumer_group,
+        redis_consumer_name=redis_consumer_name,
+        dispatcher_poll_interval_seconds=dispatcher_poll_interval_seconds,
+        worker_lease_heartbeat_seconds=worker_lease_heartbeat_seconds,
+        redis_claim_min_idle_ms=redis_claim_min_idle_ms,
     )
 
 

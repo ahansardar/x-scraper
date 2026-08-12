@@ -5,12 +5,14 @@ from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 
+from psycopg_pool import ConnectionPool
+
 from xingestion.config import AppConfig
 from xingestion.errors import envelope_from_task_error
 from xingestion.investigation import build_protocol_drift_package
 from xingestion.releases import ReleaseStore
 from xingestion.sessions import SessionStore
-from xingestion.tasks import SQLiteTaskLedger
+from xingestion.tasks import PostgresTaskLedger, TaskLedger
 from xingestion.telemetry import ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
@@ -82,15 +84,19 @@ def write_failed_task_export(
     manifest: ProtocolReleaseManifest,
     output_path: str | Path | None = None,
 ) -> FailedTaskExportResult:
-    ledger = SQLiteTaskLedger(config.sqlite_path)
-    package = build_failed_task_export(
-        task_id=task_id,
-        ledger=ledger,
-        manifest=manifest,
-        release_store=ReleaseStore(config.sqlite_path),
-        session_store=SessionStore(config.sqlite_path),
-        telemetry_store=ProtocolTelemetryStore(config.sqlite_path),
-    )
+    pool = ConnectionPool(config.postgres_dsn, min_size=1, max_size=1, open=True)
+    try:
+        ledger = PostgresTaskLedger(pool)
+        package = build_failed_task_export(
+            task_id=task_id,
+            ledger=ledger,
+            manifest=manifest,
+            release_store=ReleaseStore(config.sqlite_path),
+            session_store=SessionStore(config.sqlite_path),
+            telemetry_store=ProtocolTelemetryStore(config.sqlite_path),
+        )
+    finally:
+        pool.close()
     path = Path(output_path) if output_path else _default_output_path(config, task_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -181,7 +187,7 @@ def apply_support_export_retention(
 def build_failed_task_export(
     *,
     task_id: str,
-    ledger: SQLiteTaskLedger,
+    ledger: TaskLedger,
     manifest: ProtocolReleaseManifest,
     release_store: ReleaseStore,
     session_store: SessionStore,

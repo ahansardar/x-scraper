@@ -54,12 +54,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--expect-processes",
         action="store_true",
-        help="Require visible process command lines for web and worker.",
+        help="Require visible process command lines for web, worker, and dispatcher.",
     )
     parser.add_argument(
         "--process-fragment",
         action="append",
-        default=["run_app.py", "run_worker.py"],
+        default=["run_app.py", "run_worker.py", "run_dispatcher.py"],
         help="Command-line fragment required when --expect-processes is set.",
     )
     parser.add_argument("--max-unpublished-events", type=int, default=100)

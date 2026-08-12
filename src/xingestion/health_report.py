@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-import sqlite3
 from typing import Callable
+
+from psycopg_pool import ConnectionPool
 
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig
@@ -20,7 +20,7 @@ from xingestion.preflight import DeploymentPreflight, PreflightCheck
 from xingestion.releases import ReleaseRecord, ReleaseStore
 from xingestion.secrets import secret_provider_status
 from xingestion.sessions import SessionRecord, SessionStore
-from xingestion.tasks import SQLiteTaskLedger
+from xingestion.tasks import CapabilityTask, PostgresTaskLedger
 from xingestion.telemetry import NetworkTelemetrySummary, ProtocolTelemetryStore, TelemetrySummary
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import WebSessionAuth
@@ -125,12 +125,23 @@ def _config_dict(config: AppConfig) -> dict[str, object]:
     }
 
 
+def _redact_dsn(dsn: str) -> str:
+    if "@" not in dsn or "://" not in dsn:
+        return dsn
+    scheme, rest = dsn.split("://", 1)
+    credentials, _, host_part = rest.partition("@")
+    user = credentials.split(":", 1)[0] if credentials else ""
+    return f"{scheme}://{user}:***@{host_part}"
+
+
 def _storage_dict(config: AppConfig) -> dict[str, object]:
     return {
         "data_dir": str(config.data_dir),
         "data_dir_exists": config.data_dir.exists(),
         "sqlite_path": str(config.sqlite_path),
         "sqlite_exists": config.sqlite_path.exists(),
+        "postgres_dsn": _redact_dsn(config.postgres_dsn),
+        "redis_url": config.redis_url,
         "raw_evidence_dir": str(config.raw_evidence_dir),
         "raw_evidence_dir_exists": config.raw_evidence_dir.exists(),
         "reports_dir": str(config.data_dir / "reports"),
@@ -186,8 +197,13 @@ def _migration_status_dict(runner: MigrationRunner) -> dict[str, object]:
     }
 
 
+def _open_task_ledger(config: AppConfig) -> PostgresTaskLedger:
+    pool = ConnectionPool(config.postgres_dsn, min_size=1, max_size=1, open=True)
+    return PostgresTaskLedger(pool)
+
+
 def _task_dict(config: AppConfig) -> dict[str, object]:
-    ledger = SQLiteTaskLedger(config.sqlite_path)
+    ledger = _open_task_ledger(config)
     counts = ledger.task_state_counts()
     active_states = ("CREATED", "ENQUEUED", "RUNNING", "RETRY_SCHEDULED")
     terminal_states = ("DONE", "DEAD_LETTER", "CANCELLED")
@@ -200,39 +216,18 @@ def _task_dict(config: AppConfig) -> dict[str, object]:
 
 
 def _runtime_errors_dict(config: AppConfig) -> dict[str, object]:
-    if not config.sqlite_path.exists():
-        return {
-            "total": 0,
-            "by_class": {},
-            "by_severity": {},
-            "by_scope": {},
-            "recent": [],
+    ledger = _open_task_ledger(config)
+    tasks = ledger.list_recent_task_errors(limit=25)
+
+    envelopes: list[tuple[CapabilityTask, RuntimeErrorEnvelope]] = []
+    for task in tasks:
+        error_json = task.error_json or {
+            "error_class": "INVALID_ERROR_JSON",
+            "message": "Task error_json could not be decoded",
         }
-
-    with closing(sqlite3.connect(config.sqlite_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT task_id, state, error_json, updated_at
-            FROM capability_tasks
-            WHERE error_json IS NOT NULL
-            ORDER BY updated_at DESC
-            LIMIT 25
-            """
-        ).fetchall()
-
-    envelopes: list[tuple[sqlite3.Row, RuntimeErrorEnvelope]] = []
-    for row in rows:
-        try:
-            error_json = json.loads(row["error_json"])
-        except json.JSONDecodeError:
-            error_json = {
-                "error_class": "INVALID_ERROR_JSON",
-                "message": "Task error_json could not be decoded",
-            }
         envelope = envelope_from_task_error(error_json)
         if envelope is not None:
-            envelopes.append((row, envelope))
+            envelopes.append((task, envelope))
 
     return {
         "total": len(envelopes),
@@ -241,12 +236,12 @@ def _runtime_errors_dict(config: AppConfig) -> dict[str, object]:
         "by_scope": _count_by(envelopes, lambda envelope: envelope.scope.value),
         "recent": [
             {
-                "task_id": row["task_id"],
-                "state": row["state"],
-                "updated_at": row["updated_at"],
+                "task_id": task.task_id,
+                "state": task.state.value,
+                "updated_at": task.updated_at,
                 "runtime_error": envelope.public_dict(),
             }
-            for row, envelope in envelopes[:10]
+            for task, envelope in envelopes[:10]
         ],
     }
 
@@ -349,7 +344,7 @@ def _session_health_counts(sessions: tuple[SessionRecord, ...]) -> dict[str, int
 
 
 def _count_by(
-    rows: list[tuple[sqlite3.Row, RuntimeErrorEnvelope]],
+    rows: list[tuple[CapabilityTask, RuntimeErrorEnvelope]],
     key_fn: Callable[[RuntimeErrorEnvelope], str],
 ) -> dict[str, int]:
     counts: dict[str, int] = {}

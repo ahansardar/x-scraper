@@ -8,6 +8,8 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from psycopg_pool import ConnectionPool
+
 from xingestion.config import load_app_config
 from xingestion.logging_config import configure_logging
 from xingestion.operator_tasks import DEFAULT_ACTION_STATES, list_operator_task_actions
@@ -22,11 +24,15 @@ def main(argv=None):
     config = load_app_config(ROOT, argv)
     configure_logging(config=config, component="task-actions", console=False)
     states = tuple(TaskState(value) for value in args.state)
-    actions = list_operator_task_actions(
-        config.sqlite_path,
-        states=states,
-        limit=args.limit,
-    )
+    pool = ConnectionPool(config.postgres_dsn, min_size=1, max_size=1, open=True)
+    try:
+        actions = list_operator_task_actions(
+            pool,
+            states=states,
+            limit=args.limit,
+        )
+    finally:
+        pool.close()
     if args.json:
         print(json.dumps([action.public_dict() for action in actions], indent=2, sort_keys=True))
         return 0
