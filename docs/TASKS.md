@@ -39,3 +39,12 @@ This is the living checklist for the remaining product work. Completed items are
 - [ ] Add connection-pool tuning and lower-latency dispatch wakeups, such as Postgres `LISTEN`/`NOTIFY`, if staying on the single-node local infrastructure path.
 - [ ] Replace the hand-rolled Postgres migration runner with structured migration tooling before larger schema growth.
 - [ ] Add the next capability vertical slice after `SEARCH_TWEETS` is fully release-governed.
+
+## Spec-Flagged Gaps Not Yet Started (`FINAL_PRODUCT_SPEC.md`)
+
+Found via a full read of `FINAL_PRODUCT_SPEC.md` against the current implementation (2026-08-13). These are larger, un-started subsystems the spec calls for that never made it onto this checklist -- tracked here so they aren't lost, deliberately not started while the smaller "Production Hardening" items above are still open.
+
+- [ ] Monitoring subscriptions (spec §28): persistent subscriptions with a scheduler, acquisition coalescing, watermarks, gap detection, bounded backfill, outage catch-up, priority/backpressure. Currently zero implementation -- every acquisition today is a one-shot task, not a standing subscription.
+- [ ] A genuinely stable northbound API (spec §30): today's `/api/*` surface is the trusted operator console (Postgres/Redis/session internals visible to the operator), not the external product-facing capability API the spec describes (`POST /capabilities/search-tweets`, `POST /jobs`, `GET /jobs/{id}`, `GET /results/{id}`, `POST /monitors`).
+- [ ] Broader canonical data model (spec §19): canonical storage today is tweets + engagement observations only. Spec calls for `User`, `List`, `Community`, `RelationshipEdge`, `ProfileObservation` as first-class canonical entities with correct object-identity and time-semantics rules (`source_created_at`/`captured_at`/`first_seen_at`/`last_seen_at`/`source_updated_at`/`normalized_at` kept separate).
+- [ ] Real release rollout/rollback lifecycle (spec §26): today release health is manually toggled (ACTIVE/DEGRADED/QUARANTINED/etc.) with no automated canary stage or automated failover to a known-good approved release. Spec describes `CANDIDATE -> OFFLINE_VALIDATED -> LIVE_VALIDATED -> RELEASE_CANDIDATE -> APPROVED -> CANARY -> PRODUCTION`, with automated `QUARANTINED -> APPROVED` rollback to a known-good release.
