@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import redis
+
 
 def redis_queue_stats(redis_client, *, stream_key: str, group_name: str) -> dict[str, object]:
     """Return stream length, consumer-group lag, and pending-entry stats.
@@ -10,7 +12,14 @@ def redis_queue_stats(redis_client, *, stream_key: str, group_name: str) -> dict
     a worker may have crashed while processing.
     """
     stream_length = int(redis_client.xlen(stream_key))
-    groups = redis_client.xinfo_groups(stream_key)
+    try:
+        groups = redis_client.xinfo_groups(stream_key)
+    except redis.ResponseError:
+        # The stream itself doesn't exist yet (e.g. nothing has been
+        # dispatched since a fresh deployment/CI run) -- XINFO GROUPS
+        # errors on a missing key even though XLEN above happily reports 0
+        # for one. No stream means no group either.
+        groups = []
     group = next((g for g in groups if g.get("name") == group_name), None)
     if group is None:
         return {

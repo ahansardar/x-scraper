@@ -30,6 +30,21 @@ class RedisQueueStatsTests(unittest.TestCase):
         self.redis_client.delete(self.stream_key)
         self.redis_client.close()
 
+    def test_reports_empty_stats_when_stream_does_not_exist_at_all(self):
+        # Regression: XINFO GROUPS raises ResponseError on a key that has
+        # never been written to (unlike XLEN, which happily returns 0) --
+        # e.g. a fresh CI run or deployment where nothing has ever been
+        # dispatched to this stream yet.
+        stats = redis_queue_stats(
+            self.redis_client, stream_key=self.stream_key, group_name=self.group_name
+        )
+
+        self.assertFalse(stats["group_exists"])
+        self.assertEqual(stats["stream_length"], 0)
+        self.assertEqual(stats["pending_count"], 0)
+        self.assertIsNone(stats["lag"])
+        self.assertIsNone(stats["oldest_pending_idle_ms"])
+
     def test_reports_group_missing_when_stream_has_no_group(self):
         self.redis_client.xadd(self.stream_key, {"task_id": "t1"})
 
