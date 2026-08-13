@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion.releases import (
+    RecipeValidationStore,
     ReleaseHealth,
     ReleaseStore,
     apply_promotion_audit_retention,
@@ -44,6 +45,22 @@ class ReleasePromotionTests(unittest.TestCase):
             self.assertTrue(checks["manifest_present"])
             self.assertTrue(checks["fixture_validation"])
             self.assertTrue(checks["capture_replay_comparison"])
+
+            validation_store = RecipeValidationStore(db_path)
+            records = validation_store.list_recent(release_id=manifest.release_id, limit=10)
+            binding = manifest.bindings[0]
+            self.assertEqual(len(records), 2)
+            self.assertTrue(
+                all(record.recipe_revision_id == binding.recipe.revision_id for record in records)
+            )
+            self.assertTrue(
+                all(record.composition_hash == binding.recipe.composition_hash for record in records)
+            )
+            self.assertEqual(
+                {record.validation_type for record in records}, {"FIXTURE", "CAPTURE_REPLAY"}
+            )
+            fixture_record = next(r for r in records if r.validation_type == "FIXTURE")
+            self.assertTrue(fixture_record.ok)
 
     def test_promotion_safety_blocks_quarantined_release(self):
         manifest = ProtocolReleaseManifest.from_file(

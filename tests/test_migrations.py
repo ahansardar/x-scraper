@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from xingestion.migrations import MigrationRunner
 
 
-EXPECTED_MIGRATIONS = ("001", "002", "003", "004", "005", "006", "007")
+EXPECTED_MIGRATIONS = ("001", "002", "003", "004", "005", "006", "007", "008")
 
 
 class MigrationRunnerTests(unittest.TestCase):

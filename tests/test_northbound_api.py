@@ -16,7 +16,7 @@ from postgres_fixture import make_postgres_ledger, test_dsn as postgres_test_dsn
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
 from xingestion.migrations import MigrationRunner
-from xingestion.releases import ReleaseStore
+from xingestion.releases import RecipeValidationStore, ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
@@ -561,6 +561,8 @@ class NorthboundApiTests(unittest.TestCase):
             root = Path(temp_dir)
             raw_dir = root / "raw"
             raw_dir.mkdir()
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            validation_store = RecipeValidationStore(root / "data" / "tasks.sqlite3")
             live_server.STATE = SimpleNamespace(
                 config=SimpleNamespace(
                     data_dir=root / "data",
@@ -570,6 +572,7 @@ class NorthboundApiTests(unittest.TestCase):
                 auth=WebSessionAuth("auth-token", "csrf-token", "bearer-token"),
                 transport=object(),
                 evidence_sink=FileRawEvidenceSink(raw_dir),
+                recipe_validation_store=validation_store,
             )
             handler = HeaderBackedHandler(headers={})
 
@@ -578,12 +581,47 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(handler.status, 201)
             self.assertTrue(payload["validation"]["ok"])
             self.assertTrue(Path(payload["saved_path"]).exists())
+            self.assertEqual(len(payload["recipe_validation_records"]), 2)
+            record_types = {r["validation_type"] for r in payload["recipe_validation_records"]}
+            self.assertEqual(record_types, {"FIXTURE", "CAPTURE_REPLAY"})
+            self.assertEqual(
+                len(validation_store.list_recent(release_id=manifest.release_id, limit=10)), 2
+            )
 
             handler.path = "/api/protocol-validation/reports"
             listing = handler.do_GET()
 
             self.assertEqual(handler.status, 200)
             self.assertEqual(len(listing["reports"]), 1)
+
+    def test_validation_records_route_returns_recorded_history(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            validation_store = RecipeValidationStore(Path(temp_dir) / "tasks.sqlite3")
+            binding = manifest.bindings[0]
+            validation_store.record_validation(
+                release_id=manifest.release_id,
+                recipe_revision_id=binding.recipe.revision_id,
+                composition_hash=binding.recipe.composition_hash,
+                validation_type="FIXTURE",
+                ok=True,
+                summary="3/3 fixtures passed",
+            )
+            live_server.STATE = SimpleNamespace(
+                manifest=manifest,
+                recipe_validation_store=validation_store,
+            )
+            handler = FakeHandler()
+            handler.path = "/api/releases/validation-records"
+
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(payload["release_id"], manifest.release_id)
+            self.assertEqual(len(payload["records"]), 1)
+            self.assertEqual(payload["records"][0]["validation_type"], "FIXTURE")
 
     def test_outbox_process_route_requires_worker(self):
         manifest = ProtocolReleaseManifest.from_file(

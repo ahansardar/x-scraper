@@ -1793,3 +1793,23 @@ Next:
 - Look at why multiple duplicate `run_app.py`/`run_dispatcher.py`/`run_worker.py` processes had accumulated locally -- likely `run_all.ps1` not cleaning up a prior run before starting a new one.
 - Real OS-level process-kill chaos testing and a sustained multi-hour soak at production scale remain open before calling the delivery path production-certified.
 - Restart the local `run_app.py`/`run_worker.py`/`run_dispatcher.py` stack (stopped during this checkpoint's verification) to pick up the `redis_queue` metrics key from Checkpoint 83.
+
+## 2026-08-13 - Checkpoint 85: Persisted Recipe-Level Release Validation Records
+
+Implemented:
+
+- Added `RecipeValidationStore` (`src/xingestion/releases/validation_records.py`), a small SQLite-backed store (new `recipe_validation_record` table, migration `008_recipe_validation_record.sql`) that persists first-class validation records keyed by `release_id`/`recipe_revision_id`/`composition_hash`/`runtime_version`/`validation_type`/`ok`/`summary` -- a queryable history alongside the existing JSON report artifacts in `data/protocol_validation/`, not a replacement for them.
+- Added `record_recipe_validation_results()`, which writes one record per (approved-manifest capability binding recipe x validation type), so a manifest with multiple bindings gets validation history for each recipe composition it actually runs.
+- Added `xingestion.__version__` (`"0.1.0"`, matching `pyproject.toml`) as the `runtime_version` default -- no such constant existed anywhere in the codebase before this.
+- Wired persistence into both places recipe validation already runs: `build_promotion_safety_report()` (`releases/promotion.py`, every `run_releases.py check`/`approve` and `POST /api/releases/approve`) and the operator-triggered `POST /api/protocol-validation/run` (`live_server.py`), covering both fixture/raw-evidence validation and browser-capture/direct-replay comparison results.
+- Added `GET /api/releases/validation-records` returning the current release's recent record history.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 187 tests (179 non-skipped + the 3 opt-in load tests skipped + 5 new `RecipeValidationStore` unit tests), including updated `test_release_promotion.py` (asserts `build_promotion_safety_report` persists 2 records with the correct release/recipe/composition-hash identity) and `test_northbound_api.py` (asserts the validation-run route persists and returns records, and the new list route reads them back). `tests/test_migrations.py`'s `EXPECTED_MIGRATIONS` tuple updated for the new `008` migration.
+
+Next:
+
+- Consider surfacing validation-record history in the frontend Protocol Governance panel (deferred this checkpoint to keep scope to persistence + API).
+- Decide whether `run_protocol_validation.py`'s CLI path should also persist records (currently only the two live/promotion call sites do).

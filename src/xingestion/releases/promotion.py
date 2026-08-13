@@ -14,6 +14,10 @@ from xingestion.protocol_validation import (
 )
 from xingestion.releases.manifest_resolver import list_manifest_releases
 from xingestion.releases.store import ApprovedReleaseRecord, ReleaseHealth, ReleaseStore
+from xingestion.releases.validation_records import (
+    RecipeValidationStore,
+    record_recipe_validation_results,
+)
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 
@@ -203,6 +207,28 @@ def build_promotion_safety_report(
             ),
         )
     )
+    if manifest.bindings:
+        record_recipe_validation_results(
+            store=RecipeValidationStore(release_store.db_path),
+            manifest=manifest,
+            results=(
+                (
+                    "FIXTURE",
+                    fixture_report.ok,
+                    f"{fixture_report.ok_sources}/{fixture_report.checked_sources} fixture sources passed",
+                ),
+                (
+                    "CAPTURE_REPLAY",
+                    comparison_ok,
+                    (
+                        "no comparable capture/replay pairs yet"
+                        if comparison.checked_pairs == 0
+                        else f"{comparison.ok_pairs}/{comparison.checked_pairs} capture/replay pairs matched"
+                    ),
+                ),
+            ),
+        )
+
     ok = all(check.ok for check in checks)
     return PromotionSafetyReport(
         release_id=release_id,

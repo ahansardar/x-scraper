@@ -53,6 +53,10 @@ from xingestion.releases import (
     resolve_approved_manifest,
     write_promotion_audit,
 )
+from xingestion.releases.validation_records import (
+    RecipeValidationStore,
+    record_recipe_validation_results,
+)
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.secrets import (
     build_secret_provider,
@@ -123,6 +127,7 @@ class LiveAppState:
         self.secret_provider = build_secret_provider(self.config)
         self.session_store = SessionStore(self.config.sqlite_path)
         self.telemetry_store = ProtocolTelemetryStore(self.config.sqlite_path)
+        self.recipe_validation_store = RecipeValidationStore(self.config.sqlite_path)
         self.reprocess_jobs = ReprocessJobStore(self.config.sqlite_path)
         self.reload_protocol_release()
         self.session_store.upsert_session(
@@ -219,6 +224,16 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                     "retention_days": STATE.config.retention_days,
                     "audits": [audit.public_dict() for audit in audits],
                     "dry_run": retention.public_dict(),
+                }
+            )
+        if parsed.path == "/api/releases/validation-records":
+            records = STATE.recipe_validation_store.list_recent(
+                release_id=STATE.manifest.release_id, limit=50
+            )
+            return self._json(
+                {
+                    "release_id": STATE.manifest.release_id,
+                    "records": [record.public_dict() for record in records],
                 }
             )
         if parsed.path == "/api/releases/current":
@@ -597,12 +612,35 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             report,
             report_dir=STATE.config.data_dir / "protocol_validation",
         )
+        records = ()
+        if STATE.manifest.bindings:
+            records = record_recipe_validation_results(
+                store=STATE.recipe_validation_store,
+                manifest=STATE.manifest,
+                results=(
+                    (
+                        "FIXTURE",
+                        report.ok,
+                        f"{report.ok_sources}/{report.checked_sources} fixture/raw-evidence sources passed",
+                    ),
+                    (
+                        "CAPTURE_REPLAY",
+                        comparison.ok or comparison.checked_pairs == 0,
+                        (
+                            "no comparable capture/replay pairs yet"
+                            if comparison.checked_pairs == 0
+                            else f"{comparison.ok_pairs}/{comparison.checked_pairs} capture/replay pairs matched"
+                        ),
+                    ),
+                ),
+            )
         return self._json(
             {
                 "validation": report.public_dict(),
                 "direct_replay": direct_replay.public_dict(),
                 "capture_replay_comparison": comparison.public_dict(),
                 "saved_path": str(path),
+                "recipe_validation_records": [record.public_dict() for record in records],
             },
             status=201,
         )

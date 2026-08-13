@@ -5,10 +5,10 @@ This is the living checklist for the remaining product work. Completed items are
 ## Production Release Control
 
 - [x] ~~Pin an approved `ProtocolReleaseManifest` in the production execution path.~~
-- [ ] Persist recipe-level validation records with `release_id`, `recipe_revision_id`, `composition_hash`, and runtime version.
+- [x] ~~Persist recipe-level validation records with `release_id`, `recipe_revision_id`, `composition_hash`, and runtime version.~~
 - [x] ~~Reject production execution when the pinned release is not approved.~~
 - [x] ~~Write redacted release-promotion audit packages for checks, blocked approvals, normal approvals, and forced approvals.~~
-- [ ] Persist browser-capture/direct-replay comparison results as first-class release validation records instead of report artifacts only.
+- [x] ~~Persist browser-capture/direct-replay comparison results as first-class release validation records instead of report artifacts only.~~
 
 ## SEARCH_TWEETS Vertical Slice
 

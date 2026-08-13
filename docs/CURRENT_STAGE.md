@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: added in-process load/soak/crash-recovery test suite for the outbox/dispatcher/worker delivery path)
+Date: 2026-08-13 (updated: persisted recipe-level release validation records alongside JSON validation report artifacts)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -57,7 +57,7 @@ Implemented:
 - Capability planner boundary.
 - Approved protocol release pointer in SQLite, resolved to one exact manifest from `protocol_releases/`.
 - Operator release inventory and approval through `run_releases.py`, `GET /api/releases`, and `POST /api/releases/approve`.
-- Promotion safety checks before normal approval, including manifest sanity, release health, fixture validation, and capture/replay comparison.
+- Promotion safety checks before normal approval, including manifest sanity, release health, fixture validation, and capture/replay comparison, each persisted as a first-class `recipe_validation_record` (`release_id`, `recipe_revision_id`, `composition_hash`, `runtime_version`) alongside the existing JSON report artifacts.
 - Redacted release promotion audit packages for checks, blocked approvals, normal approvals, and forced approvals, exposed through `run_releases.py audits`, `GET /api/releases/audits`, downloads, retention cleanup, and the frontend Promotion Trail.
 - Backpressure before task creation through `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`.
 
@@ -387,7 +387,7 @@ Do not claim:
 
 The accurate claim is:
 
-> This repository is a production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. Local Postgres and Redis run via Docker Compose; the application itself (web, worker, dispatcher) is plain, uncontainerized Python. It has a PostgreSQL-backed durable task ledger and transactional outbox, Redis-Streams-based delivery with consumer-group fencing and crash recovery, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports, secret-provider abstraction with file-backed deployment support, session registry import, per-session credential resolution, startup readiness checks (including Postgres/Redis reachability), a real frontend, deployment runbook, and passing CI (Windows matrix plus a Postgres/Redis-backed Ubuntu job). It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
+> This repository is a production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. Local Postgres and Redis run via Docker Compose; the application itself (web, worker, dispatcher) is plain, uncontainerized Python. It has a PostgreSQL-backed durable task ledger and transactional outbox, Redis-Streams-based delivery with consumer-group fencing and crash recovery, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports plus persisted first-class recipe validation records, secret-provider abstraction with file-backed deployment support, session registry import, per-session credential resolution, startup readiness checks (including Postgres/Redis reachability), a real frontend, deployment runbook, and passing CI (Windows matrix plus a Postgres/Redis-backed Ubuntu job). It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
 
 ## Next Recommended Work
 

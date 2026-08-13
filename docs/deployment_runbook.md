@@ -402,9 +402,12 @@ The first command checks committed GraphQL regression fixtures. The second check
 GET /api/protocol-validation
 GET /api/protocol-validation/reports
 POST /api/protocol-validation/run
+GET /api/releases/validation-records
 ```
 
 Saved reports are written to `XINGESTION_DATA_DIR\protocol_validation`. The `POST` route does not require an admin-token header and runs direct replays for recent replayable captures before writing the validation response.
+
+Every `POST /api/protocol-validation/run` and every release promotion safety check (`run_releases.py check`/`approve`, `POST /api/releases/approve`) also persists a first-class `recipe_validation_record` row per approved-manifest capability binding: `release_id`, `recipe_revision_id`, `composition_hash`, `runtime_version`, `validation_type` (`FIXTURE` or `CAPTURE_REPLAY`), `ok`, and a summary, in the SQLite task database. `GET /api/releases/validation-records` returns the current release's recent history from this table -- a queryable answer to "was this exact recipe composition ever validated, and did it pass," independent of the JSON report artifacts above.
 
 Bulk reprocess completed tasks for a release:
 
