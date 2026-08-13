@@ -13,7 +13,7 @@ from postgres_fixture import probe_reachable, test_dsn
 from xingestion.migrations import PostgresMigrationRunner
 from xingestion.tasks import PostgresTaskLedger
 
-EXPECTED_MIGRATIONS = ("001",)
+EXPECTED_MIGRATIONS = ("001", "002")
 
 
 class PostgresMigrationRunnerTests(unittest.TestCase):
