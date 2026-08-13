@@ -85,20 +85,23 @@ A task is only ever created once per **idempotency key** — submitting the same
 
 ### 3.2 The dispatcher moves work from Postgres to Redis
 
-`run_dispatcher.py` runs a simple loop, roughly once a second:
+`run_dispatcher.py` wakes up two ways — a Postgres `LISTEN`/`NOTIFY` push (primary) and a fixed-interval poll (fallback), so a missing/unreachable notify listener never stalls dispatch, it just gets slower:
 
 ```mermaid
 flowchart TD
-    A[Dispatcher wakes up] --> B["SELECT one unpublished outbox row<br/>FOR UPDATE SKIP LOCKED"]
+    T["Trigger: AFTER INSERT ON outbox_events<br/>(migration 002_outbox_notify_trigger.sql)"] -->|"pg_notify('xingestion_outbox_events', ...)"| L["Dispatcher's LISTEN connection<br/>(PostgresOutboxNotificationListener)"]
+    L --> A[Dispatcher wakes]
+    S["No listener connection available<br/>(logged as a warning)"] -->|"fixed interval<br/>(XINGESTION_DISPATCHER_POLL_SECONDS)"| A
+    A --> B["SELECT one unpublished outbox row<br/>FOR UPDATE SKIP LOCKED"]
     B --> C{Row found?}
-    C -->|No| D[Sleep, try again]
+    C -->|No| D[Go back to waiting]
     C -->|Yes| E["XADD to Redis stream<br/>xingestion:capability-tasks"]
     E --> F["UPDATE outbox row<br/>SET published_at = now()"]
-    F --> A
+    F --> B
     D --> A
 ```
 
-`FOR UPDATE SKIP LOCKED` means multiple dispatcher processes could safely run at once without double-publishing the same row — though today only one dispatcher process runs.
+`FOR UPDATE SKIP LOCKED` means multiple dispatcher processes could safely run at once without double-publishing the same row — though today only one dispatcher process runs. On a wake, the dispatcher drains *every* currently pending row (not just one) before going back to waiting, so a single notification can flush an entire backlog.
 
 The order of `XADD` then `UPDATE ... published_at` (not the reverse) is deliberate: if the dispatcher crashes between those two steps, the row is still unpublished, so the *next* dispatcher run re-publishes it. That produces a harmless duplicate Redis entry rather than a silently lost task — "at-least-once," never "at-most-once."
 
@@ -288,6 +291,8 @@ Why three, not one:
 - **`recipe_validation_freshness`** answers something neither of the others can: not "did live traffic succeed," but "did anyone ever *deliberately test* this exact byte-for-byte composition." A recipe can have zero live failures simply because nobody has run it yet, and freshness is what catches that.
 
 All three are exposed in health reports, `/api/metrics`, and `run_supervisor_check.py` — as **non-blocking warnings**, deliberately. None of them halts task execution automatically; they're operator signals, not hard gates (the one exception is a full `QUARANTINE_RECOMMENDED` release-health flag, which does block new task execution — see §6).
+
+A fourth field, `search_route_monitoring`, is *not* a new independent signal — it's a presentation layer over `release_risk` and the per-route failure-rate recommendations already computed for network health, scoped down to whichever single network context the worker is actually configured to use. It exists so an operator watching the one approved production route doesn't have to mentally cross-reference two other panels to answer "is the route I actually care about okay right now."
 
 ---
 

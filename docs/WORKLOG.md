@@ -2015,3 +2015,24 @@ Verified:
 Next:
 
 - The remaining open items in `docs/TASKS.md` are the structured Postgres migration tooling cleanup and the next capability vertical slice after `SEARCH_TWEETS`.
+
+## 2026-08-13 - Checkpoint 97: Merged PR #6, Fixed a Stale Test It Broke, Updated Docs
+
+Implemented:
+
+- Merged GitHub PR #6 ("Harden search route monitoring," already merged upstream by the repo owner via GitHub -- Checkpoints 95-96 above are that PR's own worklog entries) into the local `main` branch with `git merge --ff-only` (clean fast-forward, no local commits diverged, so no conflicts possible).
+- Verified the merge instead of assuming it was safe: ran `python -m compileall` (clean) and the full test suite, which found a real break the PR's own narrower verification (`python -m unittest tests.test_local_worker tests.test_delivery_load`, per Checkpoint 96) hadn't caught -- `tests/test_postgres_migration_runner.py`'s `EXPECTED_MIGRATIONS = ("001",)` was never updated for the PR's new `002_outbox_notify_trigger.sql` migration, so `test_applies_baseline_migration_once` and `test_status_survives_a_pool_connection_previously_used_with_dict_row` both failed. Fixed to `("001", "002")`.
+- Updated `docs/CURRENT_STAGE.md` (date line, Production Control Plane bullet for the new `LISTEN`/`NOTIFY` wake path, Release Health bullet for `search_route_monitoring`, and the now-partially-stale "Next Recommended Work" `LISTEN`/`NOTIFY` mention) and `docs/deployment_runbook.md` (dispatcher wake-path mechanics including the exact trigger/migration/channel/env-var names, and `search_route_monitoring`'s relationship to `release_risk`/network-route recommendations) to reflect what the merge actually added.
+- Updated `docs/SYSTEM_FLOW.md` (written last checkpoint, before this merge existed) for accuracy: §3.2's dispatcher diagram was describing pure fixed-interval polling, which is no longer true -- redrawn to show the `LISTEN`/`NOTIFY` trigger as the primary wake path with polling as an explicit fallback, and corrected the "drains everything in one wake" behavior. §5 now explains `search_route_monitoring` as a presentation layer over the existing `release_risk`/network-route signals scoped to one route, not a fourth independent signal (avoiding contradicting that section's central "three signals, deliberately not more" point).
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 229 tests (0 skipped beyond the usual 3 opt-in load tests) after the `EXPECTED_MIGRATIONS` fix.
+- `python run_postgres_migrations.py` applied migration `002` to the real local database cleanly.
+- Live: restarted the stack; `dispatcher.err.log` confirms `"dispatcher listening on postgres channel=xingestion_outbox_events for outbox wakeups"` (not the polling-fallback warning); `run_supervisor_check.py` shows all 11 checks `PASS` including the new `search_route_monitoring` check; `run_smoke.py --submit "india lang:en" --wait 60` completed a real task end to end (`state=DONE tweets=21`) through the new notify-driven dispatch path.
+- Confirmed the fix was genuinely necessary, not local-only flakiness: PR #6's own merge-commit CI run (triggered automatically by the GitHub-side merge, independent of anything done in this session) failed on GitHub Actions with the identical `EXPECTED_MIGRATIONS` assertion error; the very next push (this checkpoint's fix) went green.
+
+Next:
+
+- `docs/TASKS.md`'s "Production Hardening" section has one item left: replacing the hand-rolled Postgres migration runner with structured migration tooling. Otherwise remaining work is the single-node-vs-managed-infra decision, the next capability vertical slice, and the spec-flagged gaps list.

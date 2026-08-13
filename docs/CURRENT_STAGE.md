@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: added Redis stream backlog reconciliation, cross-referencing entries against Postgres to find and clean up ones whose task no longer exists)
+Date: 2026-08-13 (updated: merged PR #6 -- approved search-route monitoring signal and a Postgres LISTEN/NOTIFY dispatcher wake path; fixed a stale test left broken by that merge)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -90,7 +90,7 @@ Implemented:
 - Durable task ledger using PostgreSQL (`PostgresTaskLedger`), single-node local instance via Docker Compose.
 - Task states including created, enqueued, running, retry scheduled, done, dead letter, cancelled.
 - Transactional outbox table in Postgres, committed atomically with task creation/replay.
-- `RedisOutboxDispatcher`: publishes committed-but-undelivered outbox rows to a Redis stream (XADD before marking published, so a crash between the two produces a harmless duplicate delivery, never a lost one).
+- `RedisOutboxDispatcher`: publishes committed-but-undelivered outbox rows to a Redis stream (XADD before marking published, so a crash between the two produces a harmless duplicate delivery, never a lost one). Primary wake path is a Postgres `LISTEN`/`NOTIFY` trigger on `outbox_events` inserts (`PostgresOutboxNotificationListener`, migration `002_outbox_notify_trigger.sql`), draining all pending rows per wake; falls back to the original fixed-interval poll loop if the notify listener can't connect.
 - Consumer-group-based `LocalWorker`: reads via `XREADGROUP`, acquires a fenced Postgres execution lease, executes, and only `XACK`s after the Postgres transition commits. Stale pending deliveries (crashed workers) are reclaimed via periodic `XAUTOCLAIM`, independent of Postgres lease expiry as a second, deliberately uncoordinated safety net.
 - Idempotent task creation.
 - Replay lineage for dead-letter tasks.
@@ -143,6 +143,7 @@ Implemented:
 - Current release health storage.
 - Release risk recommendations (lifetime-cumulative error signals).
 - Recency-windowed protocol drift reports (last-N-attempts view against the currently approved recipe, distinct from the lifetime release-risk score), surfaced in health reports, `/api/metrics`, `GET /api/releases/current/drift`, and a non-blocking supervisor-check warning.
+- Approved search-route monitoring: a combined view of release risk and route-level telemetry for the currently approved release's target network context, surfaced in `/api/metrics`, health reports, the frontend metrics strip, and `run_supervisor_check.py` (WARN on route remediation, FAIL on quarantine-level risk).
 - Quarantine and activate controls.
 - Approval controls that reload the live planner/worker for future tasks.
 - Protocol telemetry attempts.
@@ -393,8 +394,8 @@ The accurate claim is:
 
 ## Next Recommended Work
 
-1. Decide whether to invest next in:
-   - hardening this single-node Postgres/Redis setup (connection pool tuning, `LISTEN`/`NOTIFY` for lower dispatch latency, structured migration tooling beyond the hand-rolled runner), or
-   - moving toward managed/clustered Postgres and Redis (replication, Sentinel/Cluster) for genuine production deployment.
+1. `LISTEN`/`NOTIFY` dispatcher wakeups are done (see above); the single-node-vs-managed-infra decision otherwise remains open:
+   - continue hardening this single-node Postgres/Redis setup (structured migration tooling beyond the hand-rolled runner remains open), or
+   - move toward managed/clustered Postgres and Redis (replication, Sentinel/Cluster) for genuine production deployment.
 2. Add more capabilities only after the `SEARCH_TWEETS` vertical slice has validation tightened.
 3. `run_supervisor_check.py`/health reporting now surface Redis consumer-group lag and pending-entry-count metrics alongside Postgres outbox lag, and the delivery path now has an in-process load/soak/crash-recovery test suite (`tests/test_delivery_load.py`, opt-in via `XINGESTION_RUN_LOAD_TESTS=1`, run in the Postgres/Redis CI job). Remaining gap before calling it production-certified: real OS-level process-kill chaos testing and a sustained multi-hour soak at production scale.

@@ -169,6 +169,8 @@ python .\run_dispatcher.py
 
 The dispatcher publishes committed-but-undelivered outbox rows from Postgres to the Redis stream; the worker consumes that stream via a consumer group. Both are required, always-on processes alongside the web app -- see [process_supervision.md](process_supervision.md) for supervising all three.
 
+The dispatcher's primary wake path is a Postgres `LISTEN`/`NOTIFY` trigger (`notify_outbox_event_created`, migration `002_outbox_notify_trigger.sql`) on the `xingestion_outbox_events` channel: every committed `outbox_events` insert immediately wakes the dispatcher, which then drains every currently pending row in one cycle before going back to listening. If the notify listener can't connect (logged as a warning), the dispatcher falls back to the original fixed-interval poll loop (`XINGESTION_DISPATCHER_POLL_SECONDS`) automatically -- no separate flag needed.
+
 After the web process is listening, verify the deployed API shape:
 
 ```powershell
@@ -313,6 +315,8 @@ GET /api/releases/current/drift
 ```
 
 `release_risk` (above) scores lifetime-cumulative error counts and never resets -- a release with a handful of failures months ago stays flagged forever, and a release that just started failing is diluted by a long healthy history. `protocol_drift` complements it by looking only at the most recent attempts (default window 20) against the *currently* approved recipe: `drifting=true` at `HIGH` severity means `OPERATION_NOT_FOUND` or `PARSER_FAILURE` appeared at all in that window (the approved recipe is failing against live X responses right now); at `MEDIUM` severity it means either the recent failure rate is at or above 40%, or the recipe's live composition has no fresh, passing validation record (see `recipe_validation_freshness` above). It is surfaced in health reports, `/api/metrics`, and as a non-blocking `WARN` (never `FAIL`) in `run_supervisor_check.py` -- deliberately not a hard gate, since a transient recent glitch shouldn't block an otherwise-working deployment.
+
+`search_route_monitoring` (in `/api/metrics`, the health report, and the frontend metrics strip) is a presentation layer over `release_risk` and the network-route recommendations, scoped to one target network context (`XINGESTION_WORKER_NETWORK_CONTEXT`, default `direct`): it picks whichever signal is most actionable for that specific route -- `RELEASE_BLOCKED`/`QUARANTINE_RECOMMENDED` (release-level, `HIGH`), a route-level `NETWORK_REMEDIATION_RECOMMENDED`/`ROTATE_OR_PAUSE_ROUTE` (`MEDIUM`), `NO_ROUTE_DATA` if nothing has been observed yet, or `CONTINUE_MONITORING` if the approved route is healthy. `run_supervisor_check.py`'s `search_route_monitoring` check `FAIL`s on the release-level cases and `WARN`s on the route-level ones.
 
 Restore a fixed session to worker rotation:
 
