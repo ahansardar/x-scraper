@@ -22,7 +22,7 @@ from xingestion.capabilities import (
 )
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
-from xingestion.dispatch import redis_queue_stats
+from xingestion.dispatch import reconcile_redis_stream_backlog, redis_queue_stats
 from xingestion.investigation import (
     build_network_route_recommendations,
     build_protocol_drift_package,
@@ -392,6 +392,10 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             if not self._require_admin():
                 return
             return self._process_outbox(self._read_json())
+        if parsed.path == "/api/outbox/reconcile-stream":
+            if not self._require_admin():
+                return
+            return self._reconcile_outbox_stream(self._read_json())
         if parsed.path == "/api/protocol-validation/run":
             if not self._require_admin():
                 return
@@ -582,6 +586,21 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if result is None:
             return self._json({"message": "Worker is not configured"}, status=503)
         return self._json({"outbox_process": result.public_dict()}, status=200)
+
+    def _reconcile_outbox_stream(self, body):
+        limit = int(body.get("limit", 500))
+        dry_run = bool(body.get("dry_run", True))
+        try:
+            result = reconcile_redis_stream_backlog(
+                STATE.redis_client,
+                STATE.ledger,
+                stream_key=STATE.config.redis_stream_key,
+                limit=limit,
+                dry_run=dry_run,
+            )
+        except ValueError as exc:
+            return self._json({"message": str(exc)}, status=400)
+        return self._json({"reconciliation": result}, status=200)
 
     def _process_ready_outbox(self, *, limit):
         worker = getattr(STATE, "worker", None)

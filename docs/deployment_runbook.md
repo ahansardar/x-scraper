@@ -399,6 +399,19 @@ POST /api/outbox/process
 
 The `POST` route does not require an admin-token header. In normal operation, outbox delivery goes through `run_dispatcher.py` and Redis Streams; this manual route/CLI path still exists as a direct drain and executes `LocalWorker.process_one()` against a pending stream delivery, so release quarantine, session availability, retry scheduling, telemetry, canonical persistence, and continuation queueing all stay active.
 
+Reconcile the Redis stream against Postgres (the durable authority) for entries whose task no longer exists -- this can happen if retention deletes a terminal task before a stalled or backlogged consumer group ever delivers its still-unread stream entry. Dry-run by default:
+
+```powershell
+python .\run_outbox.py --reconcile-stream --json
+python .\run_outbox.py --reconcile-stream --apply --json
+```
+
+```text
+POST /api/outbox/reconcile-stream
+```
+
+Body `{"limit": 500, "dry_run": true}` (both optional, these are the defaults). An orphaned entry can never be successfully processed -- a worker would immediately drop it as `TASK_NOT_FOUND` -- so deleting it via `XDEL` loses nothing; entries whose task still exists are never touched, regardless of age (that's a dispatch-lag concern, see `redis_queue` stats above, not an orphan).
+
 Validate the pinned `SEARCH_TWEETS` parser before and after protocol changes:
 
 ```powershell

@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import redis as redis_lib
+
 from postgres_fixture import make_postgres_ledger, test_dsn as postgres_test_dsn
 
 from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, SearchTweetsInput
@@ -657,6 +659,59 @@ class NorthboundApiTests(unittest.TestCase):
                 payload["outbox_process"]["after"]["unpublished_events"],
                 0,
             )
+
+    def test_reconcile_outbox_stream_route_reports_and_deletes_orphans(self):
+        try:
+            redis_client = redis_lib.Redis.from_url(
+                "redis://127.0.0.1:6379/1", decode_responses=True, socket_connect_timeout=3
+            )
+            redis_client.ping()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"Redis unavailable: {exc}")
+
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        stream_key = f"test-reconcile-route-{os.getpid()}"
+        redis_client.delete(stream_key)
+        try:
+            ledger = self.ledger
+            task = ledger.create_task(
+                idempotency_key="reconcile-route-valid",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+            redis_client.xadd(stream_key, {"task_id": task.task_id})
+            redis_client.xadd(stream_key, {"task_id": "task-does-not-exist"})
+
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(redis_stream_key=stream_key),
+                ledger=ledger,
+                redis_client=redis_client,
+            )
+            handler = HeaderBackedHandler(headers={})
+
+            dry_run_payload = handler._reconcile_outbox_stream({})
+            self.assertEqual(handler.status, 200)
+            reconciliation = dry_run_payload["reconciliation"]
+            self.assertTrue(reconciliation["dry_run"])
+            self.assertEqual(reconciliation["orphaned_count"], 1)
+            self.assertEqual(redis_client.xlen(stream_key), 2)
+
+            applied_payload = handler._reconcile_outbox_stream({"dry_run": False})
+            self.assertEqual(applied_payload["reconciliation"]["deleted_entries"], 1)
+            self.assertEqual(redis_client.xlen(stream_key), 1)
+        finally:
+            redis_client.delete(stream_key)
+            redis_client.close()
 
     def test_export_failed_task_writes_support_package(self):
         manifest = ProtocolReleaseManifest.from_file(

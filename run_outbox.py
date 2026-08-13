@@ -8,9 +8,11 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+import redis
 from psycopg_pool import ConnectionPool
 
 from xingestion.config import load_app_config
+from xingestion.dispatch import reconcile_redis_stream_backlog
 from xingestion.logging_config import configure_logging
 from xingestion.outbox_operations import list_outbox_queue, process_outbox
 from xingestion.tasks import PostgresTaskLedger
@@ -24,6 +26,14 @@ def main(argv=None):
     args = _parser().parse_args(argv)
     config = load_app_config(ROOT, argv)
     configure_logging(config=config, component="outbox", console=False)
+
+    if args.reconcile_stream:
+        payload = _reconcile_stream(config, args)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        _print_reconcile_human(payload)
+        return 0
 
     if args.process:
         worker = build_worker(config=config, root=ROOT)
@@ -44,12 +54,45 @@ def main(argv=None):
     return 0
 
 
+def _reconcile_stream(config, args) -> dict[str, object]:
+    pool = ConnectionPool(config.postgres_dsn, min_size=1, max_size=1, open=True)
+    try:
+        ledger = PostgresTaskLedger(pool)
+        redis_client = redis.Redis.from_url(config.redis_url, decode_responses=True)
+        try:
+            return reconcile_redis_stream_backlog(
+                redis_client,
+                ledger,
+                stream_key=config.redis_stream_key,
+                limit=args.stream_limit,
+                dry_run=not args.apply,
+            )
+        finally:
+            redis_client.close()
+    finally:
+        pool.close()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Inspect or process the local transactional outbox.",
     )
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--process", action="store_true")
+    parser.add_argument(
+        "--reconcile-stream",
+        action="store_true",
+        help=(
+            "Scan the Redis stream for entries whose task no longer exists in "
+            "Postgres and report them (dry-run by default; pass --apply to delete)."
+        ),
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="With --reconcile-stream, actually delete orphaned stream entries.",
+    )
+    parser.add_argument("--stream-limit", type=int, default=500)
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -96,6 +139,21 @@ def _print_human(payload: dict[str, object], *, processed: bool) -> None:
                 age_seconds=event["age_seconds"],
             )
         )
+
+
+def _print_reconcile_human(payload: dict[str, object]) -> None:
+    mode = "DRY-RUN" if payload["dry_run"] else "APPLIED"
+    print(
+        "[{mode}] stream={stream} scanned={scanned} orphaned={orphaned} deleted={deleted}".format(
+            mode=mode,
+            stream=payload["stream_key"],
+            scanned=payload["scanned_entries"],
+            orphaned=payload["orphaned_count"],
+            deleted=payload["deleted_entries"],
+        )
+    )
+    for entry in payload["orphaned_entries"]:
+        print(f"  orphaned message={entry['message_id']} task={entry['task_id']}")
 
 
 if __name__ == "__main__":

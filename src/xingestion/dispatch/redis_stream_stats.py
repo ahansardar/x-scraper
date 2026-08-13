@@ -1,6 +1,64 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 import redis
+
+
+class TaskExistenceCheck(Protocol):
+    def get_task(self, task_id: str) -> object | None:
+        """Return a task by ID, or None if it does not exist."""
+
+
+def reconcile_redis_stream_backlog(
+    redis_client,
+    ledger: TaskExistenceCheck,
+    *,
+    stream_key: str,
+    limit: int = 500,
+    dry_run: bool = True,
+) -> dict[str, object]:
+    """Find (and optionally remove) stream entries whose task no longer exists.
+
+    Enumerates up to `limit` stream entries via XRANGE (oldest first) and
+    cross-references each entry's task_id against Postgres, the durable
+    authority -- Redis is reconstructable delivery infrastructure, never the
+    source of truth. An entry whose task doesn't exist can never be
+    successfully processed (a worker would immediately drop it as
+    TASK_NOT_FOUND); this can legitimately happen if retention deletes a
+    terminal task before a stalled or backlogged consumer group ever
+    delivers its still-unread stream entry.
+
+    Deletes orphaned entries via XDEL when dry_run=False. Entries whose task
+    still exists are never touched here regardless of age -- that is a
+    dispatch-lag/backlog concern (see redis_queue_stats), not an orphan.
+    """
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+
+    raw_entries = redis_client.xrange(stream_key, min="-", max="+", count=limit)
+    orphaned: list[dict[str, object]] = []
+    for message_id, fields in raw_entries:
+        task_id = fields.get("task_id")
+        if not task_id:
+            continue
+        if ledger.get_task(task_id) is None:
+            orphaned.append({"message_id": message_id, "task_id": task_id})
+
+    deleted_entries = 0
+    if not dry_run and orphaned:
+        deleted_entries = int(
+            redis_client.xdel(stream_key, *[entry["message_id"] for entry in orphaned])
+        )
+
+    return {
+        "dry_run": dry_run,
+        "stream_key": stream_key,
+        "scanned_entries": len(raw_entries),
+        "orphaned_count": len(orphaned),
+        "orphaned_entries": orphaned,
+        "deleted_entries": deleted_entries,
+    }
 
 
 def redis_queue_stats(redis_client, *, stream_key: str, group_name: str) -> dict[str, object]:

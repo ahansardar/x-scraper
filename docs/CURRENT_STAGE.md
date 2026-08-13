@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: release promotion now validates a recipe's operation/auth_profile/transaction_profile as one bound unit via a real probe request, not components checked in isolation)
+Date: 2026-08-13 (updated: added Redis stream backlog reconciliation, cross-referencing entries against Postgres to find and clean up ones whose task no longer exists)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -389,7 +389,7 @@ Do not claim:
 
 The accurate claim is:
 
-> This repository is a production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. Local Postgres and Redis run via Docker Compose; the application itself (web, worker, dispatcher) is plain, uncontainerized Python. It has a PostgreSQL-backed durable task ledger and transactional outbox, Redis-Streams-based delivery with consumer-group fencing and crash recovery, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls, parser validation fingerprints and saved validation reports plus persisted first-class recipe validation records, secret-provider abstraction with file-backed deployment support, session registry import, per-session credential resolution, startup readiness checks (including Postgres/Redis reachability), a real frontend, deployment runbook, and passing CI (Windows matrix plus a Postgres/Redis-backed Ubuntu job). It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
+> This repository is a production-oriented local vertical slice of the final X protocol ingestion platform, centered on `SEARCH_TWEETS`. Local Postgres and Redis run via Docker Compose; the application itself (web, worker, dispatcher) is plain, uncontainerized Python. It has a PostgreSQL-backed durable task ledger and transactional outbox, Redis-Streams-based delivery with consumer-group fencing and crash recovery, raw evidence, canonical tweet/engagement storage, session/release/error operations, support exports, outbox recovery controls including Redis-vs-Postgres stream backlog reconciliation, parser validation fingerprints and saved validation reports plus persisted first-class recipe validation records, secret-provider abstraction with file-backed deployment support, session registry import, per-session credential resolution, startup readiness checks (including Postgres/Redis reachability), a real frontend, deployment runbook, and passing CI (Windows matrix plus a Postgres/Redis-backed Ubuntu job). It is ready to demonstrate and continue hardening, but not yet complete against the final spec.
 
 ## Next Recommended Work
 

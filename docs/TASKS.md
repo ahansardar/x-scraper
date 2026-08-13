@@ -34,7 +34,7 @@ This is the living checklist for the remaining product work. Completed items are
 
 ## Production Hardening
 
-- [ ] Drain and reconcile any stale outbox backlog before widening rollout.
+- [x] ~~Drain and reconcile any stale outbox backlog before widening rollout.~~
 - [ ] Expand monitoring and release-risk handling around the approved search route.
 - [ ] Add connection-pool tuning and lower-latency dispatch wakeups, such as Postgres `LISTEN`/`NOTIFY`, if staying on the single-node local infrastructure path.
 - [ ] Replace the hand-rolled Postgres migration runner with structured migration tooling before larger schema growth.
