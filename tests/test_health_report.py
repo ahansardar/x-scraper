@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from postgres_fixture import make_postgres_ledger
+from postgres_fixture import make_postgres_ledger, test_dsn as postgres_test_dsn
 
 from xingestion.config import AppConfig
 from xingestion.health_report import build_health_report, write_health_report
@@ -174,7 +174,7 @@ def _config(root: Path) -> AppConfig:
         session_registry_path=None,
         require_migrations=True,
         max_active_tasks_per_capability=100,
-        postgres_dsn="postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion",
+        postgres_dsn=postgres_test_dsn(),
         postgres_pool_min_size=1,
         postgres_pool_max_size=10,
         redis_url="redis://127.0.0.1:6379/0",

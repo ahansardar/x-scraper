@@ -1858,3 +1858,24 @@ Next:
 
 - Consider giving `postgres_fixture.py`'s tests a dedicated local database/DSN instead of sharing the live dev stack's default, so running the suite no longer risks truncating a stack someone is actively using.
 - Surface protocol drift reports when the approved recipe starts failing in production (remaining open item in this section).
+
+## 2026-08-13 - Checkpoint 88: Fixed CI (Broken Since Checkpoint 83) and Postgres Test/Dev Isolation
+
+Implemented:
+
+- **Root-caused and fixed CI, which had been failing on every push since Checkpoint 83** (`gh run list`/`gh run view --log-failed` showed 4 straight failed runs, all with the identical `KeyError: 'stream_key'` in `test_health_report_writes_safe_operator_snapshot`). Cause: `redis_queue_stats()` (`src/xingestion/dispatch/redis_stream_stats.py`) called `XINFO GROUPS` on the stream key, which raises `ResponseError` on a key that has *never* been written to (unlike `XLEN`, which returns 0 for the same key) -- true on a fresh CI Postgres/Redis job where nothing has been dispatched yet, never true locally where the dev stack's Redis always already had a live stream. `build_health_report()`'s `_safe_section` caught the exception and returned `{"error": ..., "message": ...}` instead of stats, so the test's `saved["redis_queue"]["stream_key"]` lookup KeyError'd. Fixed by catching `redis.ResponseError` around the `XINFO GROUPS` call and treating a missing stream the same as a missing group (added `test_reports_empty_stats_when_stream_does_not_exist_at_all`).
+  - Because the CI workflow's Postgres/Redis job runs each test file as a separate `run:` line in one bash step (which fails fast on the first non-zero exit), every file listed *after* `test_health_report.py` -- `test_support_export.py`, `test_northbound_api.py`, `test_preflight.py`, `test_investigation.py`, `test_outbox_operations.py`, and the newly-added `test_delivery_load.py` -- had never actually executed in CI since Checkpoint 83, despite all of Checkpoints 84-87's work landing in that window. Local `python -m unittest discover -s tests` runs never caught any of this because local discovery runs every file in one process regardless of an earlier file's failure.
+- **Fixed the local Postgres test/dev data-isolation gap flagged in Checkpoint 87.** `tests/postgres_fixture.py`'s `DEFAULT_TEST_DSN` now points at a dedicated `xingestion_test` database instead of the same `xingestion` database `XINGESTION_POSTGRES_DSN` defaults to (the one `run_all.ps1`'s live stack uses) -- auto-created via `probe_reachable()` if missing (connects to the always-present `postgres` admin database, checks `pg_database`, issues `CREATE DATABASE` if needed). CI is unaffected: its workflow always sets `XINGESTION_TEST_POSTGRES_DSN` explicitly to the single-database service container, never relying on this Python-level default.
+  - Three test files hardcoded the *old* shared-DSN literal directly into an `AppConfig(postgres_dsn=...)` used to open a second, independent Postgres pool for reading/writing real task data (`health_report.py`'s `_open_task_ledger`, `support_export.py`'s pool) -- separate from the `self.ledger = make_postgres_ledger()` used to set up each test's fixture data. Left as literals, these would have silently pointed at the *old* shared database after the fixture default moved, breaking the tests (data created via one DSN, read back via another). Fixed `test_health_report.py`, `test_support_export.py`, and `test_preflight.py`'s `_config()` default to use `postgres_fixture.test_dsn()` instead. Left `test_secrets.py`/`test_logging_config.py`'s hardcoded literals alone -- confirmed neither ever opens a real Postgres connection with it, it's just a required `AppConfig` field filler.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 195 tests (194 + 1 new `redis_queue_stats` regression test).
+- Live isolation check: snapshotted the live `xingestion` database's `capability_tasks` row count (1) before running the full local suite, ran it, and confirmed the count was still exactly 1 afterward -- previously this always dropped to 0 (or whatever the suite's own fixture data left behind). Confirmed `xingestion_test` was auto-created and holds its own independent state.
+- `run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes` against the live stack: all 10 checks PASS, unaffected by the isolation change.
+- Pushed both fixes and watched the resulting CI run to confirm the Postgres/Redis job goes green and every previously-unreached test file finally executes and passes.
+
+Next:
+
+- No further known CI or local-isolation issues; keep an eye on the first few CI runs after this checkpoint in case a test file that's never run in CI before surfaces something new.

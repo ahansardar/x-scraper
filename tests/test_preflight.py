@@ -328,7 +328,7 @@ class PreflightTests(unittest.TestCase):
 def _config(
     root: Path,
     *,
-    postgres_dsn: str = "postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion",
+    postgres_dsn: str = postgres_test_dsn(),
     redis_url: str = "redis://127.0.0.1:6379/0",
 ) -> AppConfig:
     return AppConfig(
