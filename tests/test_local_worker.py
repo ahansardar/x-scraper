@@ -103,6 +103,22 @@ class CursorTransport(FakeTransport):
         return ProtocolHttpResponse(response.status_code, body)
 
 
+class SequencedCursorTransport(FakeTransport):
+    """Returns a different bottom cursor on each successive call."""
+
+    def __init__(self, cursors):
+        self.cursors = list(cursors)
+        self.calls = 0
+
+    def send(self, request):
+        response = super().send(request)
+        body = dict(response.json_body)
+        body["cursorType"] = "Bottom"
+        body["value"] = self.cursors[self.calls]
+        self.calls += 1
+        return ProtocolHttpResponse(response.status_code, body)
+
+
 class FlakyTransport:
     def __init__(self):
         self.calls = 0
@@ -836,6 +852,56 @@ class LocalWorkerTests(unittest.TestCase):
         self.assertEqual(result.error_class, "PAGINATION_CURSOR_MISSING")
         self.assertEqual(failed.state, TaskState.DEAD_LETTER)
         self.assertEqual(failed.error_json["error_class"], "PAGINATION_CURSOR_MISSING")
+
+    def test_worker_detects_cursor_loop_spanning_multiple_prior_pages(self):
+        # Regression: seen_cursors was never populated before this fix, so a
+        # loop back to a cursor used more than one page ago went completely
+        # undetected -- only an exact repeat of the *immediately previous*
+        # cursor could ever raise PAGINATION_CURSOR_LOOP. Page 3 here loops
+        # back to page 2's cursor, not page 3's own current_cursor.
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20, max_pages=5),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        task = self.ledger.create_task(
+            idempotency_key="pagination-loop-root",
+            capability_id=request.capability_id,
+            contract_version=request.contract_version,
+            request_json=request.public_dict(),
+            plan_json=plan.public_dict(),
+        )
+        # page1 fetch -> cursor-a; page2 fetch (using cursor-a) -> cursor-b;
+        # page3 fetch (using cursor-b) -> cursor-a again.
+        transport = SequencedCursorTransport(["cursor-a", "cursor-b", "cursor-a"])
+        worker = self.make_worker(
+            manifest=manifest,
+            auth=WebSessionAuth("auth", "csrf", "bearer"),
+            transport=transport,
+            raw_evidence_sink=FileRawEvidenceSink(Path(self.temp_dir.name) / "raw"),
+        )
+        self.dispatch_pending(1)
+
+        page1_result = worker.process_one()
+        page1 = self.ledger.get_task(task.task_id)
+        page2_id = page1.result_json["pagination"]["continuation_task_id"]
+        self.dispatch_pending(1)
+
+        page2_result = worker.process_one()
+        page2 = self.ledger.get_task(page2_id)
+        page3_id = page2.result_json["pagination"]["continuation_task_id"]
+        self.dispatch_pending(1)
+
+        page3_result = worker.process_one()
+        page3 = self.ledger.get_task(page3_id)
+
+        self.assertEqual(page1_result.state, TaskState.DONE)
+        self.assertEqual(page2_result.state, TaskState.DONE)
+        self.assertEqual(page3_result.state, TaskState.DEAD_LETTER)
+        self.assertEqual(page3_result.error_class, "PAGINATION_CURSOR_LOOP")
+        self.assertEqual(page3.error_json["error_class"], "PAGINATION_CURSOR_LOOP")
 
     def test_pagination_failure_does_not_record_success_or_ingest_canonical(self):
         manifest = load_manifest()

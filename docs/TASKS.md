@@ -13,7 +13,7 @@ This is the living checklist for the remaining product work. Completed items are
 ## SEARCH_TWEETS Vertical Slice
 
 - [x] ~~Integrate `SEARCH_TWEETS` pagination validation into the production worker path.~~
-- [ ] Add explicit cursor-loop evidence to the investigation package when pagination fails.
+- [x] ~~Add explicit cursor-loop evidence to the investigation package when pagination fails.~~
 - [ ] Expand search request inputs to cover the remaining stable contract fields from the product spec.
 - [ ] Validate the full `SEARCH_TWEETS` acquisition recipe as a single release-bound unit.
 

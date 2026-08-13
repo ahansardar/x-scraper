@@ -117,6 +117,80 @@ class InvestigationTests(unittest.TestCase):
             self.assertEqual(len(package["telemetry_attempts"]), 1)
             self.assertIsNone(package["raw_evidence"])
             self.assertNotIn("credential_ref", package["session"])
+            self.assertFalse(package["pagination_chain"]["is_pagination_failure"])
+            self.assertEqual(package["pagination_chain"]["chain_length"], 0)
+
+    def test_builds_pagination_chain_evidence_for_a_failed_continuation_task(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            ledger = self.ledger
+            releases = ReleaseStore(db_path)
+            sessions = SessionStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+
+            root_request = CapabilityRequest(
+                capability_id=CapabilityId.SEARCH_TWEETS,
+                contract_version=1,
+                payload=SearchTweetsInput(query="india", page_size=20, max_pages=3),
+            )
+            root_plan = CapabilityPlanner(manifest).plan(root_request)
+            root = ledger.create_task(
+                idempotency_key="drift-pagination-root",
+                capability_id=root_request.capability_id,
+                contract_version=root_request.contract_version,
+                request_json=root_request.public_dict(),
+                plan_json=root_plan.public_dict(),
+            )
+
+            continuation_request = CapabilityRequest(
+                capability_id=CapabilityId.SEARCH_TWEETS,
+                contract_version=1,
+                payload=SearchTweetsInput(
+                    query="india",
+                    page_size=20,
+                    max_pages=3,
+                    cursor="cursor-a",
+                    page_number=2,
+                    pagination_root_task_id=root.task_id,
+                    pagination_parent_task_id=root.task_id,
+                ),
+            )
+            continuation_plan = CapabilityPlanner(manifest).plan(continuation_request)
+            continuation = ledger.create_task(
+                idempotency_key="drift-pagination-page2",
+                capability_id=continuation_request.capability_id,
+                contract_version=continuation_request.contract_version,
+                request_json=continuation_request.public_dict(),
+                plan_json=continuation_plan.public_dict(),
+            )
+            failed = ledger.transition_task(
+                continuation.task_id,
+                from_state=TaskState.CREATED,
+                to_state=TaskState.DEAD_LETTER,
+                error_json={
+                    "error_class": "PAGINATION_CURSOR_LOOP",
+                    "message": "SearchTimeline returned a cursor that has already been seen",
+                },
+            )
+
+            package = build_protocol_drift_package(
+                task_id=failed.task_id,
+                ledger=ledger,
+                manifest=manifest,
+                release_store=releases,
+                session_store=sessions,
+                telemetry_store=telemetry,
+            )
+
+            chain = package["pagination_chain"]
+            self.assertTrue(chain["is_pagination_failure"])
+            self.assertEqual(chain["chain_length"], 1)
+            self.assertEqual(chain["root_task_id"], root.task_id)
+            self.assertEqual(chain["pages"][0]["task_id"], root.task_id)
+            self.assertEqual(chain["pages"][0]["page_number"], 1)
+            self.assertIsNone(chain["pages"][0]["cursor"])
+            self.assertIn("pagination_chain", package["diagnosis"]["hints"][0])
 
     def test_missing_task_is_rejected(self):
         manifest = load_manifest()

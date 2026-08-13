@@ -10,6 +10,7 @@ import redis as redis_lib
 from xingestion.tasks import TaskLedger, TaskState
 from xingestion.canonical import CanonicalStore
 from xingestion.errors import RuntimeErrorEnvelope, classify_error, classify_exception
+from xingestion.pagination_chain import walk_pagination_chain
 from xingestion.releases import ReleaseStore
 from xingestion.secrets import SecretProvider
 from xingestion.sessions import SessionHealth, SessionStore
@@ -594,10 +595,16 @@ class LocalWorker:
         page_number = int(payload.get("page_number", 1))
         max_pages = int(payload.get("max_pages", 1))
         expect_more = page_number < max_pages
+        seen_cursors = tuple(
+            entry.cursor
+            for entry in walk_pagination_chain(self.ledger, task)
+            if entry.cursor
+        )
         return validate_search_tweets_pagination(
             page,
             expect_more=expect_more,
             current_cursor=payload.get("cursor"),
+            seen_cursors=seen_cursors,
         )
 
     def _renew_lease(self, task):

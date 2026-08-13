@@ -1897,3 +1897,21 @@ Verified:
 Next:
 
 - `docs/TASKS.md`'s "Runtime and Drift" section is now fully checked off. Remaining open items are in "SEARCH_TWEETS Vertical Slice," "Durable Execution and Delivery" (the single-node-vs-managed-infra decision), and "Production Hardening."
+
+## 2026-08-13 - Checkpoint 90: Cursor-Loop Investigation Evidence, and a Real Cross-Page Loop-Detection Bug Found and Fixed
+
+Implemented:
+
+- Added `src/xingestion/pagination_chain.py`: `walk_pagination_chain(ledger, task)` walks a task's continuation lineage backward via `request_json.payload.pagination_parent_task_id` (set by `LocalWorker._queue_continuation_if_needed`), returning each ancestor page's task ID, page number, cursor, and state, oldest first. Stops on a missing or cyclic parent reference rather than raising (diagnostic-only, defensive against a corrupted chain). Also exports `is_pagination_error_class()` for the three `PAGINATION_*` error classes.
+- **Found and fixed a real, previously-undetectable bug while building this.** `validate_search_tweets_pagination()` (`xprotocol/runtime/search_tweets.py`) has always accepted a `seen_cursors` parameter for exactly this purpose -- but `LocalWorker._validate_page_pagination()` never populated it, only ever passing `current_cursor` (the cursor just used for the failing page). That means a `PAGINATION_CURSOR_LOOP` could only ever fire when a page's returned cursor exactly repeated the *immediately previous* page's cursor -- a loop back to any *older* page's cursor (e.g. page 5 looping back to page 2's cursor) went completely undetected, and the worker would just keep creating continuation tasks up to `max_pages` instead of ever raising the error. Fixed `_validate_page_pagination()` to pass `seen_cursors` built from `walk_pagination_chain()`.
+- Wired `walk_pagination_chain()` into `build_protocol_drift_package()` (`investigation.py`): every investigation package now includes a `pagination_chain` section (`is_pagination_failure`, `root_task_id`, `chain_length`, and the ordered list of prior pages with cursors), regardless of the failure type -- empty/`false` for non-pagination failures, populated for pagination ones. `write_failed_task_export`/`run_failed_task_export.py` pick this up automatically since they wrap `build_protocol_drift_package` verbatim. Added a dedicated diagnosis hint for `PAGINATION_*` error classes pointing at the new field.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 214 tests: 5 new `walk_pagination_chain`/`is_pagination_error_class` unit tests (using a lightweight fake ledger, no Postgres needed), 1 new `test_investigation.py` test asserting `pagination_chain` evidence for a real two-page continuation chain, and 1 new `test_local_worker.py` regression test.
+- Confirmed the regression test actually exercises the bug: built a 3-page chain where page 3's returned cursor matches page 2's (not page 3's own `current_cursor`) via a new `SequencedCursorTransport`; temporarily reverted the `seen_cursors` fix and re-ran -- page 3 silently completed as `DONE` instead of being caught (proving the described gap was real); reapplied the fix and page 3 correctly `DEAD_LETTER`s with `PAGINATION_CURSOR_LOOP`.
+- Live: restarted the stack, `POST /api/tasks/{task_id}/investigate` against a real dead-lettered task returns a well-formed `pagination_chain` section (`is_pagination_failure=false, chain_length=0` for this particular non-pagination failure, confirming the field is always present and correctly computed against the real Postgres ledger).
+
+Next:
+- `docs/TASKS.md`'s "SEARCH_TWEETS Vertical Slice" section still has two open items: expanding search request inputs to cover more stable contract fields, and validating the full acquisition recipe as one release-bound unit.

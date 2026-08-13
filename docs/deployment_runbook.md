@@ -336,6 +336,8 @@ Build a protocol drift investigation package:
 POST /api/tasks/{task_id}/investigate
 ```
 
+For a task that failed pagination (`PAGINATION_CURSOR_MISSING`, `PAGINATION_EMPTY_CONTINUATION`, or `PAGINATION_CURSOR_LOOP`), the investigation package's `pagination_chain` field lists every prior page in that task's continuation chain (task ID, page number, and the cursor used to fetch it, oldest first), so the exact cursor sequence leading up to the failure is visible without cross-referencing tasks by hand. The worker itself also now checks a failing page's cursor against every cursor used earlier in the chain, not just the immediately previous one -- a loop back to an older page's cursor is caught as `PAGINATION_CURSOR_LOOP` instead of silently continuing to paginate.
+
 Write a safe failed-task support package from the web API:
 
 ```text

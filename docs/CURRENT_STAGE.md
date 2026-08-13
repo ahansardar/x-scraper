@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: added a recency-windowed protocol drift report, distinct from the lifetime-cumulative release-risk score; fixed CI, broken since Checkpoint 83, and isolated the Postgres test database from the local live dev stack)
+Date: 2026-08-13 (updated: pagination investigation packages now include cross-page cursor-loop evidence; fixed a real bug where cursor loops spanning more than one prior page went undetected)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -147,7 +147,7 @@ Implemented:
 - Approval controls that reload the live planner/worker for future tasks.
 - Protocol telemetry attempts.
 - Runtime error classification by class, severity, scope, retryability, and operator action.
-- Investigation packages for failed tasks.
+- Investigation packages for failed tasks, including cross-page cursor-loop evidence (`pagination_chain`) for pagination failures.
 - Failed-task support packages for handoff.
 
 Spec relevance:

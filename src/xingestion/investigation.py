@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Mapping
 
+from xingestion.pagination_chain import is_pagination_error_class, walk_pagination_chain
 from xingestion.releases import RecipeValidationStore, ReleaseStore, recipe_validation_freshness
 from xingestion.sessions import SessionStore
 from xingestion.tasks import TaskLedger
@@ -37,6 +38,7 @@ def build_protocol_drift_package(
     binding = _binding_for_task(manifest, task.capability_id.value, task.contract_version)
     raw_evidence = _raw_evidence_ref(task.result_json)
     error_class = _error_class(task.error_json, attempts)
+    pagination_chain = walk_pagination_chain(ledger, task)
 
     return {
         "package_type": "PROTOCOL_DRIFT_INVESTIGATION",
@@ -65,6 +67,12 @@ def build_protocol_drift_package(
         "session": _session_dict(session) if session else None,
         "telemetry_attempts": [_attempt_dict(attempt) for attempt in attempts],
         "raw_evidence": raw_evidence,
+        "pagination_chain": {
+            "is_pagination_failure": is_pagination_error_class(error_class),
+            "root_task_id": pagination_chain[0].task_id if pagination_chain else None,
+            "chain_length": len(pagination_chain),
+            "pages": [entry.public_dict() for entry in pagination_chain],
+        },
         "diagnosis": {
             "primary_error_class": error_class,
             "hints": _diagnosis_hints(error_class),
@@ -477,6 +485,15 @@ def _diagnosis_hints(error_class: str | None) -> list[str]:
         return [
             "The current release was intentionally blocked by operator health state.",
             "Reactivate the release only after investigation.",
+        ]
+    if is_pagination_error_class(error_class):
+        return [
+            "See pagination_chain for the cursor sequence across every page fetched before this failure.",
+            "PAGINATION_CURSOR_LOOP means X returned a cursor already used earlier in this chain; "
+            "PAGINATION_CURSOR_MISSING/PAGINATION_EMPTY_CONTINUATION mean X stopped returning a usable "
+            "continuation cursor.",
+            "If this repeats across sessions or queries, the pagination strategy may need re-validation "
+            "against a fresh capture.",
         ]
     if error_class:
         return [
