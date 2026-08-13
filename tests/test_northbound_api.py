@@ -815,6 +815,43 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(risk["action"], "QUARANTINE_RECOMMENDED")
             self.assertEqual(risk["severity"], "HIGH")
 
+    def test_protocol_drift_dict_flags_recent_hard_signal(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        recipe_revision_id = manifest.bindings[0].recipe.revision_id
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            telemetry = ProtocolTelemetryStore(db_path)
+            validation_store = RecipeValidationStore(db_path)
+            telemetry.record_attempt(
+                task_id="task-1",
+                capability_id="SEARCH_TWEETS",
+                release_id=manifest.release_id,
+                recipe_revision_id=recipe_revision_id,
+                state="FAILURE",
+                session_id="session-1",
+                error_class="OPERATION_NOT_FOUND",
+            )
+            live_server.STATE = SimpleNamespace(
+                manifest=manifest,
+                release_store=ReleaseStore(db_path),
+                telemetry_store=telemetry,
+                recipe_validation_store=validation_store,
+            )
+
+            drift = live_server._protocol_drift_dict()
+
+            self.assertTrue(drift["drifting"])
+            self.assertEqual(drift["severity"], "HIGH")
+
+            handler = FakeHandler()
+            handler.path = "/api/releases/current/drift"
+            payload = handler.do_GET()
+
+            self.assertEqual(handler.status, 200)
+            self.assertTrue(payload["drift"]["drifting"])
+
     def test_releases_inventory_route_lists_manifest_approval(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

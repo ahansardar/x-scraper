@@ -50,6 +50,7 @@ class SupervisionTests(unittest.TestCase):
         self.assertEqual(statuses["processes"], "PASS")
         self.assertEqual(statuses["redis_queue"], "PASS")
         self.assertEqual(statuses["recipe_validation_freshness"], "PASS")
+        self.assertEqual(statuses["protocol_drift"], "PASS")
 
     def test_supervisor_check_fails_backlogged_outbox(self):
         payloads = _ready_payloads()
@@ -176,6 +177,40 @@ class SupervisionTests(unittest.TestCase):
         )
         self.assertTrue(result.ok)
         self.assertEqual(freshness.status, "WARN")
+
+    def test_supervisor_check_warns_on_active_protocol_drift(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["protocol_drift"]["drifting"] = True
+        payloads["/api/metrics"]["protocol_drift"]["severity"] = "HIGH"
+        payloads["/api/metrics"]["protocol_drift"]["failures_in_window"] = 3
+        payloads["/api/metrics"]["protocol_drift"]["reason"] = (
+            "OPERATION_NOT_FOUND appeared 3 time(s) in the last 5 attempts"
+        )
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        drift = next(check for check in result.checks if check.name == "protocol_drift")
+        self.assertTrue(result.ok)
+        self.assertEqual(drift.status, "WARN")
+        self.assertIn("severity=HIGH", drift.message)
+
+    def test_supervisor_check_warns_when_no_protocol_drift_data(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["protocol_drift"] = {}
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        drift = next(check for check in result.checks if check.name == "protocol_drift")
+        self.assertTrue(result.ok)
+        self.assertEqual(drift.status, "WARN")
 
     def test_supervisor_check_fails_checkout_storage_when_required(self):
         payloads = _ready_payloads()
@@ -343,6 +378,23 @@ def _ready_payloads():
                     "latest_record": None,
                 },
             ],
+            "protocol_drift": {
+                "release_id": "search-tweets-candidate",
+                "recipe_revision_id": "recipe-a",
+                "composition_hash": "hash-a",
+                "window_size": 20,
+                "attempts_in_window": 5,
+                "failures_in_window": 0,
+                "failure_rate": 0.0,
+                "signals": [],
+                "last_success_at": "2026-08-11T00:00:00+00:00",
+                "last_failure_at": None,
+                "recipe_fresh": True,
+                "drifting": False,
+                "severity": "LOW",
+                "reason": "No recent drift signal in the last window of attempts.",
+                "operator_action": "continue_monitoring",
+            },
             "sessions": {
                 "healthy": 1,
             },

@@ -143,6 +143,7 @@ class DeploymentSupervisorCheck:
                 self._check_queue(metrics),
                 self._check_redis_queue(metrics),
                 self._check_recipe_validation_freshness(metrics),
+                self._check_protocol_drift(metrics),
                 self._check_sessions(sessions, metrics),
                 self._check_network(network_health, sessions),
                 self._check_release(release),
@@ -309,6 +310,35 @@ class DeploymentSupervisorCheck:
             "recipe_validation_freshness",
             "PASS",
             f"checked={len(entries)} all fresh",
+        )
+
+    def _check_protocol_drift(self, metrics: dict[str, object]) -> SupervisionCheck:
+        drift = _dict(metrics.get("protocol_drift"))
+        if "error" in drift:
+            return SupervisionCheck(
+                "protocol_drift",
+                "WARN",
+                f"protocol drift report unavailable: {drift.get('message', drift.get('error'))}",
+            )
+        if not drift:
+            return SupervisionCheck("protocol_drift", "WARN", "no protocol drift data available")
+        if drift.get("drifting") is True:
+            return SupervisionCheck(
+                "protocol_drift",
+                "WARN",
+                (
+                    f"severity={drift.get('severity')} "
+                    f"{drift.get('failures_in_window')}/{drift.get('attempts_in_window')} recent "
+                    f"failures: {drift.get('reason')}"
+                ),
+            )
+        return SupervisionCheck(
+            "protocol_drift",
+            "PASS",
+            (
+                f"attempts_in_window={drift.get('attempts_in_window')} "
+                f"failure_rate={drift.get('failure_rate')}"
+            ),
         )
 
     def _check_sessions(

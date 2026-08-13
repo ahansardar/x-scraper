@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: recipe-compatibility freshness checks added; fixed a real worker crash on lease-renewal races found during live verification)
+Date: 2026-08-13 (updated: added a recency-windowed protocol drift report, distinct from the lifetime-cumulative release-risk score; fixed CI, broken since Checkpoint 83, and isolated the Postgres test database from the local live dev stack)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -141,7 +141,8 @@ Spec relevance:
 Implemented:
 
 - Current release health storage.
-- Release risk recommendations.
+- Release risk recommendations (lifetime-cumulative error signals).
+- Recency-windowed protocol drift reports (last-N-attempts view against the currently approved recipe, distinct from the lifetime release-risk score), surfaced in health reports, `/api/metrics`, `GET /api/releases/current/drift`, and a non-blocking supervisor-check warning.
 - Quarantine and activate controls.
 - Approval controls that reload the live planner/worker for future tasks.
 - Protocol telemetry attempts.
@@ -361,6 +362,7 @@ Reason:
 | Reprocessing from raw evidence | Implemented |
 | Protocol telemetry | Implemented locally |
 | Release risk/quarantine | Implemented locally |
+| Recency-windowed protocol drift detection | Implemented locally |
 | Release rollout/rollback lifecycle | Partial; manual health controls only |
 | Monitoring subscriptions | Not implemented |
 | Frontend operator console | Implemented for current slice |

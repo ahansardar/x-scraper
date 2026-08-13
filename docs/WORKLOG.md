@@ -1879,3 +1879,21 @@ Verified:
 Next:
 
 - No further known CI or local-isolation issues; keep an eye on the first few CI runs after this checkpoint in case a test file that's never run in CI before surfaces something new.
+
+## 2026-08-13 - Checkpoint 89: Recency-Windowed Protocol Drift Reports
+
+Implemented:
+
+- Added `ProtocolTelemetryStore.recent_attempts()` (`src/xingestion/telemetry/store.py`), returning the last N attempts (newest first, optionally filtered by `recipe_revision_id`) for a release -- the first thing in this codebase to query `protocol_attempts` as a recency-ordered window rather than a lifetime `GROUP BY` total. Uses the existing `idx_protocol_attempts_release_created` index, previously unused for trending.
+- Added `build_protocol_drift_report()` (`src/xingestion/investigation.py`), which answers "is the approved recipe drifting in live production *right now*" -- deliberately distinct from the existing `build_release_risk_recommendation()`, which scores lifetime-cumulative error counts and never resets (a release with a handful of failures months ago stays flagged forever, and a release that just started failing is diluted by a long healthy history). The new report looks only at the most recent `window` attempts (default 20) against the *currently* approved recipe (filtered by `recipe_revision_id`, not just `release_id`, so a stale recipe rotation's history doesn't get attributed to the live one): `HIGH` severity if `OPERATION_NOT_FOUND`/`PARSER_FAILURE` appeared at all in that window, `MEDIUM` if the recent failure rate is >=40% or the recipe's `recipe_validation_freshness` (Checkpoint 87) is stale, otherwise healthy.
+- Wired into `health_report.py` (`protocol_drift` section), `live_server.py` (`/api/metrics` and new `GET /api/releases/current/drift`), `preflight.py`'s API-shape contract check, and a new non-blocking `protocol_drift` `WARN`-only check in `run_supervisor_check.py`/`supervision.py` -- deliberately not a hard preflight/supervisor gate the way `release_risk`'s `QUARANTINE_RECOMMENDED` already is, since this signal is far more sensitive (fires on a single recent hard-signal occurrence, not 3+ lifetime) and gating startup/supervision on it risked blocking a deployment over one transient glitch.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 207 tests, including 3 new `recent_attempts()` unit tests, 6 new `build_protocol_drift_report()` scenario tests (hard-signal, high failure rate, all-healthy, outside-window recency, stale-validation-only, no-attempts), 2 new supervision tests, an extended health-report assertion, and a new northbound API test for the `/api/releases/current/drift` route.
+- Live: restarted the stack, confirmed `/api/releases/current/drift` returns 200 (previously 404 against the pre-restart process), and `run_health_report.py`/`run_supervisor_check.py` both show `protocol_drift` correctly computed against real historical telemetry -- 16 recent attempts, 2 `ValueError` failures (12.5%, from earlier session incidents), correctly reported as `drifting=false severity=LOW` since `ValueError` isn't a hard drift signal and the rate is well under the 40% threshold.
+
+Next:
+
+- `docs/TASKS.md`'s "Runtime and Drift" section is now fully checked off. Remaining open items are in "SEARCH_TWEETS Vertical Slice," "Durable Execution and Delivery" (the single-node-vs-managed-infra decision), and "Production Hardening."

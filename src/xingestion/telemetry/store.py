@@ -236,6 +236,40 @@ class ProtocolTelemetryStore:
             for row in rows
         )
 
+    def recent_attempts(
+        self,
+        release_id: str,
+        *,
+        recipe_revision_id: str | None = None,
+        limit: int = 20,
+    ) -> tuple[ProtocolAttempt, ...]:
+        """Most recent attempts first (newest -> oldest).
+
+        Unlike release_error_signals()'s lifetime-cumulative counts, this
+        looks only at the last `limit` attempts, so a release that used to
+        fail and has since recovered doesn't stay flagged forever -- the
+        basis for drift detection (Recent state, not all-time state).
+        """
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        where = "WHERE release_id = ?"
+        params: list[object] = [release_id]
+        if recipe_revision_id is not None:
+            where += " AND recipe_revision_id = ?"
+            params.append(recipe_revision_id)
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM protocol_attempts
+                {where}
+                ORDER BY attempt_id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+        return tuple(_attempt_from_row(row) for row in rows)
+
     def _initialize(self) -> None:
         with closing(self._connect()) as conn:
             conn.execute(

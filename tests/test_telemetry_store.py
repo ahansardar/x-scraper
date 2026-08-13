@@ -119,6 +119,58 @@ class ProtocolTelemetryStoreTests(unittest.TestCase):
             self.assertEqual(len(network_summary), 1)
             self.assertEqual(network_summary[0].network_context, "direct")
 
+    def test_recent_attempts_orders_newest_first_and_respects_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ProtocolTelemetryStore(Path(temp_dir) / "telemetry.sqlite3")
+            for index in range(5):
+                store.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id="release-1",
+                    recipe_revision_id="recipe-1",
+                    state="SUCCESS" if index % 2 == 0 else "FAILURE",
+                    session_id="session-1",
+                )
+
+            recent = store.recent_attempts("release-1", limit=3)
+
+            self.assertEqual(len(recent), 3)
+            self.assertEqual([a.task_id for a in recent], ["task-4", "task-3", "task-2"])
+
+    def test_recent_attempts_filters_by_recipe_revision_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ProtocolTelemetryStore(Path(temp_dir) / "telemetry.sqlite3")
+            store.record_attempt(
+                task_id="old-recipe-task",
+                capability_id="SEARCH_TWEETS",
+                release_id="release-1",
+                recipe_revision_id="recipe-old",
+                state="FAILURE",
+                session_id="session-1",
+                error_class="OPERATION_NOT_FOUND",
+            )
+            store.record_attempt(
+                task_id="new-recipe-task",
+                capability_id="SEARCH_TWEETS",
+                release_id="release-1",
+                recipe_revision_id="recipe-new",
+                state="SUCCESS",
+                session_id="session-1",
+            )
+
+            recent = store.recent_attempts(
+                "release-1", recipe_revision_id="recipe-new", limit=10
+            )
+
+            self.assertEqual(len(recent), 1)
+            self.assertEqual(recent[0].task_id, "new-recipe-task")
+
+    def test_recent_attempts_rejects_non_positive_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ProtocolTelemetryStore(Path(temp_dir) / "telemetry.sqlite3")
+            with self.assertRaises(ValueError):
+                store.recent_attempts("release-1", limit=0)
+
 
 if __name__ == "__main__":
     unittest.main()

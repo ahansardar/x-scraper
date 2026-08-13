@@ -278,6 +278,7 @@ class PreflightTests(unittest.TestCase):
                 "/api/sessions": {"sessions": []},
                 "/api/releases/current": {"release": {}},
                 "/api/releases/current/risk": {"risk": {}},
+                "/api/releases/current/drift": {"drift": {}},
             }
 
             result = FakeApiPreflight(

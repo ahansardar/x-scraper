@@ -231,6 +231,7 @@ class DeploymentPreflight:
             "/api/sessions": ("sessions",),
             "/api/releases/current": ("release",),
             "/api/releases/current/risk": ("risk",),
+            "/api/releases/current/drift": ("drift",),
         }
         try:
             for path, keys in required.items():

@@ -15,6 +15,7 @@ from xingestion.dispatch import redis_queue_stats
 from xingestion.errors import RuntimeErrorEnvelope, envelope_from_task_error
 from xingestion.investigation import (
     build_network_route_recommendations,
+    build_protocol_drift_report,
     build_release_risk_recommendation,
 )
 from xingestion.migrations import MigrationRunner
@@ -111,6 +112,14 @@ def build_health_report(
                 manifest=manifest,
                 release_store=release_store,
                 telemetry_store=telemetry_store,
+            )
+        ),
+        "protocol_drift": _safe_section(
+            lambda: build_protocol_drift_report(
+                manifest=manifest,
+                release_store=release_store,
+                telemetry_store=telemetry_store,
+                validation_store=RecipeValidationStore(config.sqlite_path),
             )
         ),
         "sessions": _safe_section(lambda: _sessions_dict(SessionStore(config.sqlite_path))),

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Mapping
 
-from xingestion.releases import ReleaseStore
+from xingestion.releases import RecipeValidationStore, ReleaseStore, recipe_validation_freshness
 from xingestion.sessions import SessionStore
 from xingestion.tasks import TaskLedger
 from xingestion.telemetry import ProtocolAttempt, ProtocolTelemetryStore
@@ -12,6 +12,9 @@ from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 NETWORK_ROUTE_MIN_ATTEMPTS = 5
 NETWORK_ROUTE_MAX_FAILURE_RATE = 0.8
+DRIFT_WINDOW_SIZE = 20
+DRIFT_RECENT_FAILURE_RATE_THRESHOLD = 0.4
+DRIFT_HARD_SIGNAL_ERROR_CLASSES = ("OPERATION_NOT_FOUND", "PARSER_FAILURE")
 
 
 def build_protocol_drift_package(
@@ -126,6 +129,120 @@ def build_release_risk_recommendation(
         ],
         "network_routes": network_routes,
     }
+
+
+def build_protocol_drift_report(
+    *,
+    manifest: ProtocolReleaseManifest,
+    release_store: ReleaseStore,
+    telemetry_store: ProtocolTelemetryStore,
+    validation_store: RecipeValidationStore,
+    window: int = DRIFT_WINDOW_SIZE,
+) -> dict[str, object]:
+    """Is the approved recipe drifting in *live production* right now.
+
+    Complements build_release_risk_recommendation(), which scores lifetime-
+    cumulative error counts and never resets -- a release with a handful of
+    failures months ago stays flagged forever, and a release that just
+    started failing is diluted by a long healthy history. This looks only
+    at the most recent `window` attempts against the *currently* approved
+    recipe (not stale ones from a prior recipe rotation under the same
+    release), so "this used to work and just stopped" is detectable.
+    """
+    release = release_store.ensure_release(manifest.release_id)
+    binding = manifest.bindings[0] if manifest.bindings else None
+    recipe_revision_id = binding.recipe.revision_id if binding else None
+    composition_hash = binding.recipe.composition_hash if binding else None
+
+    recent = (
+        telemetry_store.recent_attempts(
+            manifest.release_id, recipe_revision_id=recipe_revision_id, limit=window
+        )
+        if recipe_revision_id is not None
+        else ()
+    )
+    attempts_in_window = len(recent)
+    failures_in_window = sum(1 for attempt in recent if attempt.state == "FAILURE")
+    failure_rate = (failures_in_window / attempts_in_window) if attempts_in_window else 0.0
+
+    signal_counts: dict[str, int] = {}
+    for attempt in recent:
+        if attempt.error_class:
+            signal_counts[attempt.error_class] = signal_counts.get(attempt.error_class, 0) + 1
+
+    last_success_at = next((a.created_at for a in recent if a.state == "SUCCESS"), None)
+    last_failure_at = next((a.created_at for a in recent if a.state == "FAILURE"), None)
+
+    recipe_fresh = None
+    if recipe_revision_id is not None:
+        freshness = recipe_validation_freshness(store=validation_store, manifest=manifest)
+        recipe_fresh = all(entry.fresh for entry in freshness) if freshness else None
+
+    hard_signal = next(
+        (cls for cls in DRIFT_HARD_SIGNAL_ERROR_CLASSES if signal_counts.get(cls, 0) > 0),
+        None,
+    )
+
+    drifting = False
+    severity = "LOW"
+    if attempts_in_window == 0:
+        reason = "No recent telemetry attempts for the approved recipe."
+    elif hard_signal is not None:
+        drifting = True
+        severity = "HIGH"
+        reason = (
+            f"{hard_signal} appeared {signal_counts[hard_signal]} time(s) in the last "
+            f"{attempts_in_window} attempts -- the approved recipe is failing against "
+            "live X responses."
+        )
+    elif failure_rate >= DRIFT_RECENT_FAILURE_RATE_THRESHOLD:
+        drifting = True
+        severity = "MEDIUM"
+        reason = (
+            f"{failures_in_window}/{attempts_in_window} recent attempts failed "
+            f"({failure_rate:.0%}), at or above the drift threshold of "
+            f"{DRIFT_RECENT_FAILURE_RATE_THRESHOLD:.0%}."
+        )
+    elif recipe_fresh is False:
+        drifting = True
+        severity = "MEDIUM"
+        reason = "The approved recipe's live composition has no fresh, passing validation record."
+    else:
+        reason = "No recent drift signal in the last window of attempts."
+
+    return {
+        "release_id": manifest.release_id,
+        "release_health": release.health.value,
+        "recipe_revision_id": recipe_revision_id,
+        "composition_hash": composition_hash,
+        "window_size": window,
+        "attempts_in_window": attempts_in_window,
+        "failures_in_window": failures_in_window,
+        "failure_rate": failure_rate,
+        "signals": [
+            {"error_class": error_class, "count": count}
+            for error_class, count in sorted(
+                signal_counts.items(), key=lambda item: (-item[1], item[0])
+            )
+        ],
+        "last_success_at": last_success_at,
+        "last_failure_at": last_failure_at,
+        "recipe_fresh": recipe_fresh,
+        "drifting": drifting,
+        "severity": severity,
+        "reason": reason,
+        "operator_action": _drift_operator_action(drifting, hard_signal),
+    }
+
+
+def _drift_operator_action(drifting: bool, hard_signal: str | None) -> str:
+    if hard_signal == "OPERATION_NOT_FOUND":
+        return "quarantine_release_and_refresh_protocol_operation"
+    if hard_signal == "PARSER_FAILURE":
+        return "investigate_release_with_raw_evidence_before_quarantine"
+    if drifting:
+        return "investigate_recent_failures_and_consider_fresh_validation_run"
+    return "continue_monitoring"
 
 
 def build_network_route_recommendations(

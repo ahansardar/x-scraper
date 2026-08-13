@@ -13,9 +13,10 @@ from xingestion.capabilities import CapabilityPlanner, CapabilityRequest, Search
 from xingestion.investigation import (
     build_network_route_recommendations,
     build_protocol_drift_package,
+    build_protocol_drift_report,
     build_release_risk_recommendation,
 )
-from xingestion.releases import ReleaseStore
+from xingestion.releases import RecipeValidationStore, ReleaseStore, record_recipe_validation_results
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.tasks import TaskState
 from xingestion.telemetry import ProtocolTelemetryStore
@@ -237,6 +238,206 @@ class InvestigationTests(unittest.TestCase):
             )
 
             self.assertEqual(recommendations, [])
+
+    def test_drift_report_flags_hard_signal_error_in_recent_window(self):
+        manifest = load_manifest()
+        recipe_revision_id = manifest.bindings[0].recipe.revision_id
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            validation_store = RecipeValidationStore(db_path)
+            record_recipe_validation_results(
+                store=validation_store,
+                manifest=manifest,
+                results=(("FIXTURE", True, "ok"),),
+            )
+            telemetry.record_attempt(
+                task_id="task-1",
+                capability_id="SEARCH_TWEETS",
+                release_id=manifest.release_id,
+                recipe_revision_id=recipe_revision_id,
+                state="FAILURE",
+                session_id="session-1",
+                error_class="OPERATION_NOT_FOUND",
+            )
+
+            report = build_protocol_drift_report(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+                validation_store=validation_store,
+            )
+
+            self.assertTrue(report["drifting"])
+            self.assertEqual(report["severity"], "HIGH")
+            self.assertEqual(report["operator_action"], "quarantine_release_and_refresh_protocol_operation")
+            self.assertEqual(report["signals"][0]["error_class"], "OPERATION_NOT_FOUND")
+
+    def test_drift_report_flags_high_recent_failure_rate_without_hard_signal(self):
+        manifest = load_manifest()
+        recipe_revision_id = manifest.bindings[0].recipe.revision_id
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            validation_store = RecipeValidationStore(db_path)
+            record_recipe_validation_results(
+                store=validation_store,
+                manifest=manifest,
+                results=(("FIXTURE", True, "ok"),),
+            )
+            for index in range(5):
+                telemetry.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id=recipe_revision_id,
+                    state="FAILURE" if index < 3 else "SUCCESS",
+                    session_id="session-1",
+                    error_class="UNEXPECTED_HTTP_STATUS" if index < 3 else None,
+                )
+
+            report = build_protocol_drift_report(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+                validation_store=validation_store,
+            )
+
+            self.assertTrue(report["drifting"])
+            self.assertEqual(report["severity"], "MEDIUM")
+            self.assertEqual(report["failures_in_window"], 3)
+            self.assertEqual(report["attempts_in_window"], 5)
+
+    def test_drift_report_healthy_when_recent_attempts_all_succeed(self):
+        manifest = load_manifest()
+        recipe_revision_id = manifest.bindings[0].recipe.revision_id
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            validation_store = RecipeValidationStore(db_path)
+            record_recipe_validation_results(
+                store=validation_store,
+                manifest=manifest,
+                results=(("FIXTURE", True, "ok"), ("CAPTURE_REPLAY", True, "ok")),
+            )
+            for index in range(5):
+                telemetry.record_attempt(
+                    task_id=f"task-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id=recipe_revision_id,
+                    state="SUCCESS",
+                    session_id="session-1",
+                )
+
+            report = build_protocol_drift_report(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+                validation_store=validation_store,
+            )
+
+            self.assertFalse(report["drifting"])
+            self.assertEqual(report["severity"], "LOW")
+            self.assertTrue(report["recipe_fresh"])
+            self.assertIsNotNone(report["last_success_at"])
+            self.assertIsNone(report["last_failure_at"])
+
+    def test_drift_report_ignores_failures_outside_the_recency_window(self):
+        manifest = load_manifest()
+        recipe_revision_id = manifest.bindings[0].recipe.revision_id
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            validation_store = RecipeValidationStore(db_path)
+            record_recipe_validation_results(
+                store=validation_store,
+                manifest=manifest,
+                results=(("FIXTURE", True, "ok"), ("CAPTURE_REPLAY", True, "ok")),
+            )
+            for index in range(3):
+                telemetry.record_attempt(
+                    task_id=f"old-failure-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id=recipe_revision_id,
+                    state="FAILURE",
+                    session_id="session-1",
+                    error_class="RATE_LIMITED",
+                )
+            for index in range(5):
+                telemetry.record_attempt(
+                    task_id=f"recent-success-{index}",
+                    capability_id="SEARCH_TWEETS",
+                    release_id=manifest.release_id,
+                    recipe_revision_id=recipe_revision_id,
+                    state="SUCCESS",
+                    session_id="session-1",
+                )
+
+            report = build_protocol_drift_report(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+                validation_store=validation_store,
+                window=5,
+            )
+
+            self.assertFalse(report["drifting"])
+            self.assertEqual(report["attempts_in_window"], 5)
+            self.assertEqual(report["failures_in_window"], 0)
+
+    def test_drift_report_flags_stale_recipe_validation_when_otherwise_healthy(self):
+        manifest = load_manifest()
+        recipe_revision_id = manifest.bindings[0].recipe.revision_id
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            validation_store = RecipeValidationStore(db_path)
+            # No validation record persisted for this recipe at all.
+            telemetry.record_attempt(
+                task_id="task-1",
+                capability_id="SEARCH_TWEETS",
+                release_id=manifest.release_id,
+                recipe_revision_id=recipe_revision_id,
+                state="SUCCESS",
+                session_id="session-1",
+            )
+
+            report = build_protocol_drift_report(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+                validation_store=validation_store,
+            )
+
+            self.assertTrue(report["drifting"])
+            self.assertEqual(report["severity"], "MEDIUM")
+            self.assertFalse(report["recipe_fresh"])
+
+    def test_drift_report_reports_no_signal_when_no_attempts_recorded(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            releases = ReleaseStore(db_path)
+            telemetry = ProtocolTelemetryStore(db_path)
+            validation_store = RecipeValidationStore(db_path)
+
+            report = build_protocol_drift_report(
+                manifest=manifest,
+                release_store=releases,
+                telemetry_store=telemetry,
+                validation_store=validation_store,
+            )
+
+            self.assertFalse(report["drifting"])
+            self.assertEqual(report["attempts_in_window"], 0)
+            self.assertIn("No recent telemetry attempts", report["reason"])
 
 
 if __name__ == "__main__":

@@ -304,6 +304,14 @@ Review advisory release-risk recommendations:
 GET /api/releases/current/risk
 ```
 
+Review whether the approved recipe is drifting in live production right now:
+
+```text
+GET /api/releases/current/drift
+```
+
+`release_risk` (above) scores lifetime-cumulative error counts and never resets -- a release with a handful of failures months ago stays flagged forever, and a release that just started failing is diluted by a long healthy history. `protocol_drift` complements it by looking only at the most recent attempts (default window 20) against the *currently* approved recipe: `drifting=true` at `HIGH` severity means `OPERATION_NOT_FOUND` or `PARSER_FAILURE` appeared at all in that window (the approved recipe is failing against live X responses right now); at `MEDIUM` severity it means either the recent failure rate is at or above 40%, or the recipe's live composition has no fresh, passing validation record (see `recipe_validation_freshness` above). It is surfaced in health reports, `/api/metrics`, and as a non-blocking `WARN` (never `FAIL`) in `run_supervisor_check.py` -- deliberately not a hard gate, since a transient recent glitch shouldn't block an otherwise-working deployment.
+
 Restore a fixed session to worker rotation:
 
 ```text

@@ -28,7 +28,7 @@ This is the living checklist for the remaining product work. Completed items are
 
 ## Runtime and Drift
 
-- [ ] Surface protocol drift reports when the approved recipe starts failing in production.
+- [x] ~~Surface protocol drift reports when the approved recipe starts failing in production.~~
 - [x] ~~Add recipe-compatibility checks so a parser or operation change forces a fresh validation run.~~
 - [x] ~~Promote current raw-evidence validation to record the validated recipe composition hash.~~
 
