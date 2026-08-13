@@ -23,11 +23,6 @@ function Write-Step {
     Write-Host "==> $Message"
 }
 
-function Quote-Single {
-    param([string] $Value)
-    return "'" + ($Value -replace "'", "''") + "'"
-}
-
 function Invoke-RepoCommand {
     param(
         [string] $Label,
@@ -142,27 +137,69 @@ function Wait-DockerServiceHealthy {
     throw "$Service did not become healthy within $TimeoutSeconds seconds"
 }
 
+function Get-ManagedProcessScriptNames {
+    return @("run_app.py", "run_dispatcher.py", "run_worker.py")
+}
+
+function Stop-StrayManagedProcesses {
+    # Historically Start-ManagedProcess launched a nested "powershell -Command"
+    # wrapper (itself invoking python with a Set-Location + relative ".\script.py"
+    # path) and recorded *that wrapper's* PID in pids.json; the actual python.exe
+    # was a child of the wrapper. Stop-Process on the wrapper PID alone does not
+    # kill its children on Windows, so every -Stop left an orphaned, still
+    # running, still-Postgres/Redis-connected python.exe behind. This sweep
+    # catches those orphans (and any future ones) by matching command lines
+    # directly instead of trusting only the PID file.
+    #
+    # Deliberately NOT scoped to $Root: those orphaned processes were launched
+    # via "Set-Location $Root; python .\script.py", so their CommandLine only
+    # ever shows the relative script name, never the repo's absolute path --
+    # a $Root substring filter would silently miss exactly the processes this
+    # function exists to catch. This matches only on the three script names
+    # run_all.ps1 itself manages, which is an acceptable scope on a
+    # single-project dev machine.
+    $fragments = Get-ManagedProcessScriptNames
+    $strays = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $cmd = $_.CommandLine
+        if (-not $cmd) {
+            return $false
+        }
+        foreach ($fragment in $fragments) {
+            if ($cmd -match [regex]::Escape($fragment)) {
+                return $true
+            }
+        }
+        return $false
+    }
+    foreach ($proc in @($strays)) {
+        Write-Host "Stopping stray managed process (pid $($proc.ProcessId)): $($proc.CommandLine)"
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Stop-ManagedProcesses {
-    if (-not (Test-Path $PidFile)) {
+    if (Test-Path $PidFile) {
+        $state = Get-Content -Raw $PidFile | ConvertFrom-Json
+        foreach ($entry in @($state.processes)) {
+            $pidValue = [int] $entry.pid
+            $name = [string] $entry.name
+            $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+            if ($process) {
+                Write-Host "Stopping $name (pid $pidValue)"
+                Stop-Process -Id $pidValue -Force
+            }
+            else {
+                Write-Host "$name (pid $pidValue) is not running"
+            }
+        }
+
+        Remove-Item -LiteralPath $PidFile -Force
+    }
+    else {
         Write-Host "No run_all PID file found at $PidFile"
-        return
     }
 
-    $state = Get-Content -Raw $PidFile | ConvertFrom-Json
-    foreach ($entry in @($state.processes)) {
-        $pidValue = [int] $entry.pid
-        $name = [string] $entry.name
-        $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-        if ($process) {
-            Write-Host "Stopping $name (pid $pidValue)"
-            Stop-Process -Id $pidValue -Force
-        }
-        else {
-            Write-Host "$name (pid $pidValue) is not running"
-        }
-    }
-
-    Remove-Item -LiteralPath $PidFile -Force
+    Stop-StrayManagedProcesses
 }
 
 function Get-LiveManagedProcesses {
@@ -184,36 +221,25 @@ function Get-LiveManagedProcesses {
 function Start-ManagedProcess {
     param(
         [string] $Name,
-        [string] $Command
+        [string[]] $Arguments
     )
 
     $stdout = Join-Path $LogDir "$Name.out.log"
     $stderr = Join-Path $LogDir "$Name.err.log"
-    $rootLiteral = Quote-Single $Root
-    $wrappedCommand = "Set-Location -LiteralPath $rootLiteral; `$env:PYTHONPATH = 'src'; $Command"
+    # Launch python.exe directly (not via a nested "powershell -Command"
+    # wrapper) so the PID recorded below IS the process that must be
+    # stopped later -- see Stop-StrayManagedProcesses for why the old
+    # wrapper-PID approach leaked orphaned python.exe processes.
+    $env:PYTHONPATH = "src"
 
     if ($Visible) {
-        $arguments = @(
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-NoExit",
-            "-Command",
-            $wrappedCommand
-        )
-        $process = Start-Process -FilePath "powershell" -ArgumentList $arguments -PassThru
+        $process = Start-Process -FilePath "python" -ArgumentList $Arguments -WorkingDirectory $Root -PassThru
     }
     else {
-        $arguments = @(
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            $wrappedCommand
-        )
         $process = Start-Process `
-            -FilePath "powershell" `
-            -ArgumentList $arguments `
+            -FilePath "python" `
+            -ArgumentList $Arguments `
+            -WorkingDirectory $Root `
             -RedirectStandardOutput $stdout `
             -RedirectStandardError $stderr `
             -WindowStyle Hidden `
@@ -229,7 +255,7 @@ function Start-ManagedProcess {
     return [pscustomobject]@{
         name = $Name
         pid = $process.Id
-        command = $Command
+        command = ($Arguments -join " ")
         stdout = $stdout
         stderr = $stderr
     }
@@ -279,6 +305,10 @@ else {
         Write-Host "Use .\run_all.ps1 -Stop or .\run_all.ps1 -Restart before starting another set."
         exit 0
     }
+    # Nothing tracked is alive, but a pre-fix run (or a crashed run_all.ps1)
+    # may have left orphaned python.exe processes untracked by any PID file.
+    # Sweep them before starting a fresh, correctly-tracked set.
+    Stop-StrayManagedProcesses
 }
 
 if (-not (Test-CommandAvailable "python")) {
@@ -312,9 +342,9 @@ else {
 Invoke-RepoCommand "Running startup check" @("python", ".\run_startup_check.py")
 
 $processes = @()
-$processes += Start-ManagedProcess -Name "web" -Command "python .\run_app.py --host $(Quote-Single $BindHost) --port $(Quote-Single ([string] $Port))"
-$processes += Start-ManagedProcess -Name "dispatcher" -Command "python .\run_dispatcher.py"
-$processes += Start-ManagedProcess -Name "worker" -Command "python .\run_worker.py"
+$processes += Start-ManagedProcess -Name "web" -Arguments @(".\run_app.py", "--host", $BindHost, "--port", [string] $Port)
+$processes += Start-ManagedProcess -Name "dispatcher" -Arguments @(".\run_dispatcher.py")
+$processes += Start-ManagedProcess -Name "worker" -Arguments @(".\run_worker.py")
 
 $state = [pscustomobject]@{
     started_at = (Get-Date).ToString("o")

@@ -1813,3 +1813,25 @@ Next:
 
 - Consider surfacing validation-record history in the frontend Protocol Governance panel (deferred this checkpoint to keep scope to persistence + API).
 - Decide whether `run_protocol_validation.py`'s CLI path should also persist records (currently only the two live/promotion call sites do).
+
+## 2026-08-13 - Checkpoint 86: Fixed run_all.ps1 Orphaned-Process Leak
+
+Implemented:
+
+- Root-caused the duplicate `run_app.py`/`run_dispatcher.py`/`run_worker.py` processes found accumulated locally during Checkpoint 84: `Start-ManagedProcess` launched each service through a nested `powershell -Command "Set-Location ...; python .\script.py"` wrapper and recorded *the wrapper's* PID in `pids.json`. `Stop-Process` on that PID does not kill its child on Windows, so every `-Stop`/`-Restart` left the real `python.exe` running, orphaned and untracked, while the PID file was deleted -- the next run had nothing to detect as "already running" and happily started another full set on top.
+- Fixed `Start-ManagedProcess` to launch `python.exe` directly via `Start-Process -FilePath "python" -WorkingDirectory $Root` (env `PYTHONPATH=src` set in the launching process and inherited), so the PID recorded in `pids.json` is now the actual worker process, not an intermediary shell.
+- Added `Stop-StrayManagedProcesses`, a command-line-matching sweep (by script name only, not by `$Root` substring -- the very orphans it exists to catch were launched with a relative `.\script.py` path via `Set-Location`, so their `CommandLine` never contains the repo's absolute path) that runs at the end of `Stop-ManagedProcesses` and defensively before starting a fresh set when nothing is tracked as live, to clean up both pre-fix orphans and any future leak.
+- Removed the now-dead `Quote-Single` helper (no longer needed once commands are passed as argument arrays instead of an interpolated shell string).
+
+Verified:
+
+- `[scriptblock]::Create((Get-Content -Raw .\run_all.ps1))` parses cleanly (same check CI runs).
+- Live: found 4 real orphaned `run_app.py` processes left over from before this fix (`ParentProcessId` pointing at already-dead wrapper PIDs). First sweep attempt (with a `$Root`-substring filter) missed all 4, confirming the relative-path blind spot above; removing that filter caught and killed all 4 on the next `-Restart`.
+- `.\run_all.ps1 -Restart` twice in a row, then inspected `Get-CimInstance Win32_Process` directly: exactly one `run_app.py`/`run_dispatcher.py`/`run_worker.py` triple, each a direct child of the launching shell (matching the recorded PIDs, no wrapper layer).
+- `.\run_all.ps1 -Stop` followed by the same process inspection: zero survivors (previously this left orphans -- the actual regression this fix targets).
+- Restarted the stack with `.\run_all.ps1`; live preflight and `GET /api/metrics` both confirmed against the freshly running process, including the `redis_queue` section from Checkpoint 83 (previously unverified live because the running process predated that change).
+- `python -m unittest discover -s tests` passed 187 tests (unaffected -- this is a deployment script, not covered by the Python test suite).
+
+Next:
+
+- No Python test coverage exists for `run_all.ps1` itself (PowerShell, outside `python -m unittest`); CI's "Check stack launcher script" step only parses it, doesn't execute the process-management logic. Consider a lightweight PowerShell-based CI check if this script grows more logic.
