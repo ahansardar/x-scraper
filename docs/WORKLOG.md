@@ -1770,3 +1770,26 @@ Next:
 
 - Restart the local `run_app.py`/`run_worker.py`/`run_dispatcher.py` stack to pick up the new `/api/metrics` `redis_queue` key.
 - Load/chaos-test the crash-recovery path before treating it as production-certified; move toward managed/clustered Postgres and Redis when genuine production deployment is the next priority.
+
+## 2026-08-13 - Checkpoint 84: Delivery Load, Soak, and Crash-Recovery Test Suite
+
+Implemented:
+
+- Added `tests/test_delivery_load.py`, an opt-in test suite (`XINGESTION_RUN_LOAD_TESTS=1`; skipped by default so the regular suite stays fast) covering three gaps the existing single-task `test_local_worker.py` tests didn't reach:
+  - `test_many_tasks_drain_with_no_loss_or_stuck_deliveries`: dispatches 150 outbox events, drains them with 4 concurrent `LocalWorker`s round-robin, asserts every task reaches `DONE` exactly once and the Redis consumer group ends at `pending_count=0`/`lag=0`.
+  - `test_crash_recovery_reclaims_many_stale_deliveries_under_load`: 3 consumers each read a share of 30 messages via `_read_next_delivery()` and never ack (simulated crash, held apart by the default 300s `redis_claim_min_idle_ms` so they don't reclaim each other), then 2 recovering workers with `redis_claim_min_idle_ms=0` drain all 30 via `XAUTOCLAIM` -- exercises multiple simultaneously-stale consumers, which the existing single-crash test doesn't.
+  - `test_soak_repeated_dispatch_process_cycles_leave_no_backlog`: 20 create/dispatch/process cycles, asserting zero unpublished outbox events and zero Redis pending entries after every cycle, to catch a slow per-cycle leak that a single run wouldn't show.
+- Added the new file to the Postgres/Redis CI job (`.github/workflows/ci.yml`) with `XINGESTION_RUN_LOAD_TESTS: "1"` set for that job only.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- Discovered during first live run: this repo's Postgres-backed tests have no per-test database isolation from whatever else is pointed at the same local Postgres DSN. Several stacked-up `run_dispatcher.py`/`run_worker.py` processes (leftover from repeated local launches) were racing the new tests for the same `outbox_events` rows, which surfaced as short counts (139/150, 26/30) on the first attempt -- not a bug in the tests or the app, just local-environment contention that CI's fresh single-purpose Postgres container doesn't have. Stopped the stray local dispatcher/worker processes (user-approved) and re-ran clean.
+- `XINGESTION_RUN_LOAD_TESTS=1 python -m unittest discover -s tests -p "test_delivery_load.py" -v` passed all 3 tests in ~23s against an idle local stack.
+- `python -m unittest discover -s tests` passed 181 tests (178 + 3, the 3 new tests correctly `skipped` without the env var set).
+
+Next:
+
+- Look at why multiple duplicate `run_app.py`/`run_dispatcher.py`/`run_worker.py` processes had accumulated locally -- likely `run_all.ps1` not cleaning up a prior run before starting a new one.
+- Real OS-level process-kill chaos testing and a sustained multi-hour soak at production scale remain open before calling the delivery path production-certified.
+- Restart the local `run_app.py`/`run_worker.py`/`run_dispatcher.py` stack (stopped during this checkpoint's verification) to pick up the `redis_queue` metrics key from Checkpoint 83.

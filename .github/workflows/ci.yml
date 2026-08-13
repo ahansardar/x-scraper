@@ -276,6 +276,7 @@ jobs:
     env:
       XINGESTION_TEST_POSTGRES_DSN: postgresql://xingestion:xingestion@127.0.0.1:55432/xingestion
       PYTHONPATH: src
+      XINGESTION_RUN_LOAD_TESTS: "1"
 
     steps:
       - name: Checkout
@@ -305,3 +306,4 @@ jobs:
           python -m unittest discover -s tests -p "test_preflight.py" -v
           python -m unittest discover -s tests -p "test_investigation.py" -v
           python -m unittest discover -s tests -p "test_outbox_operations.py" -v
+          python -m unittest discover -s tests -p "test_delivery_load.py" -v

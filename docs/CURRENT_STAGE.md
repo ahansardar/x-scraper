@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: Redis consumer-group lag/pending-entry metrics added to health reports and supervisor checks)
+Date: 2026-08-13 (updated: added in-process load/soak/crash-recovery test suite for the outbox/dispatcher/worker delivery path)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -375,7 +375,7 @@ Do not call the current repository the complete final product.
 Do not claim:
 
 - managed/clustered/HA PostgreSQL or Redis (this is a single-node local Docker Compose instance, not production infrastructure certification);
-- distributed worker recovery validated at production scale (the consumer-group/XAUTOCLAIM reclaim path is verified functionally, including a genuine crash scenario, but not load- or chaos-tested);
+- distributed worker recovery validated at production scale (the consumer-group/XAUTOCLAIM reclaim path is verified functionally, including a genuine single-crash scenario plus an in-process load/soak/multi-consumer crash-recovery test suite -- 150 concurrent deliveries across 4 workers with zero loss, simultaneous stale-delivery reclaim from 3 crashed consumers, and 20 repeated dispatch/process cycles leaving no backlog -- but not tested against real OS process kills, network partitions, or a sustained multi-hour soak at scale);
 - full protocol runtime validation lifecycle;
 - all capability families;
 - complete account/secret/network subsystem;
@@ -395,4 +395,4 @@ The accurate claim is:
    - hardening this single-node Postgres/Redis setup (connection pool tuning, `LISTEN`/`NOTIFY` for lower dispatch latency, structured migration tooling beyond the hand-rolled runner), or
    - moving toward managed/clustered Postgres and Redis (replication, Sentinel/Cluster) for genuine production deployment.
 2. Add more capabilities only after the `SEARCH_TWEETS` vertical slice has validation tightened.
-3. `run_supervisor_check.py`/health reporting now surface Redis consumer-group lag and pending-entry-count metrics alongside Postgres outbox lag; add load/chaos testing for the crash-recovery path before treating it as production-certified.
+3. `run_supervisor_check.py`/health reporting now surface Redis consumer-group lag and pending-entry-count metrics alongside Postgres outbox lag, and the delivery path now has an in-process load/soak/crash-recovery test suite (`tests/test_delivery_load.py`, opt-in via `XINGESTION_RUN_LOAD_TESTS=1`, run in the Postgres/Redis CI job). Remaining gap before calling it production-certified: real OS-level process-kill chaos testing and a sustained multi-hour soak at production scale.

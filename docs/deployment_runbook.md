@@ -436,6 +436,13 @@ python -m unittest discover -s tests
 python -m compileall -q src tests run_app.py run_worker.py run_dispatcher.py run_migrations.py run_postgres_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py
 ```
 
+`tests/test_delivery_load.py` (dispatcher/worker load, soak, and multi-consumer crash-recovery scenarios) is opt-in and skipped above by default. Run it separately, with no other `run_dispatcher.py`/`run_worker.py` pointed at the same Postgres database (they will race it for the same outbox rows):
+
+```powershell
+$env:XINGESTION_RUN_LOAD_TESTS = "1"
+python -m unittest discover -s tests -p "test_delivery_load.py" -v
+```
+
 After starting infrastructure, web, worker, and dispatcher:
 
 ```powershell
