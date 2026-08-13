@@ -1962,3 +1962,19 @@ Verified:
 
 Next:
 - `docs/TASKS.md`'s "Production Hardening" section has three items left: expand monitoring/release-risk handling around the approved route, connection-pool/`LISTEN`/`NOTIFY` tuning, and replacing the hand-rolled Postgres migration runner -- plus the single-node-vs-managed-infra decision and the four newly-tracked spec-flagged gaps.
+
+## 2026-08-13 - Checkpoint 94: Deeper Spec-Gap Pass, and a New End-to-End Flow Document
+
+Implemented:
+
+- Went through `FINAL_PRODUCT_SPEC.md` section by section a second, deeper time (the earlier pass in Checkpoint 93 only found the four largest un-started subsystems). Added seven more specific, concrete gaps to `docs/TASKS.md`'s "Spec-Flagged Gaps" section, each citing its exact spec section: the typed protocol error taxonomy is 9-of-24 implemented (`errors.py`'s `ERROR_PROFILES`); there's no automated sanitized-fixture pipeline (spec §32 describes `Automated Sanitization -> Secret Scan -> Human Verification -> VERIFIED_SANITIZED`, none of which exists in code); no distinct `Account` entity separate from `SessionArtifact` (spec §10.1-10.2, today's `SessionRecord.account_label` is just a string); several spec-listed observability metrics aren't tracked (`session_concurrency`, a live `schema_fingerprint` signal, `normalization_lag`, `monitor_lag`); X-rev validation lifecycle stages 4-8 aren't built (spec §24, only stage 3 -- parser+pagination+full recipe validation -- exists, completed this session); and 10 of 11 spec-listed capabilities don't exist (spec §5, only `SEARCH_TWEETS`).
+- Added `docs/SYSTEM_FLOW.md`: a new, from-scratch document explaining how the system actually works today, end to end, for a reader with no prior context -- distinct from `CURRENT_STAGE.md` (a point-in-time spec-coverage scorecard) and `WORKLOG.md` (a chronological build history). Ten sections, each with Mermaid diagrams grounded in real code paths built and verified this session: the big-picture architecture; the full task lifecycle from API call to canonical storage (capability request -> transactional outbox -> dispatcher -> Redis Streams -> worker -> X request -> parser -> canonical store); pagination as a chain of linked tasks with cross-page cursor-loop detection; failure handling (retry state machine, crash/lease-reclaim sequence diagram, the Redis-vs-Postgres reconciliation gap and why the mirror-image Postgres-side version is structurally impossible); the three-signal explanation of `recipe_validation_freshness` vs. `protocol_drift` vs. `release_risk` (why three, not one -- each answers a genuinely different question); the seven-check promotion safety gate in order; the investigation package's `pagination_chain` evidence; an operator-tooling map of every `run_*.py` script; and a data-model summary table across Postgres/Redis/SQLite.
+- Linked the new document from `README.md`'s doc index as the recommended starting point for a new reader.
+
+Verified:
+
+- Read every diagram back for Mermaid syntax risk (unmatched brackets, node-ID collisions across a single diagram block, unquoted punctuation) before finalizing -- none found; existing quoting conventions (quoting any node label containing commas, multi-clause sentences, or `/` in edge labels) were applied consistently throughout.
+- Cross-checked every concrete claim against the actual source before writing it, rather than from memory: `canonical/store.py`'s exact table/column names, the promotion safety checks' exact order and names (`manifest_present -> manifest_release_match -> release_health_allows_execution -> bindings_present -> recipe_binding_consistency -> fixture_validation -> capture_replay_comparison`), and the error-taxonomy gap count, all read directly from source for this document.
+
+Next:
+- No code changed this checkpoint (docs only) -- next work remains `docs/TASKS.md`'s open "Production Hardening" items and the newly-expanded spec-gap list.
