@@ -28,6 +28,7 @@ from xingestion.investigation import (
     build_protocol_drift_package,
     build_protocol_drift_report,
     build_release_risk_recommendation,
+    build_search_route_monitoring,
 )
 from xingestion.logging_config import configure_logging
 from xingestion.migrations import MigrationRunner, PostgresMigrationRunner
@@ -1172,6 +1173,7 @@ def _metrics_dict():
         "migrations": _migration_status_dict(STATE.migration_runner.status()),
         "telemetry": _telemetry_summary_dict(STATE.telemetry_store.summary()),
         "release_risk": _release_risk_dict(),
+        "search_route_monitoring": _search_route_monitoring_dict(),
         "protocol_drift": _protocol_drift_dict(),
         "sessions": {
             "total": len(sessions),
@@ -1267,6 +1269,15 @@ def _release_risk_dict():
         manifest=STATE.manifest,
         release_store=STATE.release_store,
         telemetry_store=STATE.telemetry_store,
+    )
+
+
+def _search_route_monitoring_dict():
+    return build_search_route_monitoring(
+        manifest=STATE.manifest,
+        release_store=STATE.release_store,
+        telemetry_store=STATE.telemetry_store,
+        network_context=STATE.config.worker_network_context or STATE.config.default_network_context,
     )
 
 

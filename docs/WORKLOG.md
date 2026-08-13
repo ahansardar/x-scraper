@@ -1978,3 +1978,21 @@ Verified:
 
 Next:
 - No code changed this checkpoint (docs only) -- next work remains `docs/TASKS.md`'s open "Production Hardening" items and the newly-expanded spec-gap list.
+
+## 2026-08-13 - Checkpoint 95: Approved Search-Route Monitoring Hardening
+
+Implemented:
+
+- Added a first-class `search_route_monitoring` signal that summarizes the currently approved search route for the active release, including the target network context, any matching route telemetry, and the route-level recommendation when the route is unhealthy.
+- Wired the new signal into `/api/metrics`, the operator health report, the frontend metrics strip, and `run_supervisor_check.py` so route remediation now shows up in the real operator path instead of only being implicit in the broader network-health view.
+- Hardened preflight API-shape checks to require the new metric key.
+- Added supervision coverage for both route-remediation warnings and route-quarantine failures.
+
+Verified:
+
+- `./.venv/bin/python -m compileall -q src tests`
+- `./.venv/bin/python -m unittest tests.test_investigation tests.test_supervision tests.test_health_report tests.test_preflight tests.test_northbound_api`
+
+Next:
+
+- Remaining open items in `docs/TASKS.md` are now the single-node-vs-managed-infra decision, connection-pool/`LISTEN`/`NOTIFY` tuning, replacing the hand-rolled Postgres migration runner, and the next capability vertical slice.

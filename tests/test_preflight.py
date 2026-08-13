@@ -272,7 +272,12 @@ class PreflightTests(unittest.TestCase):
             responses = {
                 "/api/health": {"release_id": "release-1", "auth_ready": True},
                 "/api/storage": {"sqlite_path": "x", "raw_evidence_dir": "raw"},
-                "/api/metrics": {"tasks": {}, "release_risk": {}, "sessions": {}},
+                "/api/metrics": {
+                    "tasks": {},
+                    "release_risk": {},
+                    "search_route_monitoring": {},
+                    "sessions": {},
+                },
                 "/api/migrations": {"migrations": {}},
                 "/api/network-health": {"routes": [], "recommendations": []},
                 "/api/sessions": {"sessions": []},

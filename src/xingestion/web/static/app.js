@@ -266,6 +266,7 @@ async function loadMetrics() {
     <div><strong>${data.canonical.engagement_observations}</strong><span>engagement observations</span></div>
     <div><strong>${data.sessions.cooling_down}</strong><span>sessions cooling</span></div>
     <div><strong>${escapeHtml(data.release_risk.action)}</strong><span>release risk</span></div>
+    <div><strong>${escapeHtml(data.search_route_monitoring.action)}</strong><span>search route</span></div>
     <div><strong>${data.auth_ready ? "ready" : "missing"}</strong><span>auth state</span></div>
     <div><strong>${data.storage.secret_backend.configured ? escapeHtml(data.storage.secret_backend.provider) : "check"}</strong><span>secret backend</span></div>
   `;

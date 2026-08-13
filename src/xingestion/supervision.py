@@ -144,6 +144,7 @@ class DeploymentSupervisorCheck:
                 self._check_redis_queue(metrics),
                 self._check_recipe_validation_freshness(metrics),
                 self._check_protocol_drift(metrics),
+                self._check_search_route_monitoring(metrics),
                 self._check_sessions(sessions, metrics),
                 self._check_network(network_health, sessions),
                 self._check_release(release),
@@ -338,6 +339,56 @@ class DeploymentSupervisorCheck:
             (
                 f"attempts_in_window={drift.get('attempts_in_window')} "
                 f"failure_rate={drift.get('failure_rate')}"
+            ),
+            )
+
+    def _check_search_route_monitoring(self, metrics: dict[str, object]) -> SupervisionCheck:
+        route = _dict(metrics.get("search_route_monitoring"))
+        if "error" in route:
+            return SupervisionCheck(
+                "search_route_monitoring",
+                "WARN",
+                f"search route monitoring unavailable: {route.get('message', route.get('error'))}",
+            )
+        if not route:
+            return SupervisionCheck(
+                "search_route_monitoring",
+                "WARN",
+                "no search route monitoring data available",
+            )
+        action = str(route.get("action", ""))
+        if action in {"RELEASE_BLOCKED", "QUARANTINE_RECOMMENDED"} or str(
+            route.get("release_risk_action", "")
+        ) == "QUARANTINE_RECOMMENDED":
+            return SupervisionCheck(
+                "search_route_monitoring",
+                "FAIL",
+                (
+                    f"network_context={route.get('network_context')} action={action} "
+                    f"reason={route.get('reason')}"
+                ),
+            )
+        if action in {"NETWORK_REMEDIATION_RECOMMENDED", "ROTATE_OR_PAUSE_ROUTE"}:
+            return SupervisionCheck(
+                "search_route_monitoring",
+                "WARN",
+                (
+                    f"network_context={route.get('network_context')} action={action} "
+                    f"reason={route.get('reason')}"
+                ),
+            )
+        if route.get("has_route_data") is not True:
+            return SupervisionCheck(
+                "search_route_monitoring",
+                "WARN",
+                f"no telemetry yet for network_context={route.get('network_context')}",
+            )
+        return SupervisionCheck(
+            "search_route_monitoring",
+            "PASS",
+            (
+                f"network_context={route.get('network_context')} "
+                f"route_status={action} release_risk={route.get('release_risk_action')}"
             ),
         )
 
