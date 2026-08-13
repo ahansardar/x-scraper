@@ -34,6 +34,8 @@ def main(argv=None):
         required_process_fragments=tuple(args.process_fragment),
         max_unpublished_events=args.max_unpublished_events,
         max_outbox_lag_seconds=args.max_outbox_lag_seconds,
+        max_redis_pending_entries=args.max_redis_pending_entries,
+        max_redis_pending_idle_seconds=args.max_redis_pending_idle_seconds,
         require_external_data_dir=args.require_external_data_dir,
         required_network_context=args.required_network_context or config.worker_network_context,
         max_network_failure_rate=args.max_network_failure_rate,
@@ -64,6 +66,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-unpublished-events", type=int, default=100)
     parser.add_argument("--max-outbox-lag-seconds", type=int, default=300)
+    parser.add_argument("--max-redis-pending-entries", type=int, default=100)
+    parser.add_argument("--max-redis-pending-idle-seconds", type=int, default=300)
     parser.add_argument(
         "--require-external-data-dir",
         action="store_true",

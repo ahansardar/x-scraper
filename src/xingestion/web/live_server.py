@@ -22,6 +22,7 @@ from xingestion.capabilities import (
 )
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
+from xingestion.dispatch import redis_queue_stats
 from xingestion.investigation import (
     build_network_route_recommendations,
     build_protocol_drift_package,
@@ -1103,6 +1104,7 @@ def _metrics_dict():
             "max_active_tasks_per_capability": STATE.config.max_active_tasks_per_capability,
         },
         "outbox": STATE.ledger.outbox_stats(),
+        "redis_queue": _safe_redis_queue_dict(),
         "canonical": canonical_counts,
         "storage": _storage_dict(),
         "migrations": _migration_status_dict(STATE.migration_runner.status()),
@@ -1122,6 +1124,17 @@ def _metrics_dict():
             ),
         },
     }
+
+
+def _safe_redis_queue_dict():
+    try:
+        return redis_queue_stats(
+            STATE.redis_client,
+            stream_key=STATE.config.redis_stream_key,
+            group_name=STATE.config.redis_consumer_group,
+        )
+    except Exception as exc:
+        return {"error": exc.__class__.__name__, "message": str(exc)}
 
 
 def _migration_status_dict(status):

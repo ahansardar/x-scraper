@@ -88,6 +88,8 @@ class DeploymentSupervisorCheck:
         ),
         max_unpublished_events: int = 100,
         max_outbox_lag_seconds: int = 300,
+        max_redis_pending_entries: int = 100,
+        max_redis_pending_idle_seconds: int = 300,
         require_external_data_dir: bool = False,
         required_network_context: str | None = None,
         max_network_failure_rate: float = 0.8,
@@ -100,6 +102,8 @@ class DeploymentSupervisorCheck:
         self.required_process_fragments = required_process_fragments
         self.max_unpublished_events = max_unpublished_events
         self.max_outbox_lag_seconds = max_outbox_lag_seconds
+        self.max_redis_pending_entries = max_redis_pending_entries
+        self.max_redis_pending_idle_seconds = max_redis_pending_idle_seconds
         self.require_external_data_dir = require_external_data_dir
         self.required_network_context = required_network_context or None
         if self.required_network_context:
@@ -137,6 +141,7 @@ class DeploymentSupervisorCheck:
                 self._check_storage(storage),
                 self._check_startup(startup),
                 self._check_queue(metrics),
+                self._check_redis_queue(metrics),
                 self._check_sessions(sessions, metrics),
                 self._check_network(network_health, sessions),
                 self._check_release(release),
@@ -239,6 +244,45 @@ class DeploymentSupervisorCheck:
             "queue",
             "PASS",
             f"unpublished_events={unpublished} oldest_lag_seconds={lag_seconds}",
+        )
+
+    def _check_redis_queue(self, metrics: dict[str, object]) -> SupervisionCheck:
+        redis_queue = _dict(metrics.get("redis_queue"))
+        if "error" in redis_queue:
+            return SupervisionCheck(
+                "redis_queue",
+                "FAIL",
+                f"redis queue stats unavailable: {redis_queue.get('message', redis_queue.get('error'))}",
+            )
+        if redis_queue.get("group_exists") is not True:
+            return SupervisionCheck(
+                "redis_queue",
+                "WARN",
+                (
+                    f"consumer group={redis_queue.get('group_name')} does not exist yet "
+                    f"on stream={redis_queue.get('stream_key')}"
+                ),
+            )
+        pending = int(redis_queue.get("pending_count") or 0)
+        lag = redis_queue.get("lag")
+        idle_ms = redis_queue.get("oldest_pending_idle_ms")
+        idle_seconds = int(idle_ms) // 1000 if idle_ms is not None else 0
+        if pending > self.max_redis_pending_entries:
+            return SupervisionCheck(
+                "redis_queue",
+                "FAIL",
+                f"pending_count={pending} exceeds limit={self.max_redis_pending_entries}",
+            )
+        if idle_seconds > self.max_redis_pending_idle_seconds:
+            return SupervisionCheck(
+                "redis_queue",
+                "FAIL",
+                f"oldest_pending_idle_seconds={idle_seconds} exceeds limit={self.max_redis_pending_idle_seconds}",
+            )
+        return SupervisionCheck(
+            "redis_queue",
+            "PASS",
+            f"pending_count={pending} lag={lag} oldest_pending_idle_seconds={idle_seconds}",
         )
 
     def _check_sessions(

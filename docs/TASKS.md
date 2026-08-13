@@ -22,7 +22,7 @@ This is the living checklist for the remaining product work. Completed items are
 - [x] ~~Migrate the durable task ledger and transactional outbox from SQLite to PostgreSQL.~~
 - [x] ~~Deliver committed outbox rows through Redis Streams with a dedicated dispatcher process.~~
 - [x] ~~Consume Redis deliveries through a worker consumer group with fenced Postgres leases and stale pending-entry reclaim.~~
-- [ ] Add explicit Redis consumer-group lag and pending-entry-count metrics to health reports and supervisor checks.
+- [x] ~~Add explicit Redis consumer-group lag and pending-entry-count metrics to health reports and supervisor checks.~~
 - [ ] Add load, soak, and crash-recovery tests for dispatcher/worker delivery before calling the path production-certified.
 - [ ] Decide whether the next hardening step is single-node tuning or managed/clustered Postgres and Redis.
 

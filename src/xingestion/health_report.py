@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Callable
 
 from psycopg_pool import ConnectionPool
+import redis
 
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig
+from xingestion.dispatch import redis_queue_stats
 from xingestion.errors import RuntimeErrorEnvelope, envelope_from_task_error
 from xingestion.investigation import (
     build_network_route_recommendations,
@@ -88,6 +90,7 @@ def build_health_report(
         "preflight": [_preflight_check_dict(check) for check in preflight.checks],
         "migrations": _safe_section(lambda: _migration_status_dict(migration_runner)),
         "tasks": _safe_section(lambda: _task_dict(config)),
+        "redis_queue": _safe_section(lambda: _redis_queue_dict(config)),
         "runtime_errors": _safe_section(lambda: _runtime_errors_dict(config)),
         "canonical": _safe_section(lambda: CanonicalStore(config.sqlite_path).counts()),
         "telemetry": _safe_section(lambda: _telemetry_summary_dict(telemetry_store.summary())),
@@ -213,6 +216,18 @@ def _task_dict(config: AppConfig) -> dict[str, object]:
         "terminal_total": sum(int(counts[state]) for state in terminal_states),
         "outbox": ledger.outbox_stats(),
     }
+
+
+def _redis_queue_dict(config: AppConfig) -> dict[str, object]:
+    client = redis.Redis.from_url(config.redis_url, decode_responses=True)
+    try:
+        return redis_queue_stats(
+            client,
+            stream_key=config.redis_stream_key,
+            group_name=config.redis_consumer_group,
+        )
+    finally:
+        client.close()
 
 
 def _runtime_errors_dict(config: AppConfig) -> dict[str, object]:

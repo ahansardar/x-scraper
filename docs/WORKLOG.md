@@ -1750,3 +1750,23 @@ Next:
 - Consider `LISTEN`/`NOTIFY` for lower-latency outbox dispatch if the 1s poll interval becomes a bottleneck.
 - Add Redis consumer-group lag/pending-entry-count metrics to `run_supervisor_check.py`/health reporting (currently only Postgres outbox lag is surfaced).
 - Load/chaos-test the crash-recovery path before treating it as production-certified; move toward managed/clustered Postgres and Redis when genuine production deployment is the next priority.
+
+## 2026-08-13 - Checkpoint 83: Redis Consumer-Group Lag and Pending-Entry Metrics
+
+Implemented:
+
+- Added `redis_queue_stats()` (`src/xingestion/dispatch/redis_stream_stats.py`), a small helper around `XLEN`/`XINFO GROUPS`/`XPENDING`/`XPENDING` range that reports stream length, whether the consumer group exists, pending-entry count, Redis-computed group lag, and the oldest pending entry's idle time.
+- Wired it into `/api/metrics` (`live_server.py`, new `redis_queue` key) and `build_health_report()` (`health_report.py`, new `redis_queue` section, opening its own short-lived Redis connection alongside the existing Postgres-only `_task_dict`).
+- Added a `redis_queue` supervision check to `DeploymentSupervisorCheck` (`supervision.py`): FAILs on stats-collection errors, WARNs when the consumer group has not been created yet, FAILs when pending-entry count or oldest-pending idle time exceed new `--max-redis-pending-entries`/`--max-redis-pending-idle-seconds` flags on `run_supervisor_check.py` (defaults 100 / 300s, mirroring the existing outbox-lag check).
+
+Verified:
+
+- `python -m compileall -q src tests run_supervisor_check.py` passed.
+- `python -m unittest discover -s tests` passed 178 tests, including 3 new `redis_queue_stats` unit tests (group missing, lag with no pending entries, pending count/idle time after an unacked read) and 4 new supervision tests (backlogged pending entries, stale pending entry, missing consumer group as WARN not FAIL, unavailable stats as FAIL).
+- `python run_health_report.py` against the live local stack (`docker compose` Postgres/Redis already running) wrote a report with a populated `redis_queue` section (`group_exists=true`, `stream_length=33`, `pending_count=0`, `lag=0`).
+- `run_supervisor_check.py --base-url http://127.0.0.1:8000` against an already-running `run_app.py` process showed `redis_queue` as `WARN` with `group=None` -- confirmed via `curl /api/metrics` that this is the pre-existing process still serving old code without the new key, not a bug; a restart of the running stack picks up the change.
+
+Next:
+
+- Restart the local `run_app.py`/`run_worker.py`/`run_dispatcher.py` stack to pick up the new `/api/metrics` `redis_queue` key.
+- Load/chaos-test the crash-recovery path before treating it as production-certified; move toward managed/clustered Postgres and Redis when genuine production deployment is the next priority.

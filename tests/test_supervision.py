@@ -48,6 +48,7 @@ class SupervisionTests(unittest.TestCase):
         self.assertEqual(statuses["web"], "PASS")
         self.assertEqual(statuses["startup"], "PASS")
         self.assertEqual(statuses["processes"], "PASS")
+        self.assertEqual(statuses["redis_queue"], "PASS")
 
     def test_supervisor_check_fails_backlogged_outbox(self):
         payloads = _ready_payloads()
@@ -66,6 +67,78 @@ class SupervisionTests(unittest.TestCase):
         queue = next(check for check in result.checks if check.name == "queue")
         self.assertFalse(result.ok)
         self.assertEqual(queue.status, "FAIL")
+
+    def test_supervisor_check_fails_backlogged_redis_pending_entries(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["redis_queue"]["pending_count"] = 500
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+            max_redis_pending_entries=100,
+        )
+
+        result = checker.run()
+
+        redis_queue = next(check for check in result.checks if check.name == "redis_queue")
+        self.assertFalse(result.ok)
+        self.assertEqual(redis_queue.status, "FAIL")
+        self.assertIn("pending_count=500", redis_queue.message)
+
+    def test_supervisor_check_fails_stale_redis_pending_entry(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["redis_queue"]["pending_count"] = 1
+        payloads["/api/metrics"]["redis_queue"]["oldest_pending_idle_ms"] = 999_000
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+            max_redis_pending_idle_seconds=300,
+        )
+
+        result = checker.run()
+
+        redis_queue = next(check for check in result.checks if check.name == "redis_queue")
+        self.assertFalse(result.ok)
+        self.assertEqual(redis_queue.status, "FAIL")
+        self.assertIn("oldest_pending_idle_seconds=999", redis_queue.message)
+
+    def test_supervisor_check_warns_when_redis_consumer_group_missing(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["redis_queue"] = {
+            "stream_key": "xingestion:capability-tasks",
+            "group_name": "capability-workers",
+            "group_exists": False,
+            "stream_length": 0,
+            "pending_count": 0,
+            "lag": None,
+            "oldest_pending_idle_ms": None,
+        }
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        redis_queue = next(check for check in result.checks if check.name == "redis_queue")
+        self.assertTrue(result.ok)
+        self.assertEqual(redis_queue.status, "WARN")
+
+    def test_supervisor_check_fails_unavailable_redis_queue_stats(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["redis_queue"] = {
+            "error": "ConnectionError",
+            "message": "connection refused",
+        }
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        redis_queue = next(check for check in result.checks if check.name == "redis_queue")
+        self.assertFalse(result.ok)
+        self.assertEqual(redis_queue.status, "FAIL")
 
     def test_supervisor_check_fails_checkout_storage_when_required(self):
         payloads = _ready_payloads()
@@ -205,6 +278,15 @@ def _ready_payloads():
             "outbox": {
                 "unpublished_events": 0,
                 "oldest_unpublished_lag_seconds": None,
+            },
+            "redis_queue": {
+                "stream_key": "xingestion:capability-tasks",
+                "group_name": "capability-workers",
+                "group_exists": True,
+                "stream_length": 0,
+                "pending_count": 0,
+                "lag": 0,
+                "oldest_pending_idle_ms": None,
             },
             "sessions": {
                 "healthy": 1,

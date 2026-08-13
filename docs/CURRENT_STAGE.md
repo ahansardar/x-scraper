@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-12 (updated: task ledger + outbox migrated to PostgreSQL + Redis Streams)
+Date: 2026-08-13 (updated: Redis consumer-group lag/pending-entry metrics added to health reports and supervisor checks)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -395,4 +395,4 @@ The accurate claim is:
    - hardening this single-node Postgres/Redis setup (connection pool tuning, `LISTEN`/`NOTIFY` for lower dispatch latency, structured migration tooling beyond the hand-rolled runner), or
    - moving toward managed/clustered Postgres and Redis (replication, Sentinel/Cluster) for genuine production deployment.
 2. Add more capabilities only after the `SEARCH_TWEETS` vertical slice has validation tightened.
-3. Extend `run_supervisor_check.py`/health reporting with explicit Redis consumer-group lag and pending-entry-count metrics (currently only Postgres outbox lag is surfaced), and add load/chaos testing for the crash-recovery path before treating it as production-certified.
+3. `run_supervisor_check.py`/health reporting now surface Redis consumer-group lag and pending-entry-count metrics alongside Postgres outbox lag; add load/chaos testing for the crash-recovery path before treating it as production-certified.

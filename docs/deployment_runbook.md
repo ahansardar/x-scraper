@@ -200,7 +200,7 @@ For supervised hosts, run:
 python .\run_supervisor_check.py --base-url http://127.0.0.1:8000 --expect-processes --require-external-data-dir
 ```
 
-This fails if the API is not returning JSON, startup directories are not writable, migrations are pending, storage is still inside the checkout, no healthy session exists, a required network route has no healthy matching session, a network route exceeds the configured failure-rate threshold after enough attempts, the release is blocked, outbox lag/depth exceeds thresholds, or the expected web/worker command lines are missing.
+This fails if the API is not returning JSON, startup directories are not writable, migrations are pending, storage is still inside the checkout, no healthy session exists, a required network route has no healthy matching session, a network route exceeds the configured failure-rate threshold after enough attempts, the release is blocked, outbox lag/depth exceeds thresholds, the Redis consumer-group pending-entry count or oldest-pending idle time exceeds thresholds (`--max-redis-pending-entries`, default 100; `--max-redis-pending-idle-seconds`, default 300; WARNs instead of FAILs if the consumer group has not been created yet), or the expected web/worker command lines are missing.
 
 For route-bound workers, pass the same route the worker uses:
 
