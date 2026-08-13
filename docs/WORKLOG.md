@@ -1996,3 +1996,22 @@ Verified:
 Next:
 
 - Remaining open items in `docs/TASKS.md` are now the single-node-vs-managed-infra decision, connection-pool/`LISTEN`/`NOTIFY` tuning, replacing the hand-rolled Postgres migration runner, and the next capability vertical slice.
+
+## 2026-08-13 - Checkpoint 96: Single-Node Dispatcher Wakeups
+
+Implemented:
+
+- Added a Postgres `LISTEN`/`NOTIFY` wake path for the outbox dispatcher on a dedicated channel, while keeping the existing poll loop as a fallback if the notify listener is unavailable.
+- Added a new Postgres trigger migration on `outbox_events` so committed inserts immediately emit a wakeup notification carrying the `event_id`, `task_id`, and `created_at` payload.
+- Added a dispatcher helper that drains all currently pending outbox rows in one wake cycle before returning to the listener/poll loop.
+- Exposed the new notification listener and channel from the dispatch package for reuse and testing.
+- Added a live integration test that confirms an outbox insert emits a dispatcher wake notification after commit.
+
+Verified:
+
+- `./.venv/bin/python -m compileall -q src tests run_dispatcher.py`
+- `./.venv/bin/python -m unittest tests.test_local_worker tests.test_delivery_load`
+
+Next:
+
+- The remaining open items in `docs/TASKS.md` are the structured Postgres migration tooling cleanup and the next capability vertical slice after `SEARCH_TWEETS`.

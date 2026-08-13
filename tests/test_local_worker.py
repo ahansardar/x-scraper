@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import redis as redis_lib
 
-from postgres_fixture import make_postgres_ledger
+from postgres_fixture import make_postgres_ledger, test_dsn
 
 from xingestion.capabilities import (
     CapabilityPlanner,
@@ -20,7 +20,11 @@ from xingestion.capabilities import (
 )
 from xingestion.tasks import TaskState
 from xingestion.canonical import CanonicalStore
-from xingestion.dispatch import RedisOutboxDispatcher
+from xingestion.dispatch import (
+    OUTBOX_NOTIFY_CHANNEL,
+    PostgresOutboxNotificationListener,
+    RedisOutboxDispatcher,
+)
 from xingestion.releases import ReleaseHealth, ReleaseStore
 from xingestion.sessions import SessionHealth, SessionStore
 from xingestion.telemetry import ProtocolTelemetryStore
@@ -192,6 +196,36 @@ class LocalWorkerTests(unittest.TestCase):
         for _ in range(count):
             result = self.dispatcher.dispatch_once()
             self.assertTrue(result.dispatched, "expected a pending outbox event to dispatch")
+
+    def test_outbox_insert_emits_postgres_notify_for_dispatcher_wakeup(self):
+        with PostgresOutboxNotificationListener(
+            test_dsn(), channel=OUTBOX_NOTIFY_CHANNEL
+        ) as listener:
+            self.assertIsNone(listener.wait(timeout=0.1))
+
+            manifest = load_manifest()
+            request = CapabilityRequest(
+                capability_id=CapabilityId.SEARCH_TWEETS,
+                contract_version=1,
+                payload=SearchTweetsInput(query="notify-test", page_size=20),
+            )
+            plan = CapabilityPlanner(manifest).plan(request)
+            task = self.ledger.create_task(
+                idempotency_key="notify-key",
+                capability_id=request.capability_id,
+                contract_version=request.contract_version,
+                request_json=request.public_dict(),
+                plan_json=plan.public_dict(),
+            )
+
+            notification = listener.wait(timeout=2)
+
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.event_id[:7], "outbox-")
+        self.assertEqual(notification.task_id, task.task_id)
+        self.assertEqual(notification.channel, OUTBOX_NOTIFY_CHANNEL)
+        self.assertIsNotNone(notification.wake_latency_ms)
+        self.assertGreaterEqual(notification.wake_latency_ms, 0)
 
     def test_worker_claims_outbox_and_completes_task(self):
         manifest = load_manifest()

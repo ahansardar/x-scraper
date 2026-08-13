@@ -9,10 +9,15 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 import redis
+import psycopg
 from psycopg_pool import ConnectionPool
 
 from xingestion.config import load_app_config
-from xingestion.dispatch import RedisOutboxDispatcher
+from xingestion.dispatch import (
+    OUTBOX_NOTIFY_CHANNEL,
+    PostgresOutboxNotificationListener,
+    RedisOutboxDispatcher,
+)
 from xingestion.logging_config import configure_logging
 from xingestion.tasks import PostgresTaskLedger
 from xingestion.xprotocol.runtime import load_env_file
@@ -34,6 +39,20 @@ def main(argv=None):
         redis_client=redis_client,
         stream_key=config.redis_stream_key,
     )
+    listener = None
+    try:
+        listener = PostgresOutboxNotificationListener(
+            config.postgres_dsn, channel=OUTBOX_NOTIFY_CHANNEL
+        )
+        LOGGER.info(
+            "dispatcher listening on postgres channel=%s for outbox wakeups",
+            OUTBOX_NOTIFY_CHANNEL,
+        )
+    except (psycopg.OperationalError, psycopg.Error) as exc:
+        LOGGER.warning(
+            "dispatcher notify listener unavailable; falling back to polling only: %s",
+            exc,
+        )
 
     once = "--once" in argv
     sleep_seconds = config.dispatcher_poll_interval_seconds
@@ -51,20 +70,41 @@ def main(argv=None):
 
     try:
         while True:
-            result = dispatcher.dispatch_once()
-            if result.dispatched:
-                message = f"dispatched event={result.event_id} task={result.task_id}"
+            dispatched = dispatcher.dispatch_available()
+            if dispatched:
+                message = f"dispatched {dispatched} pending outbox event(s)"
                 print(message)
                 LOGGER.info(message)
-            elif once:
+                if once:
+                    return 0
+                continue
+
+            if once:
                 print("no pending outbox events")
                 LOGGER.info("no pending outbox events")
                 return 0
 
-            if once:
-                return 0
+            notification = None
+            if listener is not None:
+                notification = listener.wait(timeout=sleep_seconds)
+                if notification is not None:
+                    message = (
+                        "outbox wakeup channel=%s event=%s task=%s wake_latency_ms=%s"
+                        % (
+                            notification.channel,
+                            notification.event_id,
+                            notification.task_id,
+                            notification.wake_latency_ms,
+                        )
+                    )
+                    print(message)
+                    LOGGER.info(message)
+                continue
+
             time.sleep(sleep_seconds)
     finally:
+        if listener is not None:
+            listener.close()
         pool.close()
 
 
