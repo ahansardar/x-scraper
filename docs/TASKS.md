@@ -14,7 +14,7 @@ This is the living checklist for the remaining product work. Completed items are
 
 - [x] ~~Integrate `SEARCH_TWEETS` pagination validation into the production worker path.~~
 - [x] ~~Add explicit cursor-loop evidence to the investigation package when pagination fails.~~
-- [ ] Expand search request inputs to cover the remaining stable contract fields from the product spec.
+- [x] ~~Expand search request inputs to cover the remaining stable contract fields from the product spec.~~ (`FINAL_PRODUCT_SPEC.md`'s SEARCH_TWEETS Inputs list is exactly `query`, `product`, `cursor`, `page_size` -- `SearchTweetsInput` already has all four; there is no unimplemented spec-named field. The pinned GraphQL operation also has no separate variable slots for filters like language/date-range/result-type -- those are only expressible via X search operators embedded in `query` directly, e.g. `"india lang:en since:2026-01-01"`, which already works today.)
 - [ ] Validate the full `SEARCH_TWEETS` acquisition recipe as a single release-bound unit.
 
 ## Durable Execution and Delivery

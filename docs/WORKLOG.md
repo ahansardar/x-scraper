@@ -1915,3 +1915,14 @@ Verified:
 
 Next:
 - `docs/TASKS.md`'s "SEARCH_TWEETS Vertical Slice" section still has two open items: expanding search request inputs to cover more stable contract fields, and validating the full acquisition recipe as one release-bound unit.
+
+## 2026-08-13 - Checkpoint 91: Closed "Expand Search Request Inputs" -- No Spec Gap Found
+
+Investigated (no code changes):
+
+- Checked `FINAL_PRODUCT_SPEC.md`'s SEARCH_TWEETS "Inputs" list against `SearchTweetsInput` (`src/xingestion/capabilities/models.py`) before writing any new fields. The spec's example lists exactly `query`, `product`, `cursor`, `page_size` -- `SearchTweetsInput` already has all four; there is no unimplemented spec-named field to add.
+- Also checked whether the pinned `SearchTimeline` GraphQL operation (`protocol_releases/search_tweets.candidate.json`) has variable slots for filters a caller might reasonably want (language, date range, result type, exclude replies): it does not. `build_search_timeline_request()` only ever forwards `rawQuery`/`count`/`querySource`/`product`/`cursor` plus two static feature-flag booleans. Any such filter is only expressible today by embedding X's own search operators directly in the `query` string (e.g. `"india lang:en since:2026-01-01"`), which already works with zero code changes -- `tests/test_capability_planner.py:30` already demonstrates this.
+- Decided with the user not to invent new structured convenience fields (e.g. a `language`/`since`/`until` parameter that compiles down to query-string operators) since the spec doesn't call for them and it would be scope beyond what this checklist item asked for. Checked the item off in `docs/TASKS.md` with a note explaining why, so the reasoning doesn't need to be re-derived later.
+
+Next:
+- `docs/TASKS.md`'s "SEARCH_TWEETS Vertical Slice" section has one item left: validating the full acquisition recipe as a single release-bound unit.
