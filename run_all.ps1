@@ -214,7 +214,7 @@ if ($Restart) {
     Stop-ManagedProcesses
 }
 else {
-    $liveProcesses = Get-LiveManagedProcesses
+    $liveProcesses = @(Get-LiveManagedProcesses)
     if ($liveProcesses.Count -gt 0) {
         Write-Host "run_all managed processes are already running:"
         foreach ($entry in $liveProcesses) {
