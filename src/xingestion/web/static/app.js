@@ -1,4 +1,5 @@
 const health = document.querySelector("#health");
+const statusBanner = document.querySelector("#statusBanner");
 const form = document.querySelector("#searchForm");
 const summary = document.querySelector("#summary");
 const tweets = document.querySelector("#tweets");
@@ -65,12 +66,44 @@ async function parseJsonResponse(response, url) {
   }
 }
 
+let lastHealth = null;
+let lastStartup = null;
+let lastTaskActionsCount = null;
+
+function updateStatusBanner() {
+  if (lastHealth === null || lastStartup === null || lastTaskActionsCount === null) {
+    return;
+  }
+  const problems = [];
+  if (!lastHealth.auth_ready) {
+    problems.push("X login credentials are missing");
+  }
+  if (!lastStartup.ok) {
+    problems.push("startup checks are failing");
+  }
+  if (lastTaskActionsCount > 0) {
+    const noun = lastTaskActionsCount === 1 ? "search needs" : "searches need";
+    problems.push(`${lastTaskActionsCount} ${noun} attention`);
+  }
+
+  if (!problems.length) {
+    statusBanner.className = "status-banner ok";
+    statusBanner.innerHTML = "<strong>All systems operational.</strong> Ready to run searches.";
+    return;
+  }
+  const severity = !lastHealth.auth_ready || !lastStartup.ok ? "bad" : "warn";
+  statusBanner.className = `status-banner ${severity}`;
+  statusBanner.innerHTML = `<strong>Needs attention:</strong> ${problems.map(escapeHtml).join(" &middot; ")}`;
+}
+
 async function loadHealth() {
   const data = await getJson("/api/health");
   health.textContent = data.auth_ready
     ? `${data.mode} - ${data.release_id}`
     : "auth missing";
   health.classList.toggle("ok", data.auth_ready);
+  lastHealth = data;
+  updateStatusBanner();
 }
 
 async function loadTasks() {
@@ -86,8 +119,10 @@ async function loadTasks() {
 
 async function loadTaskActions() {
   const data = await getJson("/api/task-actions");
+  lastTaskActionsCount = data.actions.length;
+  updateStatusBanner();
   if (!data.actions.length) {
-    taskActionsBody.innerHTML = `<tr><td colspan="6">No failed or retryable tasks.</td></tr>`;
+    taskActionsBody.innerHTML = `<tr><td colspan="6">Nothing needs attention right now.</td></tr>`;
     return;
   }
   taskActionsBody.innerHTML = data.actions.map((action) => `
@@ -160,6 +195,8 @@ async function loadOutbox() {
 
 async function loadStartup() {
   const data = await getJson("/api/startup");
+  lastStartup = data;
+  updateStatusBanner();
   startupSummary.innerHTML = data.ok
     ? "Startup checks are passing."
     : "Startup checks need operator attention.";
@@ -1053,12 +1090,16 @@ function delay(ms) {
 
 loadHealth().catch((error) => {
   health.textContent = error.message;
+  statusBanner.className = "status-banner bad";
+  statusBanner.textContent = `Could not reach the API: ${error.message}`;
 });
 loadTasks().catch((error) => {
   tasks.innerHTML = `<tr><td colspan="3">${escapeHtml(error.message)}</td></tr>`;
 });
 loadTaskActions().catch((error) => {
   taskActionsBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
+  lastTaskActionsCount = 0;
+  updateStatusBanner();
 });
 loadSupportExports().catch((error) => {
   supportExportsSummary.textContent = error.message;
@@ -1073,6 +1114,8 @@ loadOutbox().catch((error) => {
 });
 loadStartup().catch((error) => {
   startupSummary.textContent = error.message;
+  lastStartup = { ok: false };
+  updateStatusBanner();
 });
 loadProtocolValidation().catch((error) => {
   validationSummary.textContent = error.message;

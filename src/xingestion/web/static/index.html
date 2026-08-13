@@ -18,220 +18,107 @@
     </header>
 
     <main class="console-shell">
-      <aside class="command-rail" aria-label="Acquisition controls">
-        <section class="panel control-panel">
-          <div class="section-title">
-            <span class="mark"></span>
-            <div>
-              <p class="section-kicker">Request</p>
-              <h2>Capability</h2>
-            </div>
-          </div>
-          <form id="searchForm">
-            <label>
-              Query
-              <input name="query" value="india lang:en" autocomplete="off">
-            </label>
-            <div class="form-grid">
-              <label>
-                Product
-                <select name="product">
-                  <option>Top</option>
-                  <option>Latest</option>
-                  <option>Photos</option>
-                  <option>Videos</option>
-                </select>
-              </label>
-              <label>
-                Page size
-                <input name="page_size" type="number" min="1" max="50" value="20">
-              </label>
-            </div>
-            <button type="submit">Run live acquisition</button>
-          </form>
-        </section>
+      <div id="statusBanner" class="status-banner" role="status">Checking system status...</div>
 
-        <section class="panel task-panel">
-          <div class="section-title">
-            <span class="mark neutral"></span>
-            <div>
-              <p class="section-kicker">Queue</p>
-              <h2>Task Ledger</h2>
+      <section class="page-group">
+        <div class="group-header">
+          <h2>Run a Search</h2>
+          <p class="group-desc">Search X live and see what comes back.</p>
+        </div>
+        <div class="run-search-grid">
+          <section class="panel control-panel">
+            <div class="section-title">
+              <span class="mark"></span>
+              <div>
+                <h3>Capability</h3>
+                <p class="panel-desc">Enter a search query and run it against X right now.</p>
+              </div>
             </div>
-          </div>
-          <div class="table-wrap compact-table">
+            <form id="searchForm">
+              <label>
+                Query
+                <input name="query" value="india lang:en" autocomplete="off">
+              </label>
+              <div class="form-grid">
+                <label>
+                  Product
+                  <select name="product">
+                    <option>Top</option>
+                    <option>Latest</option>
+                    <option>Photos</option>
+                    <option>Videos</option>
+                  </select>
+                </label>
+                <label>
+                  Page size
+                  <input name="page_size" type="number" min="1" max="50" value="20">
+                </label>
+              </div>
+              <button type="submit">Run live acquisition</button>
+            </form>
+          </section>
+
+          <section class="panel output-panel hero-panel">
+            <div class="section-title">
+              <span class="mark success"></span>
+              <div>
+                <h3>Latest Output</h3>
+                <p class="panel-desc">Results from your most recent search.</p>
+              </div>
+            </div>
+            <div id="summary" class="summary">Run a live acquisition to produce output.</div>
+            <div id="tweets" class="tweets"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page-group">
+        <div class="group-header">
+          <h2>Needs Attention</h2>
+          <p class="group-desc">Searches that failed and what to do about them.</p>
+        </div>
+        <section class="panel attention-panel">
+          <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Task</th>
                   <th>State</th>
-                  <th>Action</th>
+                  <th>Severity</th>
+                  <th>Attempts</th>
+                  <th>Recommended Action</th>
+                  <th>Control</th>
                 </tr>
               </thead>
-              <tbody id="tasks"></tbody>
+              <tbody id="taskActions"></tbody>
             </table>
           </div>
         </section>
-      </aside>
+      </section>
 
-      <section class="workspace">
-        <section class="panel output-panel hero-panel">
-          <div class="section-title">
-            <span class="mark success"></span>
-            <div>
-              <p class="section-kicker">Evidence</p>
-              <h2>Latest Output</h2>
-            </div>
-          </div>
-          <div id="summary" class="summary">Run a live acquisition to produce output.</div>
-          <div id="tweets" class="tweets"></div>
-        </section>
-
-        <section class="panel metrics-panel">
-          <div class="section-title">
-            <span class="mark success"></span>
-            <div>
-              <p class="section-kicker">System</p>
-              <h2>Metrics</h2>
-            </div>
-          </div>
-          <div id="metrics" class="metrics-grid"></div>
-        </section>
-
-        <section class="panel flow-panel">
-          <div class="section-title">
-            <span class="mark accent"></span>
-            <div>
-              <p class="section-kicker">Pipeline</p>
-              <h2>Execution Flow</h2>
-            </div>
-          </div>
-          <div class="flow">
-            <div>Capability</div>
-            <div>Plan</div>
-            <div>Outbox</div>
-            <div>Worker</div>
-            <div>Evidence</div>
-          </div>
-        </section>
-
-        <div class="section-band">
-          <section class="panel startup-panel">
+      <section class="page-group">
+        <div class="group-header">
+          <h2>System Health</h2>
+          <p class="group-desc">Quick status of the moving parts: counts, and the X login credentials searches run under.</p>
+        </div>
+        <div class="health-grid">
+          <section class="panel metrics-panel">
             <div class="section-title">
-              <span class="mark neutral"></span>
-              <div>
-                <p class="section-kicker">Readiness</p>
-                <h2>Startup Readiness</h2>
-              </div>
-            </div>
-            <div id="startupSummary" class="summary">Loading startup checks...</div>
-            <div id="startupChecks" class="check-list"></div>
-          </section>
-
-          <section class="panel validation-panel">
-            <div class="section-title panel-action-title">
               <span class="mark success"></span>
               <div>
-                <p class="section-kicker">Parser</p>
-                <h2>Protocol Validation</h2>
-              </div>
-              <button id="runProtocolValidation" class="secondary inline-action" type="button">Save report</button>
-            </div>
-            <div id="validationSummary" class="summary">Loading parser validation...</div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Source</th>
-                    <th>Status</th>
-                    <th>Tweets</th>
-                    <th>Cursor</th>
-                    <th>Fingerprint</th>
-                  </tr>
-                </thead>
-                <tbody id="validationResults"></tbody>
-              </table>
-            </div>
-            <div id="validationReportsSummary" class="summary">Loading validation report history...</div>
-            <div class="table-wrap compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Report</th>
-                    <th>Status</th>
-                    <th>Sources</th>
-                    <th>Generated</th>
-                  </tr>
-                </thead>
-                <tbody id="validationReports"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <div class="section-band">
-          <section class="panel attention-panel">
-            <div class="section-title">
-              <span class="mark danger"></span>
-              <div>
-                <p class="section-kicker">Operator</p>
-                <h2>Needs Attention</h2>
+                <h3>Metrics</h3>
+                <p class="panel-desc">Quick counts of what's happening in the system right now.</p>
               </div>
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Task</th>
-                    <th>State</th>
-                    <th>Severity</th>
-                    <th>Attempts</th>
-                    <th>Recommended Action</th>
-                    <th>Control</th>
-                  </tr>
-                </thead>
-                <tbody id="taskActions"></tbody>
-              </table>
-            </div>
+            <div id="metrics" class="metrics-grid"></div>
           </section>
 
-          <section class="panel outbox-panel">
-            <div class="section-title panel-action-title">
-              <span class="mark accent"></span>
-              <div>
-                <p class="section-kicker">Recovery</p>
-                <h2>Outbox Recovery</h2>
-              </div>
-              <div class="title-actions">
-                <button id="refreshOutbox" class="secondary inline-action" type="button">Refresh</button>
-                <button id="processOutbox" class="inline-action" type="button">Process</button>
-              </div>
-            </div>
-            <div id="outboxSummary" class="summary">Loading outbox queue...</div>
-            <div class="table-wrap compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Event</th>
-                    <th>Task</th>
-                    <th>State</th>
-                    <th>Age</th>
-                    <th>Type</th>
-                  </tr>
-                </thead>
-                <tbody id="outboxEvents"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <div class="section-band">
           <section class="panel session-panel">
             <div class="section-title panel-action-title">
               <span class="mark accent"></span>
               <div>
-                <p class="section-kicker">Identity</p>
-                <h2>Sessions</h2>
+                <h3>Sessions</h3>
+                <p class="panel-desc">The X login credentials used to run searches, and whether they're working.</p>
               </div>
               <button id="importSessions" class="secondary inline-action" type="button">Import</button>
             </div>
@@ -252,126 +139,258 @@
               </table>
             </div>
           </section>
-
-          <section class="panel network-panel">
-            <div class="section-title">
-              <span class="mark neutral"></span>
-              <div>
-                <p class="section-kicker">Routes</p>
-                <h2>Network Health</h2>
-              </div>
-            </div>
-            <div id="networkHealthSummary" class="summary">Loading network health...</div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Route</th>
-                    <th>Attempts</th>
-                    <th>Failure Rate</th>
-                    <th>Sessions</th>
-                    <th>Latest</th>
-                    <th>Errors</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="networkHealth"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <div class="section-band governance-band">
-          <section class="panel release-panel">
-            <div class="section-title">
-              <span class="mark success"></span>
-              <div>
-                <p class="section-kicker">Release</p>
-                <h2>Protocol Governance</h2>
-              </div>
-            </div>
-            <div id="releaseSummary" class="summary">Loading release inventory...</div>
-            <div class="table-wrap compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Release</th>
-                    <th>Status</th>
-                    <th>Health</th>
-                    <th>Recipe</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="releaseInventory"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="panel release-audit-panel">
-            <div class="section-title panel-action-title">
-              <span class="mark neutral"></span>
-              <div>
-                <p class="section-kicker">Audit</p>
-                <h2>Promotion Trail</h2>
-              </div>
-              <button id="runReleaseAuditRetention" class="secondary inline-action" type="button">Clean old</button>
-            </div>
-            <div id="releaseAuditsSummary" class="summary">Loading promotion audits...</div>
-            <div class="table-wrap compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>File</th>
-                    <th>Action</th>
-                    <th>Result</th>
-                    <th>Modified</th>
-                    <th>Control</th>
-                  </tr>
-                </thead>
-                <tbody id="releaseAudits"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="panel ops-panel">
-            <div class="section-title panel-action-title">
-              <span class="mark neutral"></span>
-              <div>
-                <p class="section-kicker">Retention</p>
-                <h2>Data Lifecycle</h2>
-              </div>
-              <button id="runRetention" class="secondary inline-action" type="button">Run cleanup</button>
-            </div>
-            <div id="retention" class="summary">Loading retention policy...</div>
-          </section>
-
-          <section class="panel support-panel">
-            <div class="section-title panel-action-title">
-              <span class="mark neutral"></span>
-              <div>
-                <p class="section-kicker">Diagnostics</p>
-                <h2>Support Exports</h2>
-              </div>
-              <button id="runSupportExportRetention" class="secondary inline-action" type="button">Clean old</button>
-            </div>
-            <div id="supportExportsSummary" class="summary">Loading support exports...</div>
-            <div class="table-wrap compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>File</th>
-                    <th>Task</th>
-                    <th>Severity</th>
-                    <th>Modified</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="supportExports"></tbody>
-              </table>
-            </div>
-          </section>
         </div>
       </section>
+
+      <details class="page-group advanced-group">
+        <summary>
+          <h2>Advanced &amp; Operations</h2>
+          <p class="group-desc">Task queue, protocol/version management, diagnostics, and cleanup tools. Click to expand.</p>
+        </summary>
+        <div class="advanced-body">
+          <section class="panel task-panel">
+            <div class="section-title">
+              <span class="mark neutral"></span>
+              <div>
+                <h3>Task Ledger</h3>
+                <p class="panel-desc">Recent search requests and their current status.</p>
+              </div>
+            </div>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>State</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="tasks"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel flow-panel">
+            <div class="section-title">
+              <span class="mark accent"></span>
+              <div>
+                <h3>Execution Flow</h3>
+                <p class="panel-desc">How a search moves through the system, step by step.</p>
+              </div>
+            </div>
+            <div class="flow">
+              <div>Capability</div>
+              <div>Plan</div>
+              <div>Outbox</div>
+              <div>Worker</div>
+              <div>Evidence</div>
+            </div>
+          </section>
+
+          <div class="section-band">
+            <section class="panel startup-panel">
+              <div class="section-title">
+                <span class="mark neutral"></span>
+                <div>
+                  <h3>Startup Readiness</h3>
+                  <p class="panel-desc">Checks that confirm the app can run correctly (database connections, storage, etc.).</p>
+                </div>
+              </div>
+              <div id="startupSummary" class="summary">Loading startup checks...</div>
+              <div id="startupChecks" class="check-list"></div>
+            </section>
+
+            <section class="panel validation-panel">
+              <div class="section-title panel-action-title">
+                <span class="mark success"></span>
+                <div>
+                  <h3>Protocol Validation</h3>
+                  <p class="panel-desc">Confirms the code that reads X's responses still works.</p>
+                </div>
+                <button id="runProtocolValidation" class="secondary inline-action" type="button">Save report</button>
+              </div>
+              <div id="validationSummary" class="summary">Loading parser validation...</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Source</th>
+                      <th>Status</th>
+                      <th>Tweets</th>
+                      <th>Cursor</th>
+                      <th>Fingerprint</th>
+                    </tr>
+                  </thead>
+                  <tbody id="validationResults"></tbody>
+                </table>
+              </div>
+              <div id="validationReportsSummary" class="summary">Loading validation report history...</div>
+              <div class="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Report</th>
+                      <th>Status</th>
+                      <th>Sources</th>
+                      <th>Generated</th>
+                    </tr>
+                  </thead>
+                  <tbody id="validationReports"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="section-band">
+            <section class="panel outbox-panel">
+              <div class="section-title panel-action-title">
+                <span class="mark accent"></span>
+                <div>
+                  <h3>Outbox Recovery</h3>
+                  <p class="panel-desc">Searches waiting to be picked up and processed by a worker.</p>
+                </div>
+                <div class="title-actions">
+                  <button id="refreshOutbox" class="secondary inline-action" type="button">Refresh</button>
+                  <button id="processOutbox" class="inline-action" type="button">Process</button>
+                </div>
+              </div>
+              <div id="outboxSummary" class="summary">Loading outbox queue...</div>
+              <div class="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Event</th>
+                      <th>Task</th>
+                      <th>State</th>
+                      <th>Age</th>
+                      <th>Type</th>
+                    </tr>
+                  </thead>
+                  <tbody id="outboxEvents"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel network-panel">
+              <div class="section-title">
+                <span class="mark neutral"></span>
+                <div>
+                  <h3>Network Health</h3>
+                  <p class="panel-desc">How reliably each connection route (direct, proxy, etc.) is working.</p>
+                </div>
+              </div>
+              <div id="networkHealthSummary" class="summary">Loading network health...</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Route</th>
+                      <th>Attempts</th>
+                      <th>Failure Rate</th>
+                      <th>Sessions</th>
+                      <th>Latest</th>
+                      <th>Errors</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="networkHealth"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="section-band governance-band">
+            <section class="panel release-panel">
+              <div class="section-title">
+                <span class="mark success"></span>
+                <div>
+                  <h3>Protocol Governance</h3>
+                  <p class="panel-desc">Which version of the X integration is active, and whether it's safe to use.</p>
+                </div>
+              </div>
+              <div id="releaseSummary" class="summary">Loading release inventory...</div>
+              <div class="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Release</th>
+                      <th>Status</th>
+                      <th>Health</th>
+                      <th>Recipe</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="releaseInventory"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel release-audit-panel">
+              <div class="section-title panel-action-title">
+                <span class="mark neutral"></span>
+                <div>
+                  <h3>Promotion Trail</h3>
+                  <p class="panel-desc">History of decisions to activate or block an integration version.</p>
+                </div>
+                <button id="runReleaseAuditRetention" class="secondary inline-action" type="button">Clean old</button>
+              </div>
+              <div id="releaseAuditsSummary" class="summary">Loading promotion audits...</div>
+              <div class="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>Action</th>
+                      <th>Result</th>
+                      <th>Modified</th>
+                      <th>Control</th>
+                    </tr>
+                  </thead>
+                  <tbody id="releaseAudits"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel ops-panel">
+              <div class="section-title panel-action-title">
+                <span class="mark neutral"></span>
+                <div>
+                  <h3>Data Lifecycle</h3>
+                  <p class="panel-desc">Automatic cleanup of old finished searches.</p>
+                </div>
+                <button id="runRetention" class="secondary inline-action" type="button">Run cleanup</button>
+              </div>
+              <div id="retention" class="summary">Loading retention policy...</div>
+            </section>
+
+            <section class="panel support-panel">
+              <div class="section-title panel-action-title">
+                <span class="mark neutral"></span>
+                <div>
+                  <h3>Support Exports</h3>
+                  <p class="panel-desc">Downloadable diagnostic files for failed searches, for troubleshooting.</p>
+                </div>
+                <button id="runSupportExportRetention" class="secondary inline-action" type="button">Clean old</button>
+              </div>
+              <div id="supportExportsSummary" class="summary">Loading support exports...</div>
+              <div class="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>Task</th>
+                      <th>Severity</th>
+                      <th>Modified</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="supportExports"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </details>
     </main>
 
     <script src="/app.js"></script>
