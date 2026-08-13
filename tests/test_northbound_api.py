@@ -870,6 +870,39 @@ class NorthboundApiTests(unittest.TestCase):
             self.assertEqual(risk["action"], "QUARANTINE_RECOMMENDED")
             self.assertEqual(risk["severity"], "HIGH")
 
+    def test_search_route_monitoring_dict_returns_route_summary(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            telemetry = ProtocolTelemetryStore(db_path)
+            telemetry.record_attempt(
+                task_id="task-1",
+                capability_id="SEARCH_TWEETS",
+                release_id=manifest.release_id,
+                recipe_revision_id="recipe-1",
+                state="SUCCESS",
+                session_id="session-1",
+                network_context="direct",
+            )
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(
+                    worker_network_context="",
+                    default_network_context="direct",
+                ),
+                manifest=manifest,
+                release_store=ReleaseStore(db_path),
+                telemetry_store=telemetry,
+            )
+
+            route = live_server._search_route_monitoring_dict()
+
+            self.assertEqual(route["network_context"], "direct")
+            self.assertTrue(route["has_route_data"])
+            self.assertEqual(route["action"], "CONTINUE_MONITORING")
+            self.assertEqual(route["route_summary"]["successes"], 1)
+
     def test_protocol_drift_dict_flags_recent_hard_signal(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

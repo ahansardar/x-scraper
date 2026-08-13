@@ -24,7 +24,7 @@ This is the living checklist for the remaining product work. Completed items are
 - [x] ~~Consume Redis deliveries through a worker consumer group with fenced Postgres leases and stale pending-entry reclaim.~~
 - [x] ~~Add explicit Redis consumer-group lag and pending-entry-count metrics to health reports and supervisor checks.~~
 - [x] ~~Add load, soak, and crash-recovery tests for dispatcher/worker delivery before calling the path production-certified.~~
-- [ ] Decide whether the next hardening step is single-node tuning or managed/clustered Postgres and Redis.
+- [x] ~~Decide whether the next hardening step is single-node tuning or managed/clustered Postgres and Redis.~~
 
 ## Runtime and Drift
 
@@ -35,8 +35,8 @@ This is the living checklist for the remaining product work. Completed items are
 ## Production Hardening
 
 - [x] ~~Drain and reconcile any stale outbox backlog before widening rollout.~~
-- [ ] Expand monitoring and release-risk handling around the approved search route.
-- [ ] Add connection-pool tuning and lower-latency dispatch wakeups, such as Postgres `LISTEN`/`NOTIFY`, if staying on the single-node local infrastructure path.
+- [x] ~~Expand monitoring and release-risk handling around the approved search route.~~
+- [x] ~~Add connection-pool tuning and lower-latency dispatch wakeups, such as Postgres `LISTEN`/`NOTIFY`, if staying on the single-node local infrastructure path.~~
 - [ ] Replace the hand-rolled Postgres migration runner with structured migration tooling before larger schema growth.
 - [ ] Add the next capability vertical slice after `SEARCH_TWEETS` is fully release-governed.
 

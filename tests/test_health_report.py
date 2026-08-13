@@ -104,9 +104,14 @@ class HealthReportTests(unittest.TestCase):
             )
             self.assertEqual(saved["sessions"]["total"], 1)
             self.assertIn("release_risk", saved)
+            self.assertIn("search_route_monitoring", saved)
             self.assertIn("protocol_drift", saved)
             self.assertEqual(saved["protocol_drift"]["release_id"], manifest.release_id)
             self.assertIn("drifting", saved["protocol_drift"])
+            self.assertEqual(
+                saved["search_route_monitoring"]["network_context"],
+                "direct",
+            )
             self.assertEqual(saved["network_health"]["routes"][0]["network_context"], "direct")
             self.assertEqual(saved["network_health"]["routes"][0]["successes"], 1)
             self.assertIn("storage", saved)

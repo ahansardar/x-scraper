@@ -225,7 +225,7 @@ class DeploymentPreflight:
         required = {
             "/api/health": ("release_id", "auth_ready"),
             "/api/storage": ("sqlite_path", "raw_evidence_dir"),
-            "/api/metrics": ("tasks", "release_risk", "sessions"),
+            "/api/metrics": ("tasks", "release_risk", "search_route_monitoring", "sessions"),
             "/api/migrations": ("migrations",),
             "/api/network-health": ("routes", "recommendations"),
             "/api/sessions": ("sessions",),

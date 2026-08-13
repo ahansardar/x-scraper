@@ -1978,3 +1978,40 @@ Verified:
 
 Next:
 - No code changed this checkpoint (docs only) -- next work remains `docs/TASKS.md`'s open "Production Hardening" items and the newly-expanded spec-gap list.
+
+## 2026-08-13 - Checkpoint 95: Approved Search-Route Monitoring Hardening
+
+Implemented:
+
+- Added a first-class `search_route_monitoring` signal that summarizes the currently approved search route for the active release, including the target network context, any matching route telemetry, and the route-level recommendation when the route is unhealthy.
+- Wired the new signal into `/api/metrics`, the operator health report, the frontend metrics strip, and `run_supervisor_check.py` so route remediation now shows up in the real operator path instead of only being implicit in the broader network-health view.
+- Hardened preflight API-shape checks to require the new metric key.
+- Added supervision coverage for both route-remediation warnings and route-quarantine failures.
+
+Verified:
+
+- `./.venv/bin/python -m compileall -q src tests`
+- `./.venv/bin/python -m unittest tests.test_investigation tests.test_supervision tests.test_health_report tests.test_preflight tests.test_northbound_api`
+
+Next:
+
+- Remaining open items in `docs/TASKS.md` are now the single-node-vs-managed-infra decision, connection-pool/`LISTEN`/`NOTIFY` tuning, replacing the hand-rolled Postgres migration runner, and the next capability vertical slice.
+
+## 2026-08-13 - Checkpoint 96: Single-Node Dispatcher Wakeups
+
+Implemented:
+
+- Added a Postgres `LISTEN`/`NOTIFY` wake path for the outbox dispatcher on a dedicated channel, while keeping the existing poll loop as a fallback if the notify listener is unavailable.
+- Added a new Postgres trigger migration on `outbox_events` so committed inserts immediately emit a wakeup notification carrying the `event_id`, `task_id`, and `created_at` payload.
+- Added a dispatcher helper that drains all currently pending outbox rows in one wake cycle before returning to the listener/poll loop.
+- Exposed the new notification listener and channel from the dispatch package for reuse and testing.
+- Added a live integration test that confirms an outbox insert emits a dispatcher wake notification after commit.
+
+Verified:
+
+- `./.venv/bin/python -m compileall -q src tests run_dispatcher.py`
+- `./.venv/bin/python -m unittest tests.test_local_worker tests.test_delivery_load`
+
+Next:
+
+- The remaining open items in `docs/TASKS.md` are the structured Postgres migration tooling cleanup and the next capability vertical slice after `SEARCH_TWEETS`.

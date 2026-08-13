@@ -51,6 +51,7 @@ class SupervisionTests(unittest.TestCase):
         self.assertEqual(statuses["redis_queue"], "PASS")
         self.assertEqual(statuses["recipe_validation_freshness"], "PASS")
         self.assertEqual(statuses["protocol_drift"], "PASS")
+        self.assertEqual(statuses["search_route_monitoring"], "PASS")
 
     def test_supervisor_check_fails_backlogged_outbox(self):
         payloads = _ready_payloads()
@@ -211,6 +212,48 @@ class SupervisionTests(unittest.TestCase):
         drift = next(check for check in result.checks if check.name == "protocol_drift")
         self.assertTrue(result.ok)
         self.assertEqual(drift.status, "WARN")
+
+    def test_supervisor_check_warns_on_route_remediation_recommendation(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["search_route_monitoring"]["action"] = (
+            "NETWORK_REMEDIATION_RECOMMENDED"
+        )
+        payloads["/api/metrics"]["search_route_monitoring"]["reason"] = (
+            "Route direct is repeatedly failing with RATE_LIMITED."
+        )
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        route = next(
+            check for check in result.checks if check.name == "search_route_monitoring"
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(route.status, "WARN")
+
+    def test_supervisor_check_fails_on_route_quarantine_recommendation(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["search_route_monitoring"]["action"] = (
+            "QUARANTINE_RECOMMENDED"
+        )
+        payloads["/api/metrics"]["search_route_monitoring"]["release_risk_action"] = (
+            "QUARANTINE_RECOMMENDED"
+        )
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        route = next(
+            check for check in result.checks if check.name == "search_route_monitoring"
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(route.status, "FAIL")
 
     def test_supervisor_check_fails_checkout_storage_when_required(self):
         payloads = _ready_payloads()
@@ -393,6 +436,30 @@ def _ready_payloads():
                 "drifting": False,
                 "severity": "LOW",
                 "reason": "No recent drift signal in the last window of attempts.",
+                "operator_action": "continue_monitoring",
+            },
+            "search_route_monitoring": {
+                "release_id": "search-tweets-candidate",
+                "release_health": "ACTIVE",
+                "network_context": "direct",
+                "matched_network_context": "direct",
+                "has_route_data": True,
+                "route_summary": {
+                    "network_context": "direct",
+                    "total_attempts": 2,
+                    "successes": 2,
+                    "failures": 0,
+                    "failure_rate": 0.0,
+                    "distinct_sessions": 1,
+                    "last_attempt_at": "2026-08-11T00:00:00+00:00",
+                    "last_success_at": "2026-08-11T00:00:00+00:00",
+                    "errors_by_class": {},
+                },
+                "route_recommendation": None,
+                "release_risk_action": "NO_ACTION",
+                "action": "CONTINUE_MONITORING",
+                "severity": "LOW",
+                "reason": "Route direct remains within the approved search-route thresholds.",
                 "operator_action": "continue_monitoring",
             },
             "sessions": {

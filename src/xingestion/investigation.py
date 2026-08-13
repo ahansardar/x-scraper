@@ -6,6 +6,7 @@ from typing import Mapping
 from xingestion.pagination_chain import is_pagination_error_class, walk_pagination_chain
 from xingestion.releases import RecipeValidationStore, ReleaseStore, recipe_validation_freshness
 from xingestion.sessions import SessionStore
+from xingestion.sessions.network import network_matches
 from xingestion.tasks import TaskLedger
 from xingestion.telemetry import ProtocolAttempt, ProtocolTelemetryStore
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
@@ -136,6 +137,91 @@ def build_release_risk_recommendation(
             for signal in signals
         ],
         "network_routes": network_routes,
+    }
+
+
+def build_search_route_monitoring(
+    *,
+    manifest: ProtocolReleaseManifest,
+    release_store: ReleaseStore,
+    telemetry_store: ProtocolTelemetryStore,
+    network_context: str | None = None,
+) -> dict[str, object]:
+    release = release_store.ensure_release(manifest.release_id)
+    release_risk = build_release_risk_recommendation(
+        manifest=manifest,
+        release_store=release_store,
+        telemetry_store=telemetry_store,
+    )
+    target_network_context = (network_context or "direct").strip() or "direct"
+    route_summaries = telemetry_store.network_summary(release_id=manifest.release_id)
+    route_recommendations = build_network_route_recommendations(
+        telemetry_store=telemetry_store,
+        release_id=manifest.release_id,
+    )
+    matching_route = next(
+        (
+            route
+            for route in route_summaries
+            if network_matches(route.network_context, target_network_context)
+        ),
+        None,
+    )
+    matching_recommendation = next(
+        (
+            recommendation
+            for recommendation in route_recommendations
+            if network_matches(
+                str(recommendation.get("network_context") or "direct"),
+                target_network_context,
+            )
+        ),
+        None,
+    )
+
+    if release.health.value in {"QUARANTINED", "RETIRED"}:
+        action = "RELEASE_BLOCKED"
+        severity = "HIGH"
+        reason = f"release={manifest.release_id} health={release.health.value} execution blocked"
+        operator_action = "keep_release_blocked_until_new_validation_passes"
+    elif release_risk["action"] == "QUARANTINE_RECOMMENDED":
+        action = str(release_risk["action"])
+        severity = str(release_risk["severity"])
+        reason = str(release_risk["reason"])
+        operator_action = str(release_risk["operator_action"])
+    elif matching_recommendation is not None:
+        action = str(matching_recommendation["action"])
+        severity = str(matching_recommendation["severity"])
+        reason = str(matching_recommendation["reason"])
+        operator_action = str(matching_recommendation["operator_action"])
+    elif matching_route is None:
+        action = "NO_ROUTE_DATA"
+        severity = "LOW"
+        reason = (
+            f"No telemetry has been recorded yet for network_context={target_network_context}."
+        )
+        operator_action = "continue_monitoring"
+    else:
+        action = "CONTINUE_MONITORING"
+        severity = "LOW"
+        reason = (
+            f"Route {target_network_context} remains within the approved search-route thresholds."
+        )
+        operator_action = "continue_monitoring"
+
+    return {
+        "release_id": manifest.release_id,
+        "release_health": release.health.value,
+        "network_context": target_network_context,
+        "matched_network_context": matching_route.network_context if matching_route else None,
+        "has_route_data": matching_route is not None,
+        "route_summary": _network_summary_dict(matching_route) if matching_route else None,
+        "route_recommendation": matching_recommendation,
+        "release_risk_action": release_risk["action"],
+        "action": action,
+        "severity": severity,
+        "reason": reason,
+        "operator_action": operator_action,
     }
 
 
@@ -317,6 +403,20 @@ def _highest_route_severity(routes: list[dict[str, object]]) -> str:
     if "MEDIUM" in severities:
         return "MEDIUM"
     return "LOW"
+
+
+def _network_summary_dict(route) -> dict[str, object]:
+    return {
+        "network_context": route.network_context,
+        "total_attempts": route.total_attempts,
+        "successes": route.successes,
+        "failures": route.failures,
+        "failure_rate": route.failure_rate,
+        "distinct_sessions": route.distinct_sessions,
+        "last_attempt_at": route.last_attempt_at,
+        "last_success_at": route.last_success_at,
+        "errors_by_class": dict(route.errors_by_class),
+    }
 
 
 def _risk_operator_action(action: str) -> str:

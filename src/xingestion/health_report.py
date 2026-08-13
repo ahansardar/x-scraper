@@ -17,6 +17,7 @@ from xingestion.investigation import (
     build_network_route_recommendations,
     build_protocol_drift_report,
     build_release_risk_recommendation,
+    build_search_route_monitoring,
 )
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight, PreflightCheck
@@ -112,6 +113,14 @@ def build_health_report(
                 manifest=manifest,
                 release_store=release_store,
                 telemetry_store=telemetry_store,
+            )
+        ),
+        "search_route_monitoring": _safe_section(
+            lambda: build_search_route_monitoring(
+                manifest=manifest,
+                release_store=release_store,
+                telemetry_store=telemetry_store,
+                network_context=config.worker_network_context or config.default_network_context,
             )
         ),
         "protocol_drift": _safe_section(
