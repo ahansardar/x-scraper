@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: persisted recipe-level release validation records alongside JSON validation report artifacts)
+Date: 2026-08-13 (updated: recipe-compatibility freshness checks added; fixed a real worker crash on lease-renewal races found during live verification)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 

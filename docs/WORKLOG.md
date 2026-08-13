@@ -1835,3 +1835,26 @@ Verified:
 Next:
 
 - No Python test coverage exists for `run_all.ps1` itself (PowerShell, outside `python -m unittest`); CI's "Check stack launcher script" step only parses it, doesn't execute the process-management logic. Consider a lightweight PowerShell-based CI check if this script grows more logic.
+
+## 2026-08-13 - Checkpoint 87: Recipe-Compatibility Freshness Checks, and a Real Worker Crash Bug Found Live
+
+Implemented:
+
+- Added `recipe_validation_freshness()` (`src/xingestion/releases/validation_records.py`), which flags per (capability binding recipe x validation type) whether the most recent `recipe_validation_record` still describes what's actually running: no record at all, a record whose `composition_hash` no longer matches the manifest's live recipe (someone edited the parser/operation/pagination composition without bumping `recipe_revision_id`), or a record that failed, are all "not fresh"; a matching, passing record is "fresh."
+- Wired it into `health_report.py` (`recipe_validation_freshness` section) and `/api/metrics` (`live_server.py`), and added a non-blocking `recipe_validation_freshness` check to `run_supervisor_check.py`/`DeploymentSupervisorCheck` (WARN, never FAIL -- deliberately not a worker-side execution block, since gating live task processing on validation history is a much bigger behavior change than this checklist item calls for and risks silently halting a working pipeline).
+- **Found and fixed a real, previously-unknown worker crash bug while live-verifying this feature.** The live worker died with an unhandled `ValueError` while processing real tasks. Root cause: in `LocalWorker._process_delivery`'s failure path (`local_worker.py`), when a task's execution lease is renewed or re-acquired by another delivery (a genuine fencing race -- e.g. this lease expired mid-execution and was reclaimed elsewhere) between this delivery's failure and its failure-handling `transition_task` write, that write uses the now-stale `lease_token`/`delivery_generation` and is correctly rejected by the ledger's fencing -- but the resulting second `ValueError` was never caught, unlike the equivalent race already handled at lease-acquisition time. It propagated all the way up through `run_worker.py`'s main loop and killed the entire worker process, silently halting all task processing until someone noticed and restarted it manually.
+- Fixed by catching that `ValueError` and falling back to reading the task's current state from the ledger (mirroring the existing acquire-lease race handler), the same way a fencing loss is already handled everywhere else in this file.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 194 tests, including 4 new `recipe_validation_freshness` unit tests (missing record, matching+passing, failed latest record, composition drift), 2 new supervision tests, an extended health-report assertion, and a new `test_worker_survives_lease_stolen_during_failure_handling` regression test in `test_local_worker.py`.
+- Confirmed the regression test actually exercises the bug: temporarily reverted the fix and re-ran the test -- it raised an unhandled exception (a `dataclasses.FrozenInstanceError` from unittest's own traceback handling on the frozen `ProtocolError` dataclass, but confirming propagation past `_handle_failure` either way); reapplied the fix and the test passed cleanly.
+- Live: `run_health_report.py` and `run_supervisor_check.py` against the real stack both show `recipe_validation_freshness: checked=2 all fresh`, correctly matching the release/recipe validated during Checkpoint 85/86's live testing.
+- Live: restarted the worker (which had actually crashed from the bug above, confirmed dead via process inspection and a `ValueError`/`FrozenInstanceError`-adjacent traceback in `worker.err.log`) with the fix applied; it drained an 86-entry Redis stream backlog of orphaned deliveries (see below) without crashing, then settled to idle and stayed up.
+- Discovered in the process: the orphaned-delivery backlog was caused by this session's own repeated `python -m unittest discover -s tests` runs -- `make_postgres_ledger()` truncates `capability_tasks`/`outbox_events` in the same default local Postgres database the live `run_all.ps1` stack uses, with no isolation between the two. Documented this as an explicit warning in the deployment runbook; did not change the test fixture's default DSN (a bigger, CI-affecting decision left for later).
+
+Next:
+
+- Consider giving `postgres_fixture.py`'s tests a dedicated local database/DSN instead of sharing the live dev stack's default, so running the suite no longer risks truncating a stack someone is actively using.
+- Surface protocol drift reports when the approved recipe starts failing in production (remaining open item in this section).

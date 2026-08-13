@@ -1127,6 +1127,71 @@ class LocalWorkerTests(unittest.TestCase):
         self.assertEqual(result.state, TaskState.DONE)
         self.assertEqual(reloaded.state, TaskState.DONE)
 
+    def test_worker_survives_lease_stolen_during_failure_handling(self):
+        # Regression test: if a task's execution lease is reclaimed and
+        # re-acquired by another delivery between this worker's failure and
+        # its failure-handling ledger write, that write used to raise an
+        # unhandled ValueError (stale lease_token/delivery_generation) and
+        # crash the entire worker process. See local_worker.py's
+        # _process_delivery except block.
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.SEARCH_TWEETS,
+            contract_version=1,
+            payload=SearchTweetsInput(query="india", page_size=20),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+        task = self.ledger.create_task(
+            idempotency_key="lease-race-key",
+            capability_id=request.capability_id,
+            contract_version=request.contract_version,
+            request_json=request.public_dict(),
+            plan_json=plan.public_dict(),
+        )
+        self.dispatch_pending(1)
+
+        worker = self.make_worker(
+            manifest=manifest,
+            auth=WebSessionAuth("auth", "csrf", "bearer"),
+            transport=FakeTransport(),
+            raw_evidence_sink=FileRawEvidenceSink(Path(self.temp_dir.name) / "raw"),
+        )
+        ledger = self.ledger
+
+        def steal_lease_then_fail(task_arg, *, auth=None):
+            # Force the row back to ENQUEUED/unleased directly (bypassing
+            # reclaim_expired_lease's expiry check, which a genuine race
+            # would satisfy but this worker's still-fresh lease doesn't) so
+            # a competing acquire_execution_lease can "steal" it mid-flight,
+            # exactly reproducing the fencing conflict this test targets.
+            with ledger.pool.connection() as conn:
+                conn.execute(
+                    "UPDATE capability_tasks SET lease_expires_at = %s WHERE task_id = %s",
+                    ("2000-01-01T00:00:00+00:00", task_arg.task_id),
+                )
+                conn.commit()
+            ledger.reclaim_expired_lease(task_arg.task_id)
+            ledger.acquire_execution_lease(
+                task_arg.task_id,
+                owner="other-worker",
+                lease_expires_at=(datetime.now(UTC) + timedelta(seconds=300)).isoformat(),
+            )
+            raise ProtocolError(
+                error_class="OPERATION_NOT_FOUND",
+                message="simulated failure after lease was stolen",
+                retry_disposition=RetryDisposition.NEVER,
+                scope_hint="OPERATION",
+            )
+
+        worker._execute_task = steal_lease_then_fail
+
+        result = worker.process_one()
+        reloaded = self.ledger.get_task(task.task_id)
+
+        self.assertTrue(result.processed)
+        self.assertEqual(result.task_id, task.task_id)
+        self.assertEqual(reloaded.lease_owner, "other-worker")
+
 
 if __name__ == "__main__":
     unittest.main()

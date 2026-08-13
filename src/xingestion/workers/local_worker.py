@@ -427,7 +427,20 @@ class LocalWorker:
                 error_class=envelope.error_class,
                 duration_ms=_duration_ms(started),
             )
-            task = self._handle_failure(task, exc, envelope=envelope)
+            try:
+                task = self._handle_failure(task, exc, envelope=envelope)
+            except ValueError:
+                # Fencing correctly rejected this delivery's now-stale
+                # lease_token/delivery_generation: another delivery already
+                # resolved this task between the failure above and this
+                # write (e.g. this lease expired mid-execution and was
+                # reclaimed). Not a new failure -- reflect whatever state
+                # the winning delivery left the task in, the same way the
+                # acquire_execution_lease race above is handled, instead of
+                # letting a ValueError here crash the whole worker process.
+                current = self.ledger.get_task(task.task_id)
+                if current is not None:
+                    task = current
             LOGGER.error(
                 "worker task failed task=%s state=%s session=%s %s",
                 task.task_id,

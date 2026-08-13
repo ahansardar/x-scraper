@@ -56,6 +56,7 @@ from xingestion.releases import (
 from xingestion.releases.validation_records import (
     RecipeValidationStore,
     record_recipe_validation_results,
+    recipe_validation_freshness,
 )
 from xingestion.reprocessing import ReprocessJobStore, reprocess_task_evidence
 from xingestion.secrets import (
@@ -1143,6 +1144,7 @@ def _metrics_dict():
         },
         "outbox": STATE.ledger.outbox_stats(),
         "redis_queue": _safe_redis_queue_dict(),
+        "recipe_validation_freshness": _recipe_validation_freshness_list(),
         "canonical": canonical_counts,
         "storage": _storage_dict(),
         "migrations": _migration_status_dict(STATE.migration_runner.status()),
@@ -1173,6 +1175,15 @@ def _safe_redis_queue_dict():
         )
     except Exception as exc:
         return {"error": exc.__class__.__name__, "message": str(exc)}
+
+
+def _recipe_validation_freshness_list():
+    return [
+        entry.public_dict()
+        for entry in recipe_validation_freshness(
+            store=STATE.recipe_validation_store, manifest=STATE.manifest
+        )
+    ]
 
 
 def _migration_status_dict(status):

@@ -187,6 +187,75 @@ class RecipeValidationStore:
         return conn
 
 
+@dataclass(frozen=True)
+class RecipeValidationFreshness:
+    recipe_revision_id: str
+    composition_hash: str
+    validation_type: str
+    fresh: bool
+    reason: str
+    latest_record: RecipeValidationRecord | None
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "recipe_revision_id": self.recipe_revision_id,
+            "composition_hash": self.composition_hash,
+            "validation_type": self.validation_type,
+            "fresh": self.fresh,
+            "reason": self.reason,
+            "latest_record": self.latest_record.public_dict() if self.latest_record else None,
+        }
+
+
+def recipe_validation_freshness(
+    *,
+    store: RecipeValidationStore,
+    manifest: ProtocolReleaseManifest,
+    validation_types: tuple[str, ...] = ("FIXTURE", "CAPTURE_REPLAY"),
+) -> tuple[RecipeValidationFreshness, ...]:
+    """Flag recipes whose live composition has drifted from what was last validated.
+
+    A recipe's `recipe_revision_id` is a human-assigned label; its
+    `composition_hash` is a computed content hash of the parser/operation/
+    pagination/etc. revisions actually in effect. If someone edits a manifest's
+    recipe composition without also bumping `recipe_revision_id`, the most
+    recent validation record for that revision id silently stops describing
+    what's actually running -- this catches that drift so it can prompt a
+    fresh validation run instead of trusting stale results.
+    """
+    results = []
+    for binding in manifest.bindings:
+        recipe = binding.recipe
+        for validation_type in validation_types:
+            latest = store.latest_for_recipe(
+                release_id=manifest.release_id,
+                recipe_revision_id=recipe.revision_id,
+                validation_type=validation_type,
+            )
+            if latest is None:
+                fresh, reason = False, "no validation record found for this recipe revision"
+            elif latest.composition_hash != recipe.composition_hash:
+                fresh, reason = False, (
+                    "recipe composition changed since the last validation record "
+                    f"(validated={latest.composition_hash}, current={recipe.composition_hash})"
+                )
+            elif not latest.ok:
+                fresh, reason = False, "most recent validation record for this composition failed"
+            else:
+                fresh, reason = True, "latest validation record matches current composition and passed"
+            results.append(
+                RecipeValidationFreshness(
+                    recipe_revision_id=recipe.revision_id,
+                    composition_hash=recipe.composition_hash,
+                    validation_type=validation_type,
+                    fresh=fresh,
+                    reason=reason,
+                    latest_record=latest,
+                )
+            )
+    return tuple(results)
+
+
 def record_recipe_validation_results(
     *,
     store: RecipeValidationStore,

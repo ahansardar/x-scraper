@@ -19,7 +19,12 @@ from xingestion.investigation import (
 )
 from xingestion.migrations import MigrationRunner
 from xingestion.preflight import DeploymentPreflight, PreflightCheck
-from xingestion.releases import ReleaseRecord, ReleaseStore
+from xingestion.releases import (
+    RecipeValidationStore,
+    ReleaseRecord,
+    ReleaseStore,
+    recipe_validation_freshness,
+)
 from xingestion.secrets import secret_provider_status
 from xingestion.sessions import SessionRecord, SessionStore
 from xingestion.tasks import CapabilityTask, PostgresTaskLedger
@@ -91,6 +96,9 @@ def build_health_report(
         "migrations": _safe_section(lambda: _migration_status_dict(migration_runner)),
         "tasks": _safe_section(lambda: _task_dict(config)),
         "redis_queue": _safe_section(lambda: _redis_queue_dict(config)),
+        "recipe_validation_freshness": _safe_section(
+            lambda: _recipe_validation_freshness_list(config, manifest)
+        ),
         "runtime_errors": _safe_section(lambda: _runtime_errors_dict(config)),
         "canonical": _safe_section(lambda: CanonicalStore(config.sqlite_path).counts()),
         "telemetry": _safe_section(lambda: _telemetry_summary_dict(telemetry_store.summary())),
@@ -228,6 +236,16 @@ def _redis_queue_dict(config: AppConfig) -> dict[str, object]:
         )
     finally:
         client.close()
+
+
+def _recipe_validation_freshness_list(
+    config: AppConfig, manifest: ProtocolReleaseManifest
+) -> list[dict[str, object]]:
+    store = RecipeValidationStore(config.sqlite_path)
+    return [
+        entry.public_dict()
+        for entry in recipe_validation_freshness(store=store, manifest=manifest)
+    ]
 
 
 def _runtime_errors_dict(config: AppConfig) -> dict[str, object]:

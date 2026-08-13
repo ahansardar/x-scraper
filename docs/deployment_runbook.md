@@ -434,6 +434,8 @@ The `runtime_errors` section groups recent task failures by class, severity, sco
 
 Run locally (requires `docker compose up -d` for the Postgres/Redis-backed suites; unreachable services cause those tests to skip rather than fail):
 
+**Warning:** `make_postgres_ledger()` (used by every Postgres-backed test) `TRUNCATE`s `capability_tasks` and `outbox_events` in whatever database `XINGESTION_TEST_POSTGRES_DSN`/`XINGESTION_POSTGRES_DSN` points at, which defaults to the *same* local Postgres instance the live dev stack (`run_all.ps1`) uses. There is no test/dev isolation on a single-node local setup: running the test suite while `run_all.ps1` is up will silently wipe the live app's task and outbox history out from under it (the live Redis stream is untouched, so its worker may then log a burst of `TASK_NOT_FOUND` for now-orphaned deliveries until it drains -- harmless, but confusing). Either stop the local stack first, or point `XINGESTION_TEST_POSTGRES_DSN` at a separate database before running tests against a stack you care about.
+
 ```powershell
 python -m unittest discover -s tests
 python -m compileall -q src tests run_app.py run_worker.py run_dispatcher.py run_migrations.py run_postgres_migrations.py run_smoke.py run_preflight.py run_health_report.py run_supervisor_check.py run_failed_task_export.py run_task_actions.py run_startup_check.py run_outbox.py run_protocol_validation.py run_sessions.py run_releases.py

@@ -22,9 +22,11 @@ from .promotion import (
 )
 from .store import ApprovedReleaseRecord, ReleaseHealth, ReleaseRecord, ReleaseStore
 from .validation_records import (
+    RecipeValidationFreshness,
     RecipeValidationRecord,
     RecipeValidationStore,
     record_recipe_validation_results,
+    recipe_validation_freshness,
 )
 
 __all__ = [
@@ -35,6 +37,7 @@ __all__ = [
     "PromotionAuditSummary",
     "PromotionSafetyCheck",
     "PromotionSafetyReport",
+    "RecipeValidationFreshness",
     "RecipeValidationRecord",
     "RecipeValidationStore",
     "ReleaseHealth",
@@ -49,6 +52,7 @@ __all__ = [
     "promotion_audit_file",
     "read_promotion_audit",
     "record_recipe_validation_results",
+    "recipe_validation_freshness",
     "resolve_approved_manifest",
     "write_promotion_audit",
 ]

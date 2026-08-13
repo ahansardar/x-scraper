@@ -142,6 +142,7 @@ class DeploymentSupervisorCheck:
                 self._check_startup(startup),
                 self._check_queue(metrics),
                 self._check_redis_queue(metrics),
+                self._check_recipe_validation_freshness(metrics),
                 self._check_sessions(sessions, metrics),
                 self._check_network(network_health, sessions),
                 self._check_release(release),
@@ -283,6 +284,31 @@ class DeploymentSupervisorCheck:
             "redis_queue",
             "PASS",
             f"pending_count={pending} lag={lag} oldest_pending_idle_seconds={idle_seconds}",
+        )
+
+    def _check_recipe_validation_freshness(self, metrics: dict[str, object]) -> SupervisionCheck:
+        entries = [_dict(entry) for entry in _list(metrics.get("recipe_validation_freshness"))]
+        if not entries:
+            return SupervisionCheck(
+                "recipe_validation_freshness",
+                "WARN",
+                "no recipe validation freshness data available",
+            )
+        stale = [entry for entry in entries if entry.get("fresh") is not True]
+        if stale:
+            first = stale[0]
+            return SupervisionCheck(
+                "recipe_validation_freshness",
+                "WARN",
+                (
+                    f"recipe={first.get('recipe_revision_id')} type={first.get('validation_type')} "
+                    f"not fresh: {first.get('reason')} ({len(stale)}/{len(entries)} stale)"
+                ),
+            )
+        return SupervisionCheck(
+            "recipe_validation_freshness",
+            "PASS",
+            f"checked={len(entries)} all fresh",
         )
 
     def _check_sessions(

@@ -7,7 +7,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from xingestion import __version__ as RUNTIME_VERSION
-from xingestion.releases import RecipeValidationStore, record_recipe_validation_results
+from xingestion.releases import (
+    RecipeValidationStore,
+    record_recipe_validation_results,
+    recipe_validation_freshness,
+)
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 
@@ -155,6 +159,72 @@ class RecipeValidationStoreTests(unittest.TestCase):
             capture_replay = next(r for r in records if r.validation_type == "CAPTURE_REPLAY")
             self.assertFalse(capture_replay.ok)
             self.assertEqual(len(store.list_recent(limit=10)), expected)
+
+    def test_freshness_flags_missing_validation_record(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RecipeValidationStore(Path(temp_dir) / "tasks.sqlite3")
+
+            freshness = recipe_validation_freshness(store=store, manifest=manifest)
+
+            self.assertEqual(len(freshness), len(manifest.bindings) * 2)
+            self.assertTrue(all(not entry.fresh for entry in freshness))
+            self.assertTrue(all("no validation record" in entry.reason for entry in freshness))
+
+    def test_freshness_passes_when_composition_matches_and_ok(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RecipeValidationStore(Path(temp_dir) / "tasks.sqlite3")
+            record_recipe_validation_results(
+                store=store,
+                manifest=manifest,
+                results=(
+                    ("FIXTURE", True, "3/3 passed"),
+                    ("CAPTURE_REPLAY", True, "2/2 matched"),
+                ),
+            )
+
+            freshness = recipe_validation_freshness(store=store, manifest=manifest)
+
+            self.assertTrue(all(entry.fresh for entry in freshness))
+
+    def test_freshness_flags_failed_latest_record(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RecipeValidationStore(Path(temp_dir) / "tasks.sqlite3")
+            record_recipe_validation_results(
+                store=store,
+                manifest=manifest,
+                results=(("FIXTURE", False, "1/3 passed"),),
+            )
+
+            freshness = recipe_validation_freshness(
+                store=store, manifest=manifest, validation_types=("FIXTURE",)
+            )
+
+            self.assertFalse(freshness[0].fresh)
+            self.assertIn("failed", freshness[0].reason)
+
+    def test_freshness_flags_composition_drift(self):
+        manifest = load_manifest()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RecipeValidationStore(Path(temp_dir) / "tasks.sqlite3")
+            binding = manifest.bindings[0]
+            store.record_validation(
+                release_id=manifest.release_id,
+                recipe_revision_id=binding.recipe.revision_id,
+                composition_hash="stale-hash-from-before-a-parser-edit",
+                validation_type="FIXTURE",
+                ok=True,
+                summary="validated an older composition",
+            )
+
+            freshness = recipe_validation_freshness(
+                store=store, manifest=manifest, validation_types=("FIXTURE",)
+            )
+
+            self.assertFalse(freshness[0].fresh)
+            self.assertIn("composition changed", freshness[0].reason)
 
 
 if __name__ == "__main__":

@@ -49,6 +49,7 @@ class SupervisionTests(unittest.TestCase):
         self.assertEqual(statuses["startup"], "PASS")
         self.assertEqual(statuses["processes"], "PASS")
         self.assertEqual(statuses["redis_queue"], "PASS")
+        self.assertEqual(statuses["recipe_validation_freshness"], "PASS")
 
     def test_supervisor_check_fails_backlogged_outbox(self):
         payloads = _ready_payloads()
@@ -139,6 +140,42 @@ class SupervisionTests(unittest.TestCase):
         redis_queue = next(check for check in result.checks if check.name == "redis_queue")
         self.assertFalse(result.ok)
         self.assertEqual(redis_queue.status, "FAIL")
+
+    def test_supervisor_check_warns_on_stale_recipe_validation(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["recipe_validation_freshness"][0]["fresh"] = False
+        payloads["/api/metrics"]["recipe_validation_freshness"][0]["reason"] = (
+            "no validation record found for this recipe revision"
+        )
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        freshness = next(
+            check for check in result.checks if check.name == "recipe_validation_freshness"
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(freshness.status, "WARN")
+        self.assertIn("1/2 stale", freshness.message)
+
+    def test_supervisor_check_warns_when_no_recipe_validation_data(self):
+        payloads = _ready_payloads()
+        payloads["/api/metrics"]["recipe_validation_freshness"] = []
+        checker = DeploymentSupervisorCheck(
+            api_client=FakeApiClient(payloads),
+            root=ROOT,
+        )
+
+        result = checker.run()
+
+        freshness = next(
+            check for check in result.checks if check.name == "recipe_validation_freshness"
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(freshness.status, "WARN")
 
     def test_supervisor_check_fails_checkout_storage_when_required(self):
         payloads = _ready_payloads()
@@ -288,6 +325,24 @@ def _ready_payloads():
                 "lag": 0,
                 "oldest_pending_idle_ms": None,
             },
+            "recipe_validation_freshness": [
+                {
+                    "recipe_revision_id": "recipe-a",
+                    "composition_hash": "hash-a",
+                    "validation_type": "FIXTURE",
+                    "fresh": True,
+                    "reason": "latest validation record matches current composition and passed",
+                    "latest_record": None,
+                },
+                {
+                    "recipe_revision_id": "recipe-a",
+                    "composition_hash": "hash-a",
+                    "validation_type": "CAPTURE_REPLAY",
+                    "fresh": True,
+                    "reason": "latest validation record matches current composition and passed",
+                    "latest_record": None,
+                },
+            ],
             "sessions": {
                 "healthy": 1,
             },
