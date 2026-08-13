@@ -49,6 +49,62 @@ function Test-CommandAvailable {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Test-DockerDaemonResponding {
+    try {
+        docker version --format "{{.Server.Version}}" 2>$null | Out-Null
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        return $false
+    }
+}
+
+function Find-DockerDesktopExecutable {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA "Programs\DockerDesktop\Docker Desktop.exe"),
+        "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+function Ensure-DockerDesktopRunning {
+    param([int] $TimeoutSeconds = 120)
+
+    if (Test-DockerDaemonResponding) {
+        Write-Host "Docker daemon is already responding."
+        return
+    }
+
+    $dockerDesktopProcess = Get-Process -Name "Docker Desktop" -ErrorAction SilentlyContinue
+    if (-not $dockerDesktopProcess) {
+        $exe = Find-DockerDesktopExecutable
+        if (-not $exe) {
+            throw "Docker daemon is not responding and Docker Desktop.exe could not be found. Install Docker Desktop or start it manually, then rerun."
+        }
+        Write-Host "Docker Desktop is not running; starting $exe"
+        Start-Process -FilePath $exe | Out-Null
+    }
+    else {
+        Write-Host "Docker Desktop process is running; waiting for its backend to become ready..."
+    }
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-DockerDaemonResponding) {
+            Write-Host "Docker daemon is ready."
+            return
+        }
+        Start-Sleep -Seconds 5
+    }
+
+    throw "Docker daemon did not become ready within $TimeoutSeconds seconds. Check Docker Desktop for errors (e.g. WSL2/VM startup failures) and rerun."
+}
+
 function Wait-DockerServiceHealthy {
     param(
         [string] $Service,
@@ -233,6 +289,9 @@ if (-not $SkipDocker) {
     if (-not (Test-CommandAvailable "docker")) {
         throw "docker is not available on PATH. Install Docker Desktop or rerun with -SkipDocker if Postgres/Redis are already running."
     }
+
+    Write-Step "Ensuring Docker Desktop is running"
+    Ensure-DockerDesktopRunning
 
     Invoke-RepoCommand "Starting Postgres and Redis with Docker Compose" @("docker", "compose", "up", "-d")
     Wait-DockerServiceHealthy -Service "postgres"
