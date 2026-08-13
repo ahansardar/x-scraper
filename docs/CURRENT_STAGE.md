@@ -1,6 +1,6 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: pagination investigation packages now include cross-page cursor-loop evidence; fixed a real bug where cursor loops spanning more than one prior page went undetected)
+Date: 2026-08-13 (updated: release promotion now validates a recipe's operation/auth_profile/transaction_profile as one bound unit via a real probe request, not components checked in isolation)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
@@ -57,7 +57,7 @@ Implemented:
 - Capability planner boundary.
 - Approved protocol release pointer in SQLite, resolved to one exact manifest from `protocol_releases/`.
 - Operator release inventory and approval through `run_releases.py`, `GET /api/releases`, and `POST /api/releases/approve`.
-- Promotion safety checks before normal approval, including manifest sanity, release health, fixture validation, and capture/replay comparison, each persisted as a first-class `recipe_validation_record` (`release_id`, `recipe_revision_id`, `composition_hash`, `runtime_version`) alongside the existing JSON report artifacts.
+- Promotion safety checks before normal approval, including manifest sanity, release health, recipe binding consistency (operation/auth_profile/transaction_profile validated together via a real probe request, not in isolation), fixture validation, and capture/replay comparison, each persisted as a first-class `recipe_validation_record` (`release_id`, `recipe_revision_id`, `composition_hash`, `runtime_version`) alongside the existing JSON report artifacts.
 - Redacted release promotion audit packages for checks, blocked approvals, normal approvals, and forced approvals, exposed through `run_releases.py audits`, `GET /api/releases/audits`, downloads, retention cleanup, and the frontend Promotion Trail.
 - Backpressure before task creation through `XINGESTION_MAX_ACTIVE_TASKS_PER_CAPABILITY`.
 

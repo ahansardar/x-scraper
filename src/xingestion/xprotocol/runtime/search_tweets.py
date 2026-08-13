@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields as dataclass_fields
 from typing import Any, Mapping
 
 from xingestion.xprotocol.evidence import RawEvidenceRef, RawEvidenceSink
@@ -192,6 +192,70 @@ def build_search_timeline_request(
         headers=headers,
         json_body=body,
     )
+
+
+def validate_recipe_binding(recipe: AcquisitionRecipeRevision) -> tuple[str, ...]:
+    """Check the recipe's declared metadata against what the request builder
+    actually does, as one bound unit rather than components validated in
+    isolation.
+
+    `auth_profile.required_material` and `transaction_profile.
+    required_headers` are declarative metadata -- nothing enforces they stay
+    in sync with `build_search_timeline_request()`'s real behavior, so a code
+    change to header-building or an edited manifest could silently drift
+    from what's declared, only ever discovered by a live 401/rejected
+    request in production. This builds one real (probe-credentialed) request
+    from the recipe and checks the declared metadata against it directly.
+
+    Returns a tuple of human-readable inconsistency descriptions; empty
+    means the recipe's components are consistent with each other.
+    """
+    problems: list[str] = []
+
+    auth_field_names = {field.name for field in dataclass_fields(WebSessionAuth)}
+    declared_material = set(recipe.auth_profile.required_material)
+    if declared_material != auth_field_names:
+        missing = auth_field_names - declared_material
+        extra = declared_material - auth_field_names
+        if missing:
+            problems.append(
+                f"auth_profile.required_material is missing {sorted(missing)}, "
+                f"which WebSessionAuth actually requires"
+            )
+        if extra:
+            problems.append(
+                f"auth_profile.required_material declares {sorted(extra)}, "
+                f"which WebSessionAuth does not have"
+            )
+
+    probe_auth = WebSessionAuth(
+        auth_token="probe-auth-token", ct0="probe-ct0", bearer_token="probe-bearer-token"
+    )
+    probe_request = SearchTweetsRequest(query="probe", count=1)
+    try:
+        built = build_search_timeline_request(recipe, probe_auth, probe_request)
+    except (ProtocolError, ValueError) as exc:
+        problems.append(f"could not build a request from this recipe: {exc}")
+        return tuple(problems)
+
+    built_header_names = {name.lower() for name in built.headers}
+    missing_headers = [
+        header
+        for header in recipe.transaction_profile.required_headers
+        if header.lower() not in built_header_names
+    ]
+    if missing_headers:
+        problems.append(
+            f"transaction_profile.required_headers declares {missing_headers}, "
+            f"which build_search_timeline_request() never sets"
+        )
+
+    if not built.url or recipe.operation.operation_id not in built.url:
+        problems.append(
+            f"built request URL does not reference operation_id={recipe.operation.operation_id!r}"
+        )
+
+    return tuple(problems)
 
 
 def parse_search_tweets_page(

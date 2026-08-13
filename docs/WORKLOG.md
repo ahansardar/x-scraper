@@ -1926,3 +1926,21 @@ Investigated (no code changes):
 
 Next:
 - `docs/TASKS.md`'s "SEARCH_TWEETS Vertical Slice" section has one item left: validating the full acquisition recipe as a single release-bound unit.
+
+## 2026-08-13 - Checkpoint 92: Recipe Binding Consistency -- Validate the Recipe as One Bound Unit
+
+Implemented:
+
+- Investigated first (background exploration agent) whether existing validation already covers "the full recipe as one unit" before writing anything: fixture validation only ever exercises the parser against a stored JSON payload; capture/replay comparison only re-parses two already-stored files; the one code path that builds a real request from the full composed recipe (`_run_direct_replay_for_capture`) runs only via the operator-triggered validation-run route, never as part of release-approval gating. Most notably: `AcquisitionRecipeRevision.auth_profile.required_material` and `.transaction_profile.required_headers` are pure declarative metadata -- nothing anywhere checks them against what `build_search_timeline_request()` (`xprotocol/runtime/search_tweets.py`) actually does. A mismatch here (e.g. code drops a header the manifest still declares required, or vice versa) would only ever surface as a live 401/rejected request in production.
+- Added `validate_recipe_binding(recipe)` (`xprotocol/runtime/search_tweets.py`): builds one real (probe-credentialed) `ProtocolHttpRequest` from the recipe's `operation`/`auth_profile`/`transaction_profile` together via the actual request builder, then checks `auth_profile.required_material` against `WebSessionAuth`'s real dataclass fields (introspected, not hardcoded, so it stays correct if `WebSessionAuth` ever changes) and every declared `transaction_profile.required_headers` entry against the headers the builder actually set. Returns a tuple of human-readable inconsistency strings; empty means the recipe's components are genuinely consistent with each other, not just individually plausible.
+- Wired into `build_promotion_safety_report()` (`releases/promotion.py`) as a new `recipe_binding_consistency` check, run for every binding in the manifest, HIGH severity (blocks normal approval) on any inconsistency -- alongside `manifest_present`, `release_health_allows_execution`, `fixture_validation`, and `capture_replay_comparison`.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 219 tests: 4 new `validate_recipe_binding` unit tests (passes for the real pinned recipe; flags an undeclared-but-required header the builder doesn't send; flags auth material missing from what `WebSessionAuth` needs; flags auth material declared that `WebSessionAuth` doesn't have), and 1 new `test_release_promotion.py` test confirming a mutated (internally inconsistent) recipe blocks promotion safety with a message naming the specific bad header.
+- Confirmed against the real pinned manifest directly (`PYTHONPATH=src python -c "..."`) that `validate_recipe_binding()` returns zero problems -- the current recipe's declared metadata genuinely does match runtime behavior today, this wasn't catching an existing bug, just closing a gap that had no safety net.
+- Live: `run_releases.py check xrev-search-tweets-2026-08-10-candidate-1 --json` shows the new `recipe_binding_consistency` check passing alongside the existing ones; restarted the stack and `run_supervisor_check.py` confirms the full stack still healthy.
+
+Next:
+- `docs/TASKS.md`'s "SEARCH_TWEETS Vertical Slice" section is now fully checked off. Remaining open items are the single-node-vs-managed-infra decision (Durable Execution and Delivery, the user's call) and the "Production Hardening" section (draining stale outbox backlog, connection-pool/`LISTEN`/`NOTIFY` tuning, replacing the hand-rolled Postgres migration runner, the next capability vertical slice).

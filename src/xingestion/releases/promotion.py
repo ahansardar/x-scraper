@@ -18,6 +18,7 @@ from xingestion.releases.validation_records import (
     RecipeValidationStore,
     record_recipe_validation_results,
 )
+from xingestion.xprotocol.runtime import validate_recipe_binding
 from xingestion.xprotocol.protocol import ProtocolReleaseManifest
 
 
@@ -168,6 +169,23 @@ def build_promotion_safety_report(
             ok=bool(manifest.bindings),
             severity="HIGH" if not manifest.bindings else "LOW",
             message=f"bindings={len(manifest.bindings)}",
+        )
+    )
+
+    binding_problems: list[str] = []
+    for binding in manifest.bindings:
+        binding_problems.extend(validate_recipe_binding(binding.recipe))
+    checks.append(
+        PromotionSafetyCheck(
+            name="recipe_binding_consistency",
+            ok=not binding_problems,
+            severity="HIGH" if binding_problems else "LOW",
+            message=(
+                "; ".join(binding_problems)
+                if binding_problems
+                else f"recipe operation/auth_profile/transaction_profile are consistent "
+                f"across {len(manifest.bindings)} binding(s)"
+            ),
         )
     )
 

@@ -1,3 +1,4 @@
+import dataclasses
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -19,7 +20,7 @@ from xingestion.releases import (
     read_promotion_audit,
     write_promotion_audit,
 )
-from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import ProtocolCapabilityBinding, ProtocolReleaseManifest
 
 
 class ReleasePromotionTests(unittest.TestCase):
@@ -45,6 +46,7 @@ class ReleasePromotionTests(unittest.TestCase):
             self.assertTrue(checks["manifest_present"])
             self.assertTrue(checks["fixture_validation"])
             self.assertTrue(checks["capture_replay_comparison"])
+            self.assertTrue(checks["recipe_binding_consistency"])
 
             validation_store = RecipeValidationStore(db_path)
             records = validation_store.list_recent(release_id=manifest.release_id, limit=10)
@@ -86,6 +88,46 @@ class ReleasePromotionTests(unittest.TestCase):
             self.assertFalse(report.ok)
             failed = [check.name for check in report.checks if not check.ok]
             self.assertIn("release_health_allows_execution", failed)
+
+    def test_promotion_safety_blocks_an_internally_inconsistent_recipe(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        binding = manifest.bindings[0]
+        mutated_transaction_profile = dataclasses.replace(
+            binding.recipe.transaction_profile,
+            required_headers=(*binding.recipe.transaction_profile.required_headers, "x-made-up"),
+        )
+        mutated_recipe = dataclasses.replace(
+            binding.recipe, transaction_profile=mutated_transaction_profile
+        )
+        mutated_manifest = dataclasses.replace(
+            manifest,
+            bindings=(
+                ProtocolCapabilityBinding(
+                    capability_id=binding.capability_id,
+                    contract_version=binding.contract_version,
+                    recipe=mutated_recipe,
+                ),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "tasks.sqlite3"
+            store = ReleaseStore(db_path)
+            store.approve_release(mutated_manifest.release_id, reason="test")
+
+            report = build_promotion_safety_report(
+                release_id=mutated_manifest.release_id,
+                manifest=mutated_manifest,
+                release_store=store,
+                manifest_dir=ROOT / "protocol_releases",
+                raw_evidence_dir=Path(temp_dir) / "raw",
+            )
+
+            self.assertFalse(report.ok)
+            failed = {check.name: check for check in report.checks if not check.ok}
+            self.assertIn("recipe_binding_consistency", failed)
+            self.assertIn("x-made-up", failed["recipe_binding_consistency"].message)
 
     def test_promotion_audit_write_list_and_read_are_path_safe(self):
         manifest = ProtocolReleaseManifest.from_file(

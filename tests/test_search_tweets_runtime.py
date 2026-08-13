@@ -1,3 +1,4 @@
+import dataclasses
 import unittest
 from pathlib import Path
 import sys
@@ -13,6 +14,7 @@ from xingestion.xprotocol.runtime import (
     WebSessionAuth,
     build_search_timeline_request,
     parse_search_tweets_page,
+    validate_recipe_binding,
     validate_search_tweets_pagination,
 )
 
@@ -269,6 +271,47 @@ class SearchTweetsRuntimeTests(unittest.TestCase):
         self.assertEqual(tweet.reply_count, 3)
         self.assertEqual(tweet.quote_count, 1)
         self.assertEqual(tweet.view_count, "99")
+
+    def test_validate_recipe_binding_passes_for_the_pinned_recipe(self):
+        self.assertEqual(validate_recipe_binding(load_recipe()), ())
+
+    def test_validate_recipe_binding_flags_undeclared_missing_headers(self):
+        recipe = load_recipe()
+        mutated_transaction_profile = dataclasses.replace(
+            recipe.transaction_profile,
+            required_headers=(*recipe.transaction_profile.required_headers, "x-made-up-header"),
+        )
+        mutated = dataclasses.replace(recipe, transaction_profile=mutated_transaction_profile)
+
+        problems = validate_recipe_binding(mutated)
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("x-made-up-header", problems[0])
+
+    def test_validate_recipe_binding_flags_auth_material_mismatch(self):
+        recipe = load_recipe()
+        mutated_auth_profile = dataclasses.replace(
+            recipe.auth_profile, required_material=("auth_token", "ct0")
+        )
+        mutated = dataclasses.replace(recipe, auth_profile=mutated_auth_profile)
+
+        problems = validate_recipe_binding(mutated)
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("bearer_token", problems[0])
+
+    def test_validate_recipe_binding_flags_extra_declared_auth_material(self):
+        recipe = load_recipe()
+        mutated_auth_profile = dataclasses.replace(
+            recipe.auth_profile,
+            required_material=(*recipe.auth_profile.required_material, "totally_made_up_field"),
+        )
+        mutated = dataclasses.replace(recipe, auth_profile=mutated_auth_profile)
+
+        problems = validate_recipe_binding(mutated)
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("totally_made_up_field", problems[0])
 
 
 if __name__ == "__main__":
