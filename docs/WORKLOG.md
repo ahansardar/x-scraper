@@ -2078,3 +2078,26 @@ Verified:
 Next:
 
 - Once an operator performs the capture and the placeholder `operation_id` is replaced, `protocol_validation.py` still needs to become capability-parameterized (see `docs/TASKS.md`) before `TWEET_BY_ID` can pass capture-replay validation and reach `APPROVED`. Otherwise unchanged: migration tooling and the spec-gap list.
+
+## 2026-08-14 - Checkpoint 100: Real TweetResultByRestId Operation ID Captured
+
+Implemented:
+
+- The operator captured `TweetResultByRestId`'s real request from their own authenticated browser session (operation ID `GZsN2Pc4knAoit6pXa4HSA`, full `variables`/`features`/`fieldToggles` bodies) and handed it over; applied it to the codebase.
+- Replaced the placeholder `operation_id` in `protocol_releases/search_tweets.candidate.json`'s `TWEET_BY_ID` binding with the real captured value, and replaced the guessed 5-feature/4-toggle `feature_bundle` with the full 34-feature/4-toggle set the real client actually sent -- more faithful than the earlier inferred subset, reducing the risk of a live request being rejected over a missing feature flag.
+- Bumped `operation` and `feature_bundle` from `DRAFT`/`INFERRED` to `CANDIDATE`/`OBSERVED` (and the recipe overall to `CANDIDATE`/`OBSERVED`), matching how `SEARCH_TWEETS`'s already-proven sub-revisions are annotated. `validation_freshness` stays `NEVER_VALIDATED` and `operational_health` stays `UNKNOWN` on all of them -- captured and observed once is not the same as validated through the fixture/capture-replay pipeline or proven over real production traffic, and nothing here has either yet.
+- Updated `tweet_by_id.py`'s hardcoded request variables (`includePromotedContent`, `withVoice`, `withCommunity` now `True` to match the real client; added the previously-missing `withBirdwatchNotes`) so the request this codebase builds matches what the real captured request actually sent, not an earlier guess.
+- Swept `docs/TASKS.md`, `docs/CURRENT_STAGE.md`, `docs/SYSTEM_FLOW.md`, and `docs/deployment_runbook.md` for every "placeholder"/`DRAFT`/`INFERRED` reference tied to `TWEET_BY_ID`'s operation ID and updated each to reflect the real capture, while leaving the still-accurate `NEVER_VALIDATED`/unapproved status alone -- a real operation ID is not the same milestone as a validated, approved recipe.
+
+Verified:
+
+- `python -c "import json; json.load(...)"` confirms the hand-edited manifest is still valid JSON.
+- `python -m compileall -q src tests run_*.py` and `python -m unittest discover -s tests` (243 passed, skipped=3) -- including `test_validate_recipe_binding_passes_for_the_pinned_recipe`, which runs `validate_tweet_by_id_recipe_binding()` against this exact updated recipe and confirms the request builder's headers/auth-material declarations still match what the recipe declares.
+
+Not done:
+
+- This still is not a live-traffic-eligible, `APPROVED` recipe. `protocol_validation.py`'s fixture/capture-replay pipeline remains hardcoded to `SEARCH_TWEETS` (`docs/TASKS.md` tracks capability-parameterizing it), so `TWEET_BY_ID` has no path through the normal promotion safety gate yet even though its operation ID is now real. No live request has actually been sent against the real operation ID either -- that would be the next manual verification step, at the operator's discretion.
+
+Next:
+
+- Capability-parameterize `protocol_validation.py` so `TWEET_BY_ID` can run through fixture/capture-replay validation and reach `APPROVED`. Otherwise unchanged: migration tooling and the spec-gap list.

@@ -91,9 +91,10 @@ def build_tweet_by_id_request(
 
     variables: dict[str, Any] = {
         "tweetId": request.tweet_id,
-        "withCommunity": False,
-        "includePromotedContent": False,
-        "withVoice": False,
+        "includePromotedContent": True,
+        "withBirdwatchNotes": True,
+        "withVoice": True,
+        "withCommunity": True,
     }
 
     body = {
