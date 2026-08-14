@@ -10,6 +10,7 @@ from xingestion.capabilities import (
     CapabilityPlannerError,
     CapabilityRequest,
     SearchTweetsInput,
+    TweetByIdInput,
 )
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest, RevisionStatus
 
@@ -85,6 +86,47 @@ class CapabilityPlannerTests(unittest.TestCase):
                     capability_id=CapabilityId.SEARCH_TWEETS,
                     contract_version=1,
                     payload=SearchTweetsInput(query="india", max_pages=2, page_number=3),
+                )
+            )
+
+    def test_plans_tweet_by_id_as_a_single_page_with_no_cursor(self):
+        planner = CapabilityPlanner(load_manifest())
+        request = CapabilityRequest(
+            capability_id=CapabilityId.TWEET_BY_ID,
+            contract_version=1,
+            payload=TweetByIdInput(tweet_id="2001"),
+        )
+
+        plan = planner.plan(request)
+        public_plan = plan.public_dict()
+
+        self.assertEqual(plan.capability_id, CapabilityId.TWEET_BY_ID)
+        self.assertEqual(plan.required_auth_class, "AUTHORIZED_WEB_SESSION")
+        self.assertIsNone(plan.cursor)
+        self.assertEqual(plan.page_size, 1)
+        self.assertEqual(plan.max_pages, 1)
+        self.assertEqual(plan.page_number, 1)
+        self.assertNotIn("operation_id", public_plan)
+        self.assertNotIn("url_template", public_plan)
+
+    def test_validates_tweet_by_id_request(self):
+        planner = CapabilityPlanner(load_manifest())
+
+        with self.assertRaisesRegex(CapabilityPlannerError, "tweet_id cannot be empty"):
+            planner.plan(
+                CapabilityRequest(
+                    capability_id=CapabilityId.TWEET_BY_ID,
+                    contract_version=1,
+                    payload=TweetByIdInput(tweet_id=" "),
+                )
+            )
+
+        with self.assertRaisesRegex(CapabilityPlannerError, "numeric"):
+            planner.plan(
+                CapabilityRequest(
+                    capability_id=CapabilityId.TWEET_BY_ID,
+                    contract_version=1,
+                    payload=TweetByIdInput(tweet_id="not-a-number"),
                 )
             )
 

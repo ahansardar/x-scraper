@@ -17,6 +17,7 @@ from xingestion.capabilities import (
     CapabilityPlanner,
     CapabilityRequest,
     SearchTweetsInput,
+    TweetByIdInput,
 )
 from xingestion.tasks import TaskState
 from xingestion.canonical import CanonicalStore
@@ -144,6 +145,49 @@ class RateLimitedTransport:
         return ProtocolHttpResponse(429, {"errors": ["rate limited"]}, {"retry-after": "120"})
 
 
+class TweetByIdTransport:
+    def send(self, request):
+        return ProtocolHttpResponse(
+            200,
+            {
+                "data": {
+                    "tweetResult": {
+                        "result": {
+                            "__typename": "Tweet",
+                            "rest_id": "2001",
+                            "core": {
+                                "user_results": {
+                                    "result": {
+                                        "core": {
+                                            "screen_name": "protocol_user",
+                                            "name": "Protocol User",
+                                        }
+                                    }
+                                }
+                            },
+                            "legacy": {
+                                "id_str": "2001",
+                                "full_text": "hello by id",
+                                "created_at": "Fri Aug 14 12:00:00 +0000 2026",
+                                "favorite_count": 9,
+                                "retweet_count": 4,
+                                "reply_count": 2,
+                                "quote_count": 1,
+                                "bookmark_count": 3,
+                            },
+                            "views": {"count": "500"},
+                        }
+                    }
+                }
+            },
+        )
+
+
+class TweetByIdNotFoundTransport:
+    def send(self, request):
+        return ProtocolHttpResponse(200, {"data": {"tweetResult": {}}})
+
+
 def load_manifest():
     return ProtocolReleaseManifest.from_file(
         ROOT / "protocol_releases" / "search_tweets.candidate.json"
@@ -264,6 +308,76 @@ class LocalWorkerTests(unittest.TestCase):
             result.raw_evidence_ref.evidence_id,
         )
         self.assertFalse(worker.process_one().processed)
+
+    def test_worker_claims_outbox_and_completes_tweet_by_id_task(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.TWEET_BY_ID,
+            contract_version=1,
+            payload=TweetByIdInput(tweet_id="2001"),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        task = self.ledger.create_task(
+            idempotency_key="worker-tweet-by-id-key",
+            capability_id=request.capability_id,
+            contract_version=request.contract_version,
+            request_json=request.public_dict(),
+            plan_json=plan.public_dict(),
+        )
+        worker = self.make_worker(
+            manifest=manifest,
+            auth=WebSessionAuth("auth", "csrf", "bearer"),
+            transport=TweetByIdTransport(),
+            raw_evidence_sink=FileRawEvidenceSink(Path(self.temp_dir.name) / "raw"),
+            canonical_store=CanonicalStore(self.db_path),
+        )
+        self.dispatch_pending(1)
+
+        result = worker.process_one()
+        reloaded = self.ledger.get_task(task.task_id)
+
+        self.assertTrue(result.processed)
+        self.assertEqual(result.state, TaskState.DONE)
+        self.assertIsNotNone(result.raw_evidence_ref)
+        self.assertEqual(reloaded.state, TaskState.DONE)
+        self.assertIsNone(reloaded.result_json["pagination"]["next_cursor"])
+        self.assertIsNone(reloaded.result_json["pagination"]["continuation_task_id"])
+
+        canonical_store = CanonicalStore(self.db_path)
+        stored = canonical_store.get_tweet("2001")
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored.username, "protocol_user")
+
+    def test_worker_dead_letters_tweet_by_id_when_object_not_found(self):
+        manifest = load_manifest()
+        request = CapabilityRequest(
+            capability_id=CapabilityId.TWEET_BY_ID,
+            contract_version=1,
+            payload=TweetByIdInput(tweet_id="999999999999999999"),
+        )
+        plan = CapabilityPlanner(manifest).plan(request)
+
+        self.ledger.create_task(
+            idempotency_key="worker-tweet-by-id-not-found",
+            capability_id=request.capability_id,
+            contract_version=request.contract_version,
+            request_json=request.public_dict(),
+            plan_json=plan.public_dict(),
+        )
+        worker = self.make_worker(
+            manifest=manifest,
+            auth=WebSessionAuth("auth", "csrf", "bearer"),
+            transport=TweetByIdNotFoundTransport(),
+            raw_evidence_sink=FileRawEvidenceSink(Path(self.temp_dir.name) / "raw"),
+        )
+        self.dispatch_pending(1)
+
+        result = worker.process_one()
+
+        self.assertTrue(result.processed)
+        self.assertEqual(result.state, TaskState.DEAD_LETTER)
+        self.assertEqual(result.error_class, "OBJECT_NOT_FOUND")
 
     def test_worker_rejects_task_planned_for_unapproved_release(self):
         manifest = load_manifest()

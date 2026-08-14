@@ -242,6 +242,8 @@ Content-Type: application/json
 }
 ```
 
+`TWEET_BY_ID` uses the same route with a `tweet_id` payload (or the `POST /api/tweet-by-id` shortcut, `{"tweet_id": "..."}`), but its recipe binding is `DRAFT`/unapproved pending a live capture of X's real `TweetResultByRestId` GraphQL operation ID -- submitting it today will fail against the placeholder operation ID in `protocol_releases/search_tweets.candidate.json`. It has no cursor/`max_pages` concept; it always resolves to a single-page plan.
+
 Poll `status_url` until the task is `DONE`, then read `result_url`.
 
 ## Operator Controls

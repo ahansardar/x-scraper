@@ -1,0 +1,42 @@
+{
+  "data": {
+    "tweetResult": {
+      "result": {
+        "__typename": "Tweet",
+        "rest_id": "2001",
+        "core": {
+          "user_results": {
+            "result": {
+              "__typename": "User",
+              "core": {
+                "screen_name": "protocol_user",
+                "name": "Protocol User"
+              }
+            }
+          }
+        },
+        "legacy": {
+          "id_str": "2001",
+          "full_text": "GraphQL TweetResultByRestId parser validation tweet",
+          "created_at": "Fri Aug 14 12:00:00 +0000 2026",
+          "reply_count": 2,
+          "retweet_count": 4,
+          "favorite_count": 31,
+          "quote_count": 1,
+          "bookmark_count": 3,
+          "extended_entities": {
+            "media": [
+              {
+                "media_url_https": "https://pbs.twimg.com/media/sample-by-id.jpg"
+              }
+            ]
+          }
+        },
+        "views": {
+          "count": "5100",
+          "state": "EnabledWithCount"
+        }
+      }
+    }
+  }
+}

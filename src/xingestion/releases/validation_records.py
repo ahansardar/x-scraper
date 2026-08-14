@@ -8,7 +8,7 @@ import sqlite3
 import uuid
 
 from xingestion import __version__ as RUNTIME_VERSION
-from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 @dataclass(frozen=True)
@@ -261,6 +261,7 @@ def record_recipe_validation_results(
     store: RecipeValidationStore,
     manifest: ProtocolReleaseManifest,
     results: tuple[tuple[str, bool, str], ...],
+    capability_id: CapabilityId | None = None,
 ) -> tuple[RecipeValidationRecord, ...]:
     """Persist one record per (capability binding recipe x validation type).
 
@@ -268,9 +269,18 @@ def record_recipe_validation_results(
     validation reports the caller already built (fixture validation,
     capture/replay comparison, ...) -- kept decoupled from those report
     dataclasses so this module doesn't need to import them.
+
+    `capability_id`, when given, scopes recording to only the binding(s) for
+    that capability. The fixture/capture-replay reports this module receives
+    today are validated against one capability's fixtures at a time (see
+    `protocol_validation.DEFAULT_FIXTURE_DIR`); recording their pass/fail
+    against every other capability's binding in the same manifest would
+    claim evidence that was never actually checked for that capability.
     """
     records = []
     for binding in manifest.bindings:
+        if capability_id is not None and binding.capability_id != capability_id:
+            continue
         for validation_type, ok, summary in results:
             records.append(
                 store.record_validation(

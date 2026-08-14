@@ -134,6 +134,32 @@ class NorthboundApiTests(unittest.TestCase):
             task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
             self.assertEqual(task.request_json["payload"]["max_pages"], 2)
 
+    def test_generic_capability_task_submission_accepts_tweet_by_id(self):
+        manifest = ProtocolReleaseManifest.from_file(
+            ROOT / "protocol_releases" / "search_tweets.candidate.json"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            live_server.STATE = SimpleNamespace(
+                config=SimpleNamespace(max_active_tasks_per_capability=100),
+                planner=CapabilityPlanner(manifest),
+                ledger=self.ledger,
+            )
+            handler = FakeHandler()
+
+            payload = handler._create_capability_task(
+                {
+                    "capability_id": "TWEET_BY_ID",
+                    "contract_version": 1,
+                    "payload": {"tweet_id": "2001"},
+                    "idempotency_key": "northbound-tweet-by-id-1",
+                }
+            )
+
+            self.assertEqual(handler.status, 202)
+            self.assertEqual(payload["task"]["capability_id"], "TWEET_BY_ID")
+            task = live_server.STATE.ledger.get_task(payload["task"]["task_id"])
+            self.assertEqual(task.request_json["payload"]["tweet_id"], "2001")
+
     def test_generic_capability_task_submission_processes_attached_worker(self):
         manifest = ProtocolReleaseManifest.from_file(
             ROOT / "protocol_releases" / "search_tweets.candidate.json"

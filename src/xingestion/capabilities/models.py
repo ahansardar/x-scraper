@@ -34,10 +34,25 @@ class SearchTweetsInput:
 
 
 @dataclass(frozen=True)
+class TweetByIdInput:
+    tweet_id: str
+
+    def validate(self) -> None:
+        candidate = self.tweet_id.strip()
+        if not candidate:
+            raise CapabilityPlannerError("TWEET_BY_ID tweet_id cannot be empty")
+        if not candidate.isdigit():
+            raise CapabilityPlannerError("TWEET_BY_ID tweet_id must be a numeric string")
+
+
+CapabilityInputPayload = SearchTweetsInput | TweetByIdInput
+
+
+@dataclass(frozen=True)
 class CapabilityRequest:
     capability_id: CapabilityId
     contract_version: int
-    payload: SearchTweetsInput
+    payload: CapabilityInputPayload
     required_fidelity: str = "STANDARD"
     traffic_priority: str = "NORMAL"
 
@@ -50,19 +65,25 @@ class CapabilityRequest:
         return {
             "capability_id": self.capability_id.value,
             "contract_version": self.contract_version,
-            "payload": {
-                "query": self.payload.query,
-                "product": self.payload.product,
-                "cursor": self.payload.cursor,
-                "page_size": self.payload.page_size,
-                "max_pages": self.payload.max_pages,
-                "page_number": self.payload.page_number,
-                "pagination_root_task_id": self.payload.pagination_root_task_id,
-                "pagination_parent_task_id": self.payload.pagination_parent_task_id,
-            },
+            "payload": _payload_public_dict(self.payload),
             "required_fidelity": self.required_fidelity,
             "traffic_priority": self.traffic_priority,
         }
+
+
+def _payload_public_dict(payload: CapabilityInputPayload) -> dict[str, Any]:
+    if isinstance(payload, TweetByIdInput):
+        return {"tweet_id": payload.tweet_id}
+    return {
+        "query": payload.query,
+        "product": payload.product,
+        "cursor": payload.cursor,
+        "page_size": payload.page_size,
+        "max_pages": payload.max_pages,
+        "page_number": payload.page_number,
+        "pagination_root_task_id": payload.pagination_root_task_id,
+        "pagination_parent_task_id": payload.pagination_parent_task_id,
+    }
 
 
 @dataclass(frozen=True)
@@ -120,16 +141,29 @@ class CapabilityPlanner:
 
         binding = self._find_binding(request.capability_id, request.contract_version)
         recipe = binding.recipe
+        if isinstance(request.payload, SearchTweetsInput):
+            cursor = request.payload.cursor
+            page_size = request.payload.page_size
+            max_pages = request.payload.max_pages
+            page_number = request.payload.page_number
+        else:
+            # Single-object capabilities (e.g. TWEET_BY_ID) have no cursor
+            # concept -- these fields describe "one page, no continuation"
+            # rather than a real pagination state.
+            cursor = None
+            page_size = 1
+            max_pages = 1
+            page_number = 1
         return AcquisitionPlan(
             capability_id=request.capability_id,
             contract_version=request.contract_version,
             release_id=self.manifest.release_id,
             recipe_revision_id=recipe.revision_id,
             required_auth_class=recipe.auth_profile.auth_class,
-            cursor=request.payload.cursor,
-            page_size=request.payload.page_size,
-            max_pages=request.payload.max_pages,
-            page_number=request.payload.page_number,
+            cursor=cursor,
+            page_size=page_size,
+            max_pages=max_pages,
+            page_number=page_number,
             traffic_priority=request.traffic_priority,
             binding=binding,
         )

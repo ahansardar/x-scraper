@@ -20,9 +20,12 @@ from xingestion.xprotocol.evidence import RawEvidenceRef, RawEvidenceSink
 from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 from xingestion.xprotocol.runtime import (
     ProtocolError,
+    SearchTweetsPage,
     SearchTweetsRequest,
+    TweetByIdRequest,
     WebSessionAuth,
     acquire_search_tweets_page,
+    acquire_tweet_by_id,
     validate_search_tweets_pagination,
 )
 from xingestion.xprotocol.runtime.transport import OneAttemptTransport
@@ -619,23 +622,42 @@ class LocalWorker:
         )
 
     def _execute_task(self, task, *, auth: WebSessionAuth | None = None):
-        if task.capability_id != CapabilityId.SEARCH_TWEETS:
-            raise ValueError(f"Unsupported capability {task.capability_id.value}")
-
         recipe = self._recipe_for_task(task)
         payload = task.request_json["payload"]
-        return acquire_search_tweets_page(
-            recipe=recipe,
-            auth=auth or self.auth,
-            request=SearchTweetsRequest(
-                query=str(payload["query"]),
-                product=str(payload.get("product", "Top")),
-                count=int(payload.get("page_size", 20)),
-                cursor=payload.get("cursor"),
-            ),
-            transport=self.transport,
-            raw_evidence_sink=self.raw_evidence_sink,
-        )
+
+        if task.capability_id == CapabilityId.SEARCH_TWEETS:
+            return acquire_search_tweets_page(
+                recipe=recipe,
+                auth=auth or self.auth,
+                request=SearchTweetsRequest(
+                    query=str(payload["query"]),
+                    product=str(payload.get("product", "Top")),
+                    count=int(payload.get("page_size", 20)),
+                    cursor=payload.get("cursor"),
+                ),
+                transport=self.transport,
+                raw_evidence_sink=self.raw_evidence_sink,
+            )
+
+        if task.capability_id == CapabilityId.TWEET_BY_ID:
+            result = acquire_tweet_by_id(
+                recipe=recipe,
+                auth=auth or self.auth,
+                request=TweetByIdRequest(tweet_id=str(payload["tweet_id"])),
+                transport=self.transport,
+                raw_evidence_sink=self.raw_evidence_sink,
+            )
+            # Wrapped as a one-tweet, no-continuation "page" so every
+            # downstream step (canonical ingest, pagination validation,
+            # continuation queueing, result_json) works unmodified.
+            return SearchTweetsPage(
+                tweets=(result.tweet,),
+                next_cursor=None,
+                cursor_present=False,
+                raw_evidence_ref=result.raw_evidence_ref,
+            )
+
+        raise ValueError(f"Unsupported capability {task.capability_id.value}")
 
     def _update_session_health_from_error(self, session_id: str, exc: ProtocolError) -> None:
         health = _session_health_for_protocol_error(exc)

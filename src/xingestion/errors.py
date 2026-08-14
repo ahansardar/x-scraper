@@ -137,6 +137,20 @@ ERROR_PROFILES: dict[str, ErrorProfile] = {
         operator_action="inspect_sqlite_task_ledger_integrity",
         retryable=False,
     ),
+    "OBJECT_NOT_FOUND": ErrorProfile(
+        error_class="OBJECT_NOT_FOUND",
+        severity=ErrorSeverity.LOW,
+        scope=ErrorScope.PROTOCOL,
+        operator_action="no_action_object_does_not_exist_or_was_deleted",
+        retryable=False,
+    ),
+    "ACCESS_NOT_AUTHORIZED": ErrorProfile(
+        error_class="ACCESS_NOT_AUTHORIZED",
+        severity=ErrorSeverity.LOW,
+        scope=ErrorScope.PROTOCOL,
+        operator_action="no_action_object_is_protected_or_access_restricted",
+        retryable=False,
+    ),
     "ValueError": ErrorProfile(
         error_class="ValueError",
         severity=ErrorSeverity.HIGH,

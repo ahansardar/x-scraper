@@ -16,7 +16,7 @@ This is a service that fetches tweets from X (Twitter) on request, in a way that
 - **Honest about failure** — X's protocol changes without notice. When a request to X fails, the system records *exactly* what failed and why, keeps the raw response bytes, and never quietly pretends things are fine.
 - **Separated by concern** — "how do I ask X for tweets" (the *protocol* layer) is kept apart from "how do I durably run a job and retry it" (the *production control plane*). One can change without breaking the other.
 
-The one capability implemented today is `SEARCH_TWEETS`: given a search query, fetch matching tweets, with pagination across multiple pages if requested.
+The capability implemented and live-approved today is `SEARCH_TWEETS`: given a search query, fetch matching tweets, with pagination across multiple pages if requested. A second capability, `TWEET_BY_ID` (fetch one tweet by its ID, no pagination), is built end to end — capability contract, request builder, parser, worker dispatch, canonical storage — but its recipe binding is `DRAFT`, not `APPROVED`: it has no live-captured GraphQL operation ID yet, only a placeholder, so it isn't live traffic-eligible. Everything below describes `SEARCH_TWEETS`'s live path; §3.7 covers what `TWEET_BY_ID` reuses versus what's genuinely new per capability.
 
 ---
 
@@ -202,6 +202,24 @@ flowchart TD
     F -->|yes| G[PAGINATION_CURSOR_LOOP]
     F -->|no| H[Queue continuation task<br/>with next_cursor]
 ```
+
+---
+
+### 3.7 Adding a second capability — what's shared, what's new
+
+`TWEET_BY_ID` was added as a second vertical slice to prove this architecture actually generalizes, not just describes `SEARCH_TWEETS`. It reuses almost everything except the parts that are genuinely protocol-specific:
+
+| Layer | `TWEET_BY_ID` reuses as-is | `TWEET_BY_ID` needed its own |
+|---|---|---|
+| Tweet-field extraction | `xprotocol/runtime/tweet_fields.py` (`TweetRecord`, `make_tweet_record`, `merge_tweet_records`) — factored out of `search_tweets.py` for this reason | — |
+| Worker lifecycle | `LocalWorker._process_delivery()` in full: lease fencing, session handling, retries, telemetry, dead-lettering | just a new branch in `LocalWorker._execute_task()` that calls `acquire_tweet_by_id()` |
+| Canonical storage | `CanonicalStore.ingest_search_tweets_page()` directly | `_execute_task()` wraps the single `TweetRecord` result in a `SearchTweetsPage(tweets=(tweet,), next_cursor=None, ...)` so every downstream step (canonical ingest, pagination validation, continuation queueing, `result_json`) needs zero further changes |
+| Auth / transaction / client profiles | Same `AUTHORIZED_WEB_SESSION` auth class and browser header set — genuinely the same values, copied into `TWEET_BY_ID`'s own recipe revision objects (the schema has no cross-binding sharing/pointer mechanism, so "reuse" means identical values, not a shared reference) | — |
+| Recipe composition | `AcquisitionRecipeRevision`'s 7-part shape (`operation`, `parser`, `pagination`, `auth_profile`, `transaction_profile`, `feature_bundle`, `client_profile`) | its own `operation` (a different GraphQL query, `TweetResultByRestId`, not `SearchTimeline`), `parser`, and a **degenerate `pagination` revision** (`strategy_name: "single_page"`) since the schema requires every recipe to declare one, even for capabilities that never continue |
+| Release manifest | The same `protocol_releases/search_tweets.candidate.json` file and release_id — the running system resolves exactly one *approved* release at a time (`ReleaseStore.approved_release_id()` is singular), so a second capability can only go live by joining the currently-approved release's `bindings` array, not by shipping in a separate release file | its own `ProtocolCapabilityBinding` entry within that array |
+| Fixture/promotion validation | Nothing — this is the one place reuse would have been *wrong*. `protocol_validation.py` is hardcoded to `SEARCH_TWEETS`'s fixture directory and parser, so `record_recipe_validation_results()` needed a `capability_id` filter to stop recording `SEARCH_TWEETS`'s fixture-validation outcome against `TWEET_BY_ID`'s untested recipe too | its own fixture (`tests/fixtures/tweet_by_id/`) and unit-level parser tests; real fixture/capture-replay promotion validation for a second capability is still a `docs/TASKS.md` gap |
+
+The practical upshot: adding capability #3 should mostly mean writing an `operation`/`parser` pair and a manifest binding, not touching the worker or canonical storage again.
 
 ---
 

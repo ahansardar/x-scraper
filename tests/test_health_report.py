@@ -119,11 +119,11 @@ class HealthReportTests(unittest.TestCase):
             self.assertEqual(saved["redis_queue"]["group_name"], "capability-workers")
             self.assertIn("group_exists", saved["redis_queue"])
             self.assertIn("pending_count", saved["redis_queue"])
-            binding = manifest.bindings[0]
+            binding_revision_ids = {b.recipe.revision_id for b in manifest.bindings}
             self.assertEqual(len(saved["recipe_validation_freshness"]), len(manifest.bindings) * 2)
             self.assertTrue(
                 all(
-                    entry["recipe_revision_id"] == binding.recipe.revision_id
+                    entry["recipe_revision_id"] in binding_revision_ids
                     for entry in saved["recipe_validation_freshness"]
                 )
             )

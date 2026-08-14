@@ -6,6 +6,7 @@ from .models import (
     CapabilityPlannerError,
     CapabilityRequest,
     SearchTweetsInput,
+    TweetByIdInput,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "CapabilityPlannerError",
     "CapabilityRequest",
     "SearchTweetsInput",
+    "TweetByIdInput",
 ]

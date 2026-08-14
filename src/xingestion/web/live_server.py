@@ -19,6 +19,7 @@ from xingestion.capabilities import (
     CapabilityPlanner,
     CapabilityRequest,
     SearchTweetsInput,
+    TweetByIdInput,
 )
 from xingestion.canonical import CanonicalStore
 from xingestion.config import AppConfig, load_app_config
@@ -421,10 +422,13 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/capability-tasks":
             return self._create_capability_task(self._read_json())
 
-        if parsed.path != "/api/search-tweets":
-            return self._api_not_found(parsed.path)
+        if parsed.path == "/api/search-tweets":
+            return self._create_search_tweets_task(self._read_json())
 
-        return self._create_search_tweets_task(self._read_json())
+        if parsed.path == "/api/tweet-by-id":
+            return self._create_tweet_by_id_task(self._read_json())
+
+        return self._api_not_found(parsed.path)
 
     def _create_search_tweets_task(self, body):
         query = str(body.get("query", "")).strip()
@@ -447,29 +451,32 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
         )
         return self._queue_capability_request(capability_request, idempotency_key)
 
+    def _create_tweet_by_id_task(self, body):
+        tweet_id = str(body.get("tweet_id", "")).strip()
+        idempotency_key = str(body.get("idempotency_key") or f"live:tweet_by_id:{tweet_id}")
+        capability_request = CapabilityRequest(
+            capability_id=CapabilityId.TWEET_BY_ID,
+            contract_version=1,
+            payload=TweetByIdInput(tweet_id=tweet_id),
+        )
+        return self._queue_capability_request(capability_request, idempotency_key)
+
     def _create_capability_task(self, body):
         capability_id = str(body.get("capability_id", "")).strip()
         contract_version = int(body.get("contract_version", 1))
         payload = body.get("payload", {})
-        if capability_id != CapabilityId.SEARCH_TWEETS.value:
-            return self._json({"message": f"Unsupported capability {capability_id}"}, status=400)
         if not isinstance(payload, dict):
             return self._json({"message": "payload must be an object"}, status=400)
 
+        payload_obj = _capability_payload_from_dict(capability_id, payload)
+        if payload_obj is None:
+            return self._json({"message": f"Unsupported capability {capability_id}"}, status=400)
+
         try:
             capability_request = CapabilityRequest(
-                capability_id=CapabilityId.SEARCH_TWEETS,
+                capability_id=CapabilityId(capability_id),
                 contract_version=contract_version,
-                payload=SearchTweetsInput(
-                    query=str(payload.get("query", "")),
-                    product=str(payload.get("product", "Top")),
-                    cursor=payload.get("cursor"),
-                    page_size=int(payload.get("page_size", 20)),
-                    max_pages=int(payload.get("max_pages", 1)),
-                    page_number=int(payload.get("page_number", 1)),
-                    pagination_root_task_id=payload.get("pagination_root_task_id"),
-                    pagination_parent_task_id=payload.get("pagination_parent_task_id"),
-                ),
+                payload=payload_obj,
             )
             idempotency_key = str(
                 body.get("idempotency_key")
@@ -641,6 +648,7 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
             records = record_recipe_validation_results(
                 store=STATE.recipe_validation_store,
                 manifest=STATE.manifest,
+                capability_id=CapabilityId.SEARCH_TWEETS,
                 results=(
                     (
                         "FIXTURE",
@@ -983,6 +991,23 @@ class LiveAppHandler(SimpleHTTPRequestHandler):
                 },
             }
         )
+
+
+def _capability_payload_from_dict(capability_id, payload):
+    if capability_id == CapabilityId.SEARCH_TWEETS.value:
+        return SearchTweetsInput(
+            query=str(payload.get("query", "")),
+            product=str(payload.get("product", "Top")),
+            cursor=payload.get("cursor"),
+            page_size=int(payload.get("page_size", 20)),
+            max_pages=int(payload.get("max_pages", 1)),
+            page_number=int(payload.get("page_number", 1)),
+            pagination_root_task_id=payload.get("pagination_root_task_id"),
+            pagination_parent_task_id=payload.get("pagination_parent_task_id"),
+        )
+    if capability_id == CapabilityId.TWEET_BY_ID.value:
+        return TweetByIdInput(tweet_id=str(payload.get("tweet_id", "")))
+    return None
 
 
 def _task_dict(task):

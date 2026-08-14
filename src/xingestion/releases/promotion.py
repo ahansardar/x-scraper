@@ -19,7 +19,7 @@ from xingestion.releases.validation_records import (
     record_recipe_validation_results,
 )
 from xingestion.xprotocol.runtime import validate_recipe_binding
-from xingestion.xprotocol.protocol import ProtocolReleaseManifest
+from xingestion.xprotocol.protocol import CapabilityId, ProtocolReleaseManifest
 
 
 @dataclass(frozen=True)
@@ -229,6 +229,7 @@ def build_promotion_safety_report(
         record_recipe_validation_results(
             store=RecipeValidationStore(release_store.db_path),
             manifest=manifest,
+            capability_id=CapabilityId.SEARCH_TWEETS,
             results=(
                 (
                     "FIXTURE",

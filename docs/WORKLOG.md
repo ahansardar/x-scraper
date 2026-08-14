@@ -2036,3 +2036,29 @@ Verified:
 Next:
 
 - `docs/TASKS.md`'s "Production Hardening" section has one item left: replacing the hand-rolled Postgres migration runner with structured migration tooling. Otherwise remaining work is the single-node-vs-managed-infra decision, the next capability vertical slice, and the spec-flagged gaps list.
+
+## 2026-08-14 - Checkpoint 98: TWEET_BY_ID Vertical Slice (Architecture Complete, Operation ID Still a Placeholder)
+
+Implemented:
+
+- Added the full `TWEET_BY_ID` capability slice: `xprotocol/runtime/tweet_by_id.py` (request builder, `acquire_tweet_by_id()`, `parse_tweet_by_id_result()`, `validate_tweet_by_id_recipe_binding()` self-check mirroring `search_tweets.validate_recipe_binding()`), a new `DRAFT`/`INFERRED` recipe binding in `protocol_releases/search_tweets.candidate.json` targeting X's `TweetResultByRestId` GraphQL operation, a `single_page` pagination strategy (degenerate -- one object, no continuation), `TweetByIdInput`/`CapabilityInputPayload` in `capabilities/models.py`, worker dispatch in `local_worker.py` (wraps the single-tweet result as a one-element, no-continuation `SearchTweetsPage` so canonical ingest and result-serialization work unmodified), a `POST /api/tweet-by-id` endpoint plus generic-payload dispatch in `/api/capability-tasks`, and two new typed errors (`OBJECT_NOT_FOUND`, `ACCESS_NOT_AUTHORIZED`).
+- Extracted `TweetRecord`/`make_tweet_record()`/`merge_tweet_records()` out of `search_tweets.py` into a shared `xprotocol/runtime/tweet_fields.py` (pure code-move, confirmed via diff review to be behavior-preserving) since both capabilities parse the same nested `legacy`/`core`/`rest_id` tweet shape.
+- Parameterized `record_recipe_validation_results()` with a `capability_id` filter so `SEARCH_TWEETS` fixture-validation outcomes stop being incorrectly recorded against `TWEET_BY_ID`'s untested recipe now that the manifest has two bindings.
+- This work was already complete and uncommitted in the working tree at the start of this checkpoint (not authored in this session) -- treated it the same as an incoming PR: read every changed file, confirmed the `search_tweets.py` extraction was behavior-preserving, then ran the full suite before trusting it.
+
+Fixed:
+
+- `tests/test_health_report.py`'s `test_health_report_writes_safe_operator_snapshot` asserted every `recipe_validation_freshness` entry matched `manifest.bindings[0]`'s recipe revision id -- true when the manifest had one binding, false now that it has two (`SEARCH_TWEETS` and `TWEET_BY_ID`). Fixed to check membership against the set of all bindings' revision ids instead. Same category of bug as Checkpoint 97's `EXPECTED_MIGRATIONS` staleness: a test that hardcoded an assumption the manifest was single-capability.
+
+Not done:
+
+- The recipe's `operation_id` is a placeholder (`REPLACE_WITH_CAPTURED_TWEET_RESULT_BY_REST_ID_OPERATION_ID`) -- no live browser capture of X's real `TweetResultByRestId` operation ID exists yet. This requires an authenticated browser session against x.com to capture, which needs a live account and is out of scope for an unattended session to perform. Until that capture happens and the binding passes fixture/capture-replay validation the way `SEARCH_TWEETS`'s did, `docs/TASKS.md` correctly marks this item `[~]` (in progress), not `[x]`.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` passed.
+- `python -m unittest discover -s tests` passed 243 tests (skipped=3) after the `test_health_report.py` fix -- up from 229 (14 new tests: `tests/test_tweet_by_id_runtime.py` plus additions to `test_capability_planner.py`, `test_local_worker.py`, `test_northbound_api.py`, `test_protocol_models.py`, `test_release_store.py`).
+
+Next:
+
+- Capture `TweetResultByRestId`'s real operation ID via an authenticated browser session, replace the placeholder, and run it through the same fixture/capture-replay validation pipeline `SEARCH_TWEETS` went through before it can flip to `[x]`. Otherwise unchanged: migration tooling and the spec-gap list.

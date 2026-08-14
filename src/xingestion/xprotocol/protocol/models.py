@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 class CapabilityId(StrEnum):
     SEARCH_TWEETS = "SEARCH_TWEETS"
+    TWEET_BY_ID = "TWEET_BY_ID"
 
 
 class RevisionStatus(StrEnum):

@@ -21,8 +21,9 @@ class ProtocolModelTests(unittest.TestCase):
             "xrev-search-tweets-2026-08-10-candidate-1",
         )
         self.assertEqual(manifest.status, RevisionStatus.CANDIDATE)
-        self.assertEqual(len(manifest.bindings), 1)
+        self.assertEqual(len(manifest.bindings), 2)
         self.assertEqual(manifest.bindings[0].capability_id, CapabilityId.SEARCH_TWEETS)
+        self.assertEqual(manifest.bindings[1].capability_id, CapabilityId.TWEET_BY_ID)
 
     def test_recipe_composition_hash_is_deterministic(self):
         path = ROOT / "protocol_releases" / "search_tweets.candidate.json"

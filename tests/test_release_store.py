@@ -112,8 +112,8 @@ class ReleaseStoreTests(unittest.TestCase):
             self.assertEqual(by_id["release-1"].health, ReleaseHealth.QUARANTINED)
             self.assertTrue(by_id["release-2"].approved)
             self.assertEqual(by_id["release-2"].approval_reason, "operator_approved")
-            self.assertEqual(by_id["release-2"].binding_count, 1)
-            self.assertEqual(by_id["release-2"].capabilities, ("SEARCH_TWEETS",))
+            self.assertEqual(by_id["release-2"].binding_count, 2)
+            self.assertEqual(by_id["release-2"].capabilities, ("SEARCH_TWEETS", "TWEET_BY_ID"))
 
 
 def _write_manifest(path, *, release_id):

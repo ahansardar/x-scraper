@@ -1,12 +1,12 @@
 # Current Stage Against FINAL_PRODUCT_SPEC
 
-Date: 2026-08-13 (updated: merged PR #6 -- approved search-route monitoring signal and a Postgres LISTEN/NOTIFY dispatcher wake path; fixed a stale test left broken by that merge)
+Date: 2026-08-14 (updated: added a second capability, `TWEET_BY_ID`, as a full vertical slice alongside `SEARCH_TWEETS` -- shares tweet-field parsing, worker execution, and canonical storage; its recipe binding is DRAFT/unverified pending a live capture of X's real GraphQL operation ID)
 
 This document records where `F:\x-scraper` currently stands relative to `FINAL_PRODUCT_SPEC.md`, and how the implementation reached this stage.
 
 ## Current Label
 
-The project is currently a production-oriented local vertical slice for `SEARCH_TWEETS`.
+The project is currently a production-oriented local vertical slice for `SEARCH_TWEETS`, with a second capability (`TWEET_BY_ID`) now built end to end but not yet live-verified (its GraphQL operation ID is an unverified placeholder pending a real browser capture).
 
 It is not yet the complete final product described in `FINAL_PRODUCT_SPEC.md`. The final spec describes two responsibilities:
 
@@ -51,10 +51,11 @@ Known current operational signal:
 
 Implemented:
 
-- Stable capability request shape for `SEARCH_TWEETS`.
-- Generic `POST /api/capability-tasks`.
-- UI shortcut `POST /api/search-tweets`.
-- Capability planner boundary.
+- Stable capability request shapes for `SEARCH_TWEETS` and `TWEET_BY_ID`.
+- Generic `POST /api/capability-tasks`, dispatching to either capability's input contract.
+- UI shortcuts `POST /api/search-tweets` and `POST /api/tweet-by-id`.
+- Capability planner boundary, including a degenerate single-page plan (no cursor, `max_pages=1`) for capabilities like `TWEET_BY_ID` that fetch one object rather than paginate.
+- `TWEET_BY_ID` reuses `SEARCH_TWEETS`'s tweet-field extraction (`xprotocol/runtime/tweet_fields.py`), worker/canonical-store integration (its result is wrapped as a one-tweet, no-continuation page so the rest of `LocalWorker._process_delivery()` needs no capability-specific branching beyond building the request), and `AUTHORIZED_WEB_SESSION` auth/transaction/client profiles. Its `operation`/`parser`/`pagination`/`feature_bundle` revisions are new and marked `DRAFT`/`INFERRED` in `protocol_releases/search_tweets.candidate.json` -- the operation ID is a placeholder pending a live capture of X's real `TweetResultByRestId` GraphQL query, so this capability is not yet approved for production traffic.
 - Approved protocol release pointer in SQLite, resolved to one exact manifest from `protocol_releases/`.
 - Operator release inventory and approval through `run_releases.py`, `GET /api/releases`, and `POST /api/releases/approve`.
 - Promotion safety checks before normal approval, including manifest sanity, release health, recipe binding consistency (operation/auth_profile/transaction_profile validated together via a real probe request, not in isolation), fixture validation, and capture/replay comparison, each persisted as a first-class `recipe_validation_record` (`release_id`, `recipe_revision_id`, `composition_hash`, `runtime_version`) alongside the existing JSON report artifacts.
@@ -64,7 +65,7 @@ Implemented:
 Spec relevance:
 
 - Matches the spec principle that production clients request capabilities, not raw X endpoint details.
-- Current scope is one capability, not the full capability family listed in the spec.
+- Current scope is two capabilities (one live-approved, one `DRAFT`), not the full eleven-capability family listed in the spec.
 
 ### Protocol Runtime Foundation
 
@@ -397,5 +398,5 @@ The accurate claim is:
 1. `LISTEN`/`NOTIFY` dispatcher wakeups are done (see above); the single-node-vs-managed-infra decision otherwise remains open:
    - continue hardening this single-node Postgres/Redis setup (structured migration tooling beyond the hand-rolled runner remains open), or
    - move toward managed/clustered Postgres and Redis (replication, Sentinel/Cluster) for genuine production deployment.
-2. Add more capabilities only after the `SEARCH_TWEETS` vertical slice has validation tightened.
+2. `TWEET_BY_ID` is now a second capability (architecturally complete, `DRAFT`/unapproved). Before it -- or any further capability -- can be safely approved, `protocol_validation.py`'s fixture/capture-replay pipeline needs to become capability-parameterized (see `docs/TASKS.md`); right now it only validates `SEARCH_TWEETS`'s fixtures. A live browser capture of `TweetResultByRestId`'s real GraphQL operation ID is also still needed.
 3. `run_supervisor_check.py`/health reporting now surface Redis consumer-group lag and pending-entry-count metrics alongside Postgres outbox lag, and the delivery path now has an in-process load/soak/crash-recovery test suite (`tests/test_delivery_load.py`, opt-in via `XINGESTION_RUN_LOAD_TESTS=1`, run in the Postgres/Redis CI job). Remaining gap before calling it production-certified: real OS-level process-kill chaos testing and a sustained multi-hour soak at production scale.

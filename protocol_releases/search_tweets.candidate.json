@@ -97,6 +97,103 @@
           }
         }
       }
+    },
+    {
+      "capability_id": "TWEET_BY_ID",
+      "contract_version": 1,
+      "recipe": {
+        "revision_id": "recipe.tweet_by_id.web_graphql_tweetresultbyrestid.2026-08-14",
+        "status": "DRAFT",
+        "evidence_maturity": "INFERRED",
+        "validation_freshness": "NEVER_VALIDATED",
+        "operational_health": "UNKNOWN",
+        "operation": {
+          "revision_id": "operation.tweetresultbyrestid.draft.2026-08-14",
+          "status": "DRAFT",
+          "evidence_maturity": "INFERRED",
+          "validation_freshness": "NEVER_VALIDATED",
+          "operational_health": "UNKNOWN",
+          "operation_name": "TweetResultByRestId",
+          "operation_id": "REPLACE_WITH_CAPTURED_TWEET_RESULT_BY_REST_ID_OPERATION_ID",
+          "method": "POST",
+          "url_template": "https://x.com/i/api/graphql/{operation_id}/TweetResultByRestId"
+        },
+        "parser": {
+          "revision_id": "parser.tweet_by_id.single_tweet_v1.2026-08-14",
+          "status": "DRAFT",
+          "evidence_maturity": "INFERRED",
+          "validation_freshness": "NEVER_VALIDATED",
+          "operational_health": "UNKNOWN",
+          "parser_name": "tweet_by_id_single_tweet_v1",
+          "output_contract": "protocol-normalized single tweet record with opaque raw evidence ref, or a typed not-found/unavailable outcome"
+        },
+        "pagination": {
+          "revision_id": "pagination.tweet_by_id.single_page_v1.2026-08-14",
+          "status": "DRAFT",
+          "evidence_maturity": "INFERRED",
+          "validation_freshness": "NEVER_VALIDATED",
+          "operational_health": "UNKNOWN",
+          "strategy_name": "single_page",
+          "cursor_semantics": "N/A - fetches exactly one object by ID, never continues"
+        },
+        "auth_profile": {
+          "revision_id": "auth.web_oauth2_session_cookie_csrf.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "auth_class": "AUTHORIZED_WEB_SESSION",
+          "required_material": ["auth_token", "ct0", "bearer_token"]
+        },
+        "transaction_profile": {
+          "revision_id": "transaction.tweet_by_id.browser_headers_v1.2026-08-14",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "profile_name": "browser_json_post",
+          "required_headers": [
+            "authorization",
+            "x-csrf-token",
+            "x-twitter-active-user",
+            "x-twitter-auth-type",
+            "x-twitter-client-language"
+          ]
+        },
+        "feature_bundle": {
+          "revision_id": "features.tweet_by_id.draft.2026-08-14",
+          "status": "DRAFT",
+          "evidence_maturity": "INFERRED",
+          "validation_freshness": "NEVER_VALIDATED",
+          "operational_health": "UNKNOWN",
+          "features": {
+            "responsive_web_graphql_timeline_navigation_enabled": true,
+            "view_counts_everywhere_api_enabled": true,
+            "longform_notetweets_consumption_enabled": true,
+            "responsive_web_edit_tweet_api_enabled": true,
+            "tweet_awards_web_tipping_enabled": false
+          },
+          "field_toggles": {
+            "withAuxiliaryUserLabels": false,
+            "withArticlePlainText": false,
+            "withArticleRichContentState": false,
+            "withPayments": false
+          }
+        },
+        "client_profile": {
+          "revision_id": "client.web_chrome_windows_reference.2026-08-10",
+          "status": "CANDIDATE",
+          "evidence_maturity": "OBSERVED",
+          "validation_freshness": "AGING",
+          "operational_health": "ACTIVE",
+          "profile_name": "web_chrome_windows_reference",
+          "constraints": {
+            "platform": "web",
+            "browser_family": "chromium",
+            "language": "en"
+          }
+        }
+      }
     }
   ]
 }
