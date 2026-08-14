@@ -2062,3 +2062,19 @@ Verified:
 Next:
 
 - Capture `TweetResultByRestId`'s real operation ID via an authenticated browser session, replace the placeholder, and run it through the same fixture/capture-replay validation pipeline `SEARCH_TWEETS` went through before it can flip to `[x]`. Otherwise unchanged: migration tooling and the spec-gap list.
+
+## 2026-08-14 - Checkpoint 99: Documented the GraphQL Operation ID Capture Procedure
+
+Implemented:
+
+- Added a "Capturing a New GraphQL Operation ID (New Capability Onboarding)" section to `docs/deployment_runbook.md`, between "Operator Controls" and "Verification Before Release": a step-by-step DevTools procedure (sign in, Network tab, filter to Fetch/XHR + `graphql`, trigger the specific UI action, read the operation ID out of the request URL, copy-as-cURL to cross-check `feature_bundle`/`transaction_profile` against what the manifest declares) plus how to plug the captured value into `protocol_releases/search_tweets.candidate.json` and update `DRAFT`/`INFERRED` status markers. Written generically (applies to any future capability's operation ID, not just this one) but with `TweetResultByRestId`-specific guidance on which UI action actually triggers that operation versus the similarly-shaped `TweetDetail` operation.
+- No code changed -- this is deliberately a manual, operator-driven procedure requiring the operator's own authenticated X session; nothing here is meant to be automated (see `playground/Twitter Research.md` §21 on why session credentials specifically must never be handled by tooling that could leak or commit them).
+- Cross-referenced the new runbook section from `docs/TASKS.md`'s `TWEET_BY_ID` item, `docs/CURRENT_STAGE.md`'s "Next Recommended Work" item 2, and `docs/SYSTEM_FLOW.md` §1's capability-status paragraph, so anyone landing on any of those already knows where the how-to lives instead of re-deriving it.
+
+Verified:
+
+- `python -m compileall -q src tests run_*.py` and `python -m unittest discover -s tests` (243 passed, skipped=3) -- both a no-op safety check since this checkpoint is docs-only.
+
+Next:
+
+- Once an operator performs the capture and the placeholder `operation_id` is replaced, `protocol_validation.py` still needs to become capability-parameterized (see `docs/TASKS.md`) before `TWEET_BY_ID` can pass capture-replay validation and reach `APPROVED`. Otherwise unchanged: migration tooling and the spec-gap list.

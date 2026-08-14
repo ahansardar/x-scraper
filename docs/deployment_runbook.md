@@ -461,6 +461,21 @@ python .\run_health_report.py --base-url http://127.0.0.1:8000
 The report includes preflight checks, migration state, storage paths, task and outbox counts, canonical counts, telemetry summary, release risk, and safe session diagnostics. It intentionally excludes raw X secrets, credential references, and lease tokens.
 The `runtime_errors` section groups recent task failures by class, severity, scope, and recommended operator action.
 
+## Capturing a New GraphQL Operation ID (New Capability Onboarding)
+
+Every capability's `AcquisitionRecipeRevision.operation` pins a specific `operation_id` -- a short opaque string X assigns to each GraphQL persisted query (e.g. `SEARCH_TWEETS`'s `SearchTimeline` operation). X does not publish these; they only exist in the request URLs the real web app sends (`https://x.com/i/api/graphql/<operation_id>/<OperationName>`), and they rotate periodically. Onboarding any new capability -- like `TWEET_BY_ID`'s `TweetResultByRestId` operation, currently a placeholder (`REPLACE_WITH_CAPTURED_TWEET_RESULT_BY_REST_ID_OPERATION_ID`) in `protocol_releases/search_tweets.candidate.json` -- requires capturing the real value from a live, authenticated browser session. This is manual, operator-driven work; nothing in this codebase automates it, and it must be done with an account the operator is authorized to use (see `playground/Twitter Research.md` §21 on credential handling -- never commit session cookies or tokens anywhere in this repo).
+
+Procedure:
+
+1. Sign in to x.com normally in a real browser, using an account you're authorized to use.
+2. Open DevTools (F12) -> **Network** tab -> filter type to **Fetch/XHR**, and type `graphql` into the filter box so only GraphQL calls show.
+3. Trigger the specific UI action that fires the operation you need. For `TweetResultByRestId` specifically, X calls it when the app needs exactly one tweet's data in isolation rather than a timeline -- reliable ways to trigger it: open a tweet that's quoted/embedded inside another tweet (click the quoted-tweet card), or open a tweet permalink reached via a link/share rather than by scrolling a timeline. If `TweetDetail` fires instead of `TweetResultByRestId`, that's the wrong operation (it returns a whole conversation, not a single object) -- try a different entry point until you see a request whose URL segment after `/graphql/` is followed by `/TweetResultByRestId`.
+4. Click that request -> **Headers** tab. The URL looks like `https://x.com/i/api/graphql/AbCdEfGhIjKlMnOpQrStUv/TweetResultByRestId` -- the segment between `/graphql/` and the operation name is the `operation_id`.
+5. While you're there, right-click the request -> **Copy** -> **Copy as cURL** to also capture the exact `variables`, `features`, and `fieldToggles` bodies and the request headers the real client sends. Compare these against `protocol_releases/search_tweets.candidate.json`'s `TWEET_BY_ID` binding's `feature_bundle` and `transaction_profile.required_headers` -- update those too if the live request no longer matches what's declared (this is exactly the kind of drift `validate_tweet_by_id_recipe_binding()` in `tweet_by_id.py` self-checks for).
+6. Replace the placeholder `operation_id` in the manifest's `TWEET_BY_ID` binding with the captured value, and update `operation.status`/`evidence_maturity` from `DRAFT`/`INFERRED` to reflect that it's now `OBSERVED` from a real capture (mirroring how `SEARCH_TWEETS`'s binding is annotated).
+
+This only produces an `OBSERVED`, not yet `APPROVED`, recipe -- it still needs to pass fixture and capture-replay validation the way `SEARCH_TWEETS`'s did before promotion. As of this checkpoint, `protocol_validation.py`'s fixture/capture-replay pipeline is hardcoded to `SEARCH_TWEETS`'s fixture directory and parser (`docs/TASKS.md` tracks making it capability-parameterized), so that pipeline needs to support `TWEET_BY_ID` before this capability can reach `APPROVED` through the normal promotion safety gate.
+
 ## Verification Before Release
 
 Run locally (requires `docker compose up -d` for the Postgres/Redis-backed suites; unreachable services cause those tests to skip rather than fail):
