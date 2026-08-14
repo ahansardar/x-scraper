@@ -8,6 +8,7 @@ The original GraphQL scripts and local research artifacts now live under `playgr
 - `src/xingestion/xprotocol/`: internal X protocol research/runtime models and validated protocol release bindings.
 - `protocol_releases/`: approved or candidate protocol release manifests.
 - `docs/SYSTEM_FLOW.md`: how the system actually works today, end to end, with diagrams -- start here if you're new.
+- `docs/ARCHITECTURE.md`: code-verified architecture reference, cross-traced section by section against `FINAL_PRODUCT_SPEC.md`, including an open gap register.
 - `docs/WORKLOG.md`: incremental implementation ledger.
 - `docs/TASKS.md`: living checklist of remaining work, with completed items struck through.
 - `docs/CURRENT_STAGE.md`: current implementation stage versus `FINAL_PRODUCT_SPEC.md`.
